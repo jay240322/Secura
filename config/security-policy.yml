@@ -1,0 +1,7 @@
+policy:
+  max_critical: 0
+  max_high: 0
+  max_medium: 5
+  max_low: 10
+
+  minimum_score: 80
