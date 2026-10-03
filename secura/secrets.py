@@ -28,6 +28,7 @@ def scan_file(file_path):
             if re.search(pattern, line):
                 findings.append({
                     "type": secret_type,
+                    "severity": "HIGH",
                     "file": str(file_path),
                     "line": line_number,
                 })

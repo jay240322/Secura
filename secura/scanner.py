@@ -1,6 +1,7 @@
 import sys
 from pathlib import Path
 
+from secura.policy import evaluate_policy, load_policy
 from secura.secrets import scan_file
 
 
@@ -37,14 +38,12 @@ def scan_directory(directory):
         if not path.is_file():
             continue
 
-        # Skip files and directories that should not be scanned
         if any(
             part in {".git", ".venv", "__pycache__"}
             for part in path.parts
         ):
             continue
 
-        # Scan only supported source/configuration files
         if path.suffix.lower() not in allowed_extensions:
             continue
 
@@ -63,20 +62,41 @@ def main():
 
     findings = scan_directory(directory)
 
-    if not findings:
-        print("\n✓ No secrets detected.")
-        print("✓ SECURITY GATE: PASSED")
+    policy = load_policy()
+    result = evaluate_policy(findings, policy)
+
+    print("\nSecurity Summary")
+    print("-" * 30)
+
+    print(f"Critical : {result['counts']['CRITICAL']}")
+    print(f"High     : {result['counts']['HIGH']}")
+    print(f"Medium   : {result['counts']['MEDIUM']}")
+    print(f"Low      : {result['counts']['LOW']}")
+
+    print(f"\nSecurity Score: {result['score']}/100")
+
+    if findings:
+        print(f"\n⚠ {len(findings)} finding(s) detected:\n")
+
+        for finding in findings:
+            print(
+                f"[{finding.get('severity', 'MEDIUM')}] "
+                f"{finding['type']} "
+                f"-> {finding['file']}:{finding['line']}"
+            )
+
+    if result["passed"]:
+        print("\n✓ SECURITY GATE: PASSED")
         return 0
 
-    print(f"\n⚠ {len(findings)} potential secret(s) detected:\n")
-
-    for finding in findings:
-        print(
-            f"[HIGH] {finding['type']} "
-            f"-> {finding['file']}:{finding['line']}"
-        )
-
     print("\n✗ SECURITY GATE: FAILED")
+
+    if result["failures"]:
+        print("\nPolicy violations:")
+
+        for failure in result["failures"]:
+            print(f"  - {failure}")
+
     return 1
 
 
