@@ -2,8 +2,8 @@ import sys
 from pathlib import Path
 
 from secura.policy import evaluate_policy, load_policy
-from secura.secrets import scan_file
-
+from secura.secrets import scan_file as scan_secrets
+from secura.sast import scan_file as scan_sast
 
 def scan_directory(directory):
     all_findings = []
@@ -39,7 +39,7 @@ def scan_directory(directory):
             continue
 
         if any(
-            part in {".git", ".venv", "__pycache__"}
+            part in {".git", ".venv", "__pycache__" , "tests"}
             for part in path.parts
         ):
             continue
@@ -47,8 +47,12 @@ def scan_directory(directory):
         if path.suffix.lower() not in allowed_extensions:
             continue
 
-        findings = scan_file(path)
-        all_findings.extend(findings)
+        secret_findings = scan_secrets(path)
+        all_findings.extend(secret_findings)
+
+        if path.name != "sast.py":
+            sast_findings = scan_sast(path)
+            all_findings.extend(sast_findings)
 
     return all_findings
 
