@@ -4,6 +4,7 @@ from pathlib import Path
 from secura.policy import evaluate_policy, load_policy
 from secura.secrets import scan_file as scan_secrets
 from secura.sast import scan_file as scan_sast
+from secura.dependencies import scan_dependency_files
 
 def scan_directory(directory):
     all_findings = []
@@ -65,6 +66,9 @@ def main():
     print("=" * 50)
 
     findings = scan_directory(directory)
+
+    dependency_findings = scan_dependency_files(directory)
+    findings.extend(dependency_findings)
 
     policy = load_policy()
     result = evaluate_policy(findings, policy)
