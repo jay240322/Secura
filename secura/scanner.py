@@ -5,6 +5,7 @@ from secura.policy import evaluate_policy, load_policy
 from secura.secrets import scan_file as scan_secrets
 from secura.sast import scan_file as scan_sast
 from secura.dependencies import scan_dependency_files
+from secura.report import generate_report
 
 def scan_directory(directory):
     all_findings = []
@@ -72,6 +73,7 @@ def main():
 
     policy = load_policy()
     result = evaluate_policy(findings, policy)
+    generate_report(result, findings)
 
     print("\nSecurity Summary")
     print("-" * 30)
