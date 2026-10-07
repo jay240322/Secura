@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   security-scan:
-    name: Run Secura Security Scan
+    name: Secura Security Gate
     runs-on: ubuntu-latest
 
     steps:
