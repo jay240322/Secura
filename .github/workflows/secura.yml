@@ -31,8 +31,25 @@ jobs:
           python -c "import yaml; print('PyYAML:', yaml.__version__)"
 
       - name: Run Secura
+        id: secura
+        continue-on-error: true
         run: |
           python -m secura.scanner .
+
+      - name: Publish GitHub Security Annotations
+        if: always()
+        run: |
+          if [ -f secura-report.json ]; then
+            python -m secura.github_annotations
+          else
+            echo "Secura report was not generated."
+          fi
+
+      - name: Fail if Secura security gate failed
+        if: steps.secura.outcome == 'failure'
+        run: |
+          echo "Secura security gate failed."
+          exit 1
 
       - name: Upload Secura Security Report
         if: always()
