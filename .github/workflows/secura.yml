@@ -16,6 +16,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -30,11 +32,12 @@ jobs:
         run: |
           python -c "import yaml; print('PyYAML:', yaml.__version__)"
 
-      - name: Run Secura
+      - name: Run Secura on changed files
         id: secura
         continue-on-error: true
         run: |
-          python -m secura.scanner .
+          git fetch origin main
+          python -m secura.scanner . --changed
 
       - name: Publish GitHub Security Annotations
         if: always()
@@ -57,3 +60,4 @@ jobs:
         with:
           name: secura-security-report
           path: secura-report.json
+          if-no-files-found: warn

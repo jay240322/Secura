@@ -79,12 +79,16 @@ def parse_csproj(file_path):
 
     return dependencies
 
-
-def scan_dependencies(directory):
+def scan_dependencies(directory, files=None):
+    """Parse dependencies from a directory or a specific list of files."""
     dependencies = []
 
-    for path in Path(directory).rglob("*"):
+    if files is not None:
+        paths = [Path(filename) for filename in files]
+    else:
+        paths = Path(directory).rglob("*")
 
+    for path in paths:
         if not path.is_file():
             continue
 
@@ -105,10 +109,11 @@ def scan_dependencies(directory):
 
     return dependencies
 
-def scan_dependency_files(directory):
+def scan_dependency_files(directory, files=None):
+    """Scan dependencies in a directory or selected files for vulnerabilities."""
     findings = []
 
-    dependencies = scan_dependencies(directory)
+    dependencies = scan_dependencies(directory, files=files)
 
     for dependency in dependencies:
         name = dependency["name"]
@@ -117,13 +122,10 @@ def scan_dependency_files(directory):
 
         if file_path.endswith("requirements.txt"):
             ecosystem = "PyPI"
-
         elif file_path.endswith("package.json"):
             ecosystem = "npm"
-
         elif file_path.endswith(".csproj"):
             ecosystem = "NuGet"
-
         else:
             continue
 
