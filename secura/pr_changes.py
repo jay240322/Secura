@@ -1,3 +1,4 @@
+
 import subprocess
 from pathlib import Path
 
@@ -5,6 +6,11 @@ ALLOWED_EXTENSIONS = {
     ".py", ".js", ".ts", ".jsx", ".tsx", ".java", ".cs", ".php", ".go",
     ".rb", ".cpp", ".c", ".h", ".json", ".yaml", ".yml", ".xml", ".env",
     ".ini", ".config", ".properties", ".toml",
+}
+
+DEPENDENCY_MANIFESTS = {
+    "requirements.txt",
+    "package.json",
 }
 
 IGNORED_PARTS = {".git", ".venv", "__pycache__", "tests"}
@@ -40,7 +46,7 @@ def get_changed_files(base_ref="origin/main"):
 
 
 def get_scannable_changed_files(base_ref="origin/main"):
-    """Return changed files that Secura knows how to scan."""
+    """Return changed source files that Secura knows how to scan."""
     scannable = []
 
     for filename in get_changed_files(base_ref):
@@ -55,6 +61,28 @@ def get_scannable_changed_files(base_ref="origin/main"):
     return scannable
 
 
+def get_changed_dependency_files(base_ref="origin/main"):
+    """Return changed supported dependency manifests."""
+    manifests = []
+
+    for filename in get_changed_files(base_ref):
+        path = Path(filename)
+
+        if any(part in IGNORED_PARTS for part in path.parts):
+            continue
+
+        if (
+            path.name in DEPENDENCY_MANIFESTS
+            or path.suffix.lower() == ".csproj"
+        ):
+            manifests.append(filename)
+
+    return manifests
+
+
 if __name__ == "__main__":
     for filename in get_scannable_changed_files():
         print(filename)
+
+    for filename in get_changed_dependency_files():
+        print(f"Dependency manifest: {filename}")

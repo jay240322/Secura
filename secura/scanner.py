@@ -1,3 +1,4 @@
+
 import sys
 from pathlib import Path
 
@@ -6,7 +7,10 @@ from secura.secrets import scan_file as scan_secrets
 from secura.sast import scan_file as scan_sast
 from secura.dependencies import scan_dependency_files
 from secura.report import generate_report
-from secura.pr_changes import get_scannable_changed_files
+from secura.pr_changes import (
+    get_scannable_changed_files,
+    get_changed_dependency_files,
+)
 
 
 def scan_directory(directory):
@@ -32,36 +36,33 @@ def scan_directory(directory):
         if path.suffix.lower() not in allowed_extensions:
             continue
 
-        secret_findings = scan_secrets(path)
-        all_findings.extend(secret_findings)
+        all_findings.extend(scan_secrets(path))
 
         if path.name != "sast.py":
-            sast_findings = scan_sast(path)
-            all_findings.extend(sast_findings)
+            all_findings.extend(scan_sast(path))
 
     return all_findings
 
 
 def scan_changed_files(directory=".", base_ref="origin/main"):
-    """Scan supported files changed relative to the base branch."""
+    """Scan supported source files changed relative to the base branch."""
     root = Path(directory).resolve()
     all_findings = []
 
     for filename in get_scannable_changed_files(base_ref):
         path = (root / filename).resolve()
 
+        # Prevent paths from escaping the selected project directory.
         if not path.is_relative_to(root):
             continue
 
         if not path.is_file():
             continue
 
-        secret_findings = scan_secrets(path)
-        all_findings.extend(secret_findings)
+        all_findings.extend(scan_secrets(path))
 
         if path.name != "sast.py":
-            sast_findings = scan_sast(path)
-            all_findings.extend(sast_findings)
+            all_findings.extend(scan_sast(path))
 
     return all_findings
 
@@ -80,16 +81,11 @@ def main():
 
     if changed_mode:
         print("Scanning changed files only...")
+
         findings = scan_changed_files(directory)
 
-        changed_files = get_scannable_changed_files()
-
-        dependency_files = [
-            filename
-            for filename in changed_files
-            if Path(filename).name in {"requirements.txt", "package.json"}
-            or filename.endswith(".csproj")
-        ]
+        # Scan changed dependency manifests separately.
+        dependency_files = get_changed_dependency_files()
 
         if dependency_files:
             dependency_findings = scan_dependency_files(
@@ -97,8 +93,10 @@ def main():
                 files=dependency_files,
             )
             findings.extend(dependency_findings)
+
     else:
         print("Scanning the full repository...")
+
         findings = scan_directory(directory)
 
         dependency_findings = scan_dependency_files(directory)
@@ -140,7 +138,5 @@ def main():
             print(f"  - {failure}")
 
     return 1
-
-
 if __name__ == "__main__":
     sys.exit(main())
