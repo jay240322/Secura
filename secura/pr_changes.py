@@ -62,7 +62,17 @@ def get_scannable_changed_files(base_ref="origin/main"):
 
 
 def get_changed_dependency_files(base_ref="origin/main"):
-    """Return changed supported dependency manifests."""
+    """Return repository-relative paths of changed dependency manifests.
+
+    Compare HEAD with its merge base with ``base_ref`` in the current working
+    directory's Git repository; uncommitted changes and deletions are excluded.
+    Match the exact names ``requirements.txt`` and ``package.json``, or a
+    case-insensitive ``.csproj`` suffix, skipping paths containing ``.git``,
+    ``.venv``, ``__pycache__``, or ``tests``. Paths need not exist on disk.
+
+    Propagate RuntimeError if Git cannot perform the comparison, or OSError
+    if Git cannot be started.
+    """
     manifests = []
 
     for filename in get_changed_files(base_ref):
