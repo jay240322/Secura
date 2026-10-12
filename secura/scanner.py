@@ -14,7 +14,14 @@ from secura.pr_changes import (
 
 
 def scan_directory(directory):
-    """Scan the entire directory for secrets and SAST findings."""
+    """Return secret and SAST findings from supported files under ``directory``.
+
+    Recurse into subdirectories, skipping paths containing ``.git``, ``.venv``,
+    ``__pycache__``, or ``tests`` and files with unsupported suffixes. Files named
+    ``sast.py`` receive only the secret scan. Each finding contains its type,
+    severity, file path, and 1-based line number. File read errors contribute
+    no findings from the affected scanner; SAST also skips invalid UTF-8.
+    """
     all_findings = []
 
     allowed_extensions = {
@@ -45,7 +52,19 @@ def scan_directory(directory):
 
 
 def scan_changed_files(directory=".", base_ref="origin/main"):
-    """Scan supported source files changed relative to the base branch."""
+    """Return secret and SAST findings for supported changed source files.
+
+    Select added, copied, modified, and renamed files between the merge base
+    with ``base_ref`` and HEAD in the current working directory's repository.
+    Uncommitted changes are excluded from selection, but current file contents
+    are scanned. Resolve selected paths under ``directory`` and skip missing
+    files and paths resolving outside it. The source-file filters and scanner
+    exclusions match ``scan_directory``; finding paths are absolute.
+
+    File read errors contribute no findings from the affected scanner; SAST
+    also skips invalid UTF-8. Git comparison failures raise RuntimeError;
+    errors starting Git and resolving paths propagate.
+    """
     root = Path(directory).resolve()
     all_findings = []
 
@@ -68,6 +87,24 @@ def scan_changed_files(directory=".", base_ref="origin/main"):
 
 
 def main():
+    """Run the CLI scan using ``sys.argv`` and return the security gate status.
+
+    Scan the first argument not starting with ``--`` as a directory, defaulting
+    to ``.``. With ``--changed``, select source files and dependency manifests
+    changed since the merge base of ``origin/main`` and HEAD in the current
+    working directory's repository. Changed source paths are resolved under
+    the selected directory; changed manifest paths use the working directory.
+
+    Query OSV for dependency vulnerabilities, load ``config/security-policy.yml``
+    (or defaults if absent), overwrite ``secura-report.json``, and print results.
+    Policy and report paths are relative to the working directory. Return 0
+    when the policy passes or 1 when it fails. Caught OSV HTTP, URL, and timeout
+    errors yield no dependency findings for that query.
+
+    Git, dependency/policy parsing, and report-writing errors propagate. Printing
+    a finding without a ``line`` key (including dependency findings) raises
+    KeyError after the report is written instead of returning a gate status.
+    """
     args = sys.argv[1:]
     changed_mode = "--changed" in args
 
