@@ -1,3 +1,4 @@
+
 import re
 from pathlib import Path
 
@@ -6,14 +7,14 @@ SAST_RULES = [
         "type": "SQL Injection",
         "severity": "HIGH",
         "pattern": re.compile(
-            r"""(?i)(SELECT|INSERT|UPDATE|DELETE).*(\+|\%|\bformat\s*\()"""
+            r"""(?i)(SELECT|INSERT|UPDATE|DELETE).*(\+|%|\bformat\s*\()"""
         ),
     },
     {
-        "type":"Command Injection",
+        "type": "Command Injection",
         "severity": "HIGH",
         "pattern": re.compile(
-            r"""(?i)\bverify\s*=\s*False\b"""
+            r"""\bos\.system\s*\("""
         ),
     },
     {
@@ -32,6 +33,7 @@ SAST_RULES = [
     },
 ]
 
+
 def scan_file(file_path):
     findings = []
 
@@ -41,9 +43,7 @@ def scan_file(file_path):
         return findings
 
     for line_number, line in enumerate(content.splitlines(), start=1):
-
         for rule in SAST_RULES:
-
             if rule["pattern"].search(line):
                 findings.append(
                     {
@@ -54,4 +54,4 @@ def scan_file(file_path):
                     }
                 )
 
-    return findings 
+    return findings
