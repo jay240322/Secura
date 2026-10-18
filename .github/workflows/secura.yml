@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: read
+  checks: write
 
 jobs:
   security-scan:
@@ -40,7 +41,11 @@ jobs:
           python -m secura.scanner . --changed
 
       - name: Publish GitHub Security Annotations
-        if: always()
+        if: always() && github.event_name == 'pull_request'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_EVENT_PATH: ${{ github.event_path }}
         run: |
           if [ -f secura-report.json ]; then
             python -m secura.github_annotations
