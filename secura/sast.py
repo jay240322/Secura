@@ -1,3 +1,4 @@
+
 import re
 from pathlib import Path
 
@@ -6,29 +7,23 @@ SAST_RULES = [
         "type": "SQL Injection",
         "severity": "HIGH",
         "pattern": re.compile(
-            r"""(?i)(SELECT|INSERT|UPDATE|DELETE).*(\+|%|\bformat\s*\()"""
+            r"""(?i)\b(?:SELECT|INSERT|UPDATE|DELETE)\b.*(?:\+|%|\.\s*format\s*\(|\bf["'])"""
         ),
     },
     {
         "type": "Command Injection",
         "severity": "HIGH",
-        "pattern": re.compile(
-            r"""\bos\.system\s*\("""
-        ),
+        "pattern": re.compile(r"""\bos\.system\s*\("""),
     },
     {
         "type": "SSL Verification Disabled",
         "severity": "HIGH",
-        "pattern": re.compile(
-            r"""(?i)\bverify\s*=\s*False\b"""
-        ),
+        "pattern": re.compile(r"""(?i)\bverify\s*=\s*False\b"""),
     },
     {
         "type": "Weak MD5 Hashing",
         "severity": "MEDIUM",
-        "pattern": re.compile(
-            r"""(?i)\bhashlib\.md5\s*\("""
-        ),
+        "pattern": re.compile(r"""(?i)\bhashlib\.md5\s*\("""),
     },
 ]
 
