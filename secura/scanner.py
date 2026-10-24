@@ -13,39 +13,67 @@ from secura.pr_changes import (
 )
 
 
+ALLOWED_EXTENSIONS = {
+    ".py", ".js", ".ts", ".jsx", ".tsx", ".java", ".cs", ".php", ".go",
+    ".rb", ".cpp", ".c", ".h", ".json", ".yaml", ".yml", ".xml", ".env",
+    ".ini", ".config", ".properties", ".toml",
+}
+
+SKIP_DIRECTORIES = {
+    ".git",
+    ".venv",
+    "__pycache__",
+    "tests",
+}
+
+SKIP_FILES = {
+    "secura-report.json",
+}
+
+SKIP_SAST_FILES = {
+    "sast.py",
+    "remediation.py",
+}
+
+
+def should_skip_path(path):
+    """Check whether a path should be excluded from scanning."""
+    if path.name in SKIP_FILES:
+        return True
+
+    if any(part in SKIP_DIRECTORIES for part in path.parts):
+        return True
+
+    return False
+
+
 def scan_directory(directory):
-    """Scan the entire directory for secrets and SAST findings."""
+    """Scan supported files for secrets and SAST findings."""
+    root = Path(directory).resolve()
     all_findings = []
 
-    allowed_extensions = {
-        ".py", ".js", ".ts", ".jsx", ".tsx", ".java", ".cs", ".php", ".go",
-        ".rb", ".cpp", ".c", ".h", ".json", ".yaml", ".yml", ".xml", ".env",
-        ".ini", ".config", ".properties", ".toml",
-    }
-
-    for path in Path(directory).rglob("*"):
+    for path in root.rglob("*"):
         if not path.is_file():
             continue
 
-        if any(
-            part in {".git", ".venv", "__pycache__", "tests"}
-            for part in path.parts
-        ):
+        if should_skip_path(path):
             continue
 
-        if path.suffix.lower() not in allowed_extensions:
+        if path.suffix.lower() not in ALLOWED_EXTENSIONS:
             continue
 
+        # Scan for secrets in supported files.
         all_findings.extend(scan_secrets(path))
 
-        if path.name != "sast.py":
+        # Avoid scanning Secura's own rules and remediation examples.
+        if path.name not in SKIP_SAST_FILES:
             all_findings.extend(scan_sast(path))
 
     return all_findings
 
 
 def scan_changed_files(directory=".", base_ref="origin/main"):
-    """Scan supported source files changed relative to the base branch."""
+    """Scan supported files changed relative to the base branch."""
     root = Path(directory).resolve()
     all_findings = []
 
@@ -59,9 +87,17 @@ def scan_changed_files(directory=".", base_ref="origin/main"):
         if not path.is_file():
             continue
 
+        if should_skip_path(path):
+            continue
+
+        if path.suffix.lower() not in ALLOWED_EXTENSIONS:
+            continue
+
+        # Scan for secrets in changed files.
         all_findings.extend(scan_secrets(path))
 
-        if path.name != "sast.py":
+        # Apply the same SAST exclusions as full-repository scanning.
+        if path.name not in SKIP_SAST_FILES:
             all_findings.extend(scan_sast(path))
 
     return all_findings
@@ -71,8 +107,10 @@ def main():
     args = sys.argv[1:]
     changed_mode = "--changed" in args
 
-    # Support an optional directory argument without treating flags as paths.
-    directory_args = [arg for arg in args if not arg.startswith("--")]
+    # Support an optional directory without treating flags as paths.
+    directory_args = [
+        arg for arg in args if not arg.startswith("--")
+    ]
     directory = directory_args[0] if directory_args else "."
 
     print("=" * 50)
@@ -102,6 +140,7 @@ def main():
         dependency_findings = scan_dependency_files(directory)
         findings.extend(dependency_findings)
 
+    # Evaluate findings and generate the JSON report.
     policy = load_policy()
     result = evaluate_policy(findings, policy)
     generate_report(result, findings)
@@ -138,5 +177,7 @@ def main():
             print(f"  - {failure}")
 
     return 1
+
+
 if __name__ == "__main__":
     sys.exit(main())

@@ -1,5 +1,9 @@
+
 import json
 from pathlib import Path
+
+from secura.remediation import enrich_findings
+
 
 def generate_report(result, findings, output_path="secura-report.json"):
     report = {
@@ -7,7 +11,7 @@ def generate_report(result, findings, output_path="secura-report.json"):
         "score": result["score"],
         "counts": result["counts"],
         "failures": result["failures"],
-        "findings": findings, 
+        "findings": enrich_findings(findings),
     }
 
     Path(output_path).write_text(
