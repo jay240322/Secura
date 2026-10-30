@@ -4,6 +4,7 @@ import hmac
 import json
 import logging
 import os
+from urllib.parse import quote
 
 from fastapi import FastAPI, Header, HTTPException, Request
 from requests.exceptions import RequestException
@@ -11,7 +12,10 @@ from requests.exceptions import RequestException
 from secura.github_app.auth import (
     create_installation_token,
     get_pull_request_files,
+    get_repository_file_content,
 )
+from secura.github_app.checks import create_check_run
+from secura.github_app.pr_scanner import scan_github_pull_request
 
 
 app = FastAPI(title="Secura GitHub App")
@@ -85,6 +89,7 @@ async def github_webhook(
         repository_name = repository.get("full_name")
         pull_number = pull_request.get("number")
         installation_id = installation.get("id")
+        head_sha = pull_request.get("head", {}).get("sha")
 
         logger.info(
             "Pull request event received. Action: %s, "
@@ -94,12 +99,20 @@ async def github_webhook(
             pull_number,
         )
 
-        # Process only PR creation, reopening, and new commits.
+        # Process PR creation, reopening, and new commits.
         if action in {"opened", "reopened", "synchronize"}:
-            if not repository_name or not pull_number or not installation_id:
+            if (
+                not repository_name
+                or not pull_number
+                or not installation_id
+                or not head_sha
+            ):
                 raise HTTPException(
                     status_code=400,
-                    detail="Missing repository, PR number, or installation ID",
+                    detail=(
+                        "Missing repository, PR number, "
+                        "installation ID, or head SHA"
+                    ),
                 )
 
             owner, repo = repository_name.split("/", 1)
@@ -116,6 +129,90 @@ async def github_webhook(
                     pull_number=pull_number,
                 )
 
+                def fetch_file_content(filename):
+                    encoded_path = quote(filename, safe="/")
+
+                    return get_repository_file_content(
+                        installation_token=installation_token,
+                        owner=owner,
+                        repo=repo,
+                        path=encoded_path,
+                        ref=head_sha,
+                    )
+
+                scan_output = scan_github_pull_request(
+                    changed_files=changed_files,
+                    fetch_file_content=fetch_file_content,
+                )
+
+                result = scan_output["result"]
+                findings = scan_output["findings"]
+
+                passed = result["passed"]
+                score = result["score"]
+                counts = result["counts"]
+                failures = result["failures"]
+
+                conclusion = "success" if passed else "failure"
+
+                title = (
+                    "Secura security scan passed"
+                    if passed
+                    else "Secura security scan failed"
+                )
+
+                summary = (
+                    f"**Security score:** {score}/100\n\n"
+                    f"**Findings:**\n"
+                    f"- Critical: {counts['CRITICAL']}\n"
+                    f"- High: {counts['HIGH']}\n"
+                    f"- Medium: {counts['MEDIUM']}\n"
+                    f"- Low: {counts['LOW']}\n"
+                )
+
+                if failures:
+                    summary += "\n**Policy failures:**\n"
+
+                    for failure in failures:
+                        summary += f"- {failure}\n"
+
+                if findings:
+                    summary += "\n**Findings:**\n"
+
+                    for finding in findings:
+                        summary += (
+                            f"- **{finding.get('severity', 'MEDIUM')}** "
+                            f"{finding.get('type', 'Security finding')} "
+                            f"in `{finding.get('file', 'unknown')}` "
+                            f"at line {finding.get('line', '?')}\n"
+                        )
+
+                        recommendation = finding.get("recommendation")
+
+                        if recommendation:
+                            summary += (
+                                f"  - Recommendation: {recommendation}\n"
+                            )
+
+                create_check_run(
+                    installation_token=installation_token,
+                    owner=owner,
+                    repo=repo,
+                    head_sha=head_sha,
+                    conclusion=conclusion,
+                    title=title,
+                    summary=summary,
+                )
+
+                logger.info(
+                    "Secura scan completed for %s PR #%s. "
+                    "Conclusion: %s, score: %s",
+                    repository_name,
+                    pull_number,
+                    conclusion,
+                    score,
+                )
+
             except RequestException:
                 logger.exception(
                     "GitHub API request failed for %s PR #%s",
@@ -125,20 +222,7 @@ async def github_webhook(
 
                 raise HTTPException(
                     status_code=502,
-                    detail="Unable to retrieve pull request files from GitHub",
-                )
-
-            logger.info(
-                "Fetched %s changed files from %s PR #%s",
-                len(changed_files),
-                repository_name,
-                pull_number,
-            )
-
-            for changed_file in changed_files:
-                logger.info(
-                    "Changed file: %s",
-                    changed_file.get("filename", "unknown"),
+                    detail="Unable to complete GitHub API request",
                 )
 
     else:
