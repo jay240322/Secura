@@ -123,3 +123,31 @@ def get_pull_request_files(
         page += 1
 
     return files
+
+def get_repository_file_content(
+    installation_token: str,
+    owner: str,
+    repo: str,
+    path: str,
+    ref: str,
+) -> str:
+    """Fetch a repository file's text content at a specific Git ref."""
+
+    url = (
+        f"{GITHUB_API_URL}/repos/{owner}/{repo}/contents/{path}"
+    )
+
+    response = requests.get(
+        url,
+        headers={
+            "Authorization": f"Bearer {installation_token}",
+            "Accept": "application/vnd.github.raw+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+        },
+        params={"ref": ref},
+        timeout=15,
+    )
+
+    response.raise_for_status()
+
+    return response.text
