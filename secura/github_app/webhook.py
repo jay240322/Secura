@@ -1,4 +1,3 @@
-
 import hashlib
 import hmac
 import json
@@ -14,7 +13,7 @@ from secura.github_app.auth import (
     get_pull_request_files,
     get_repository_file_content,
 )
-from secura.github_app.checks import create_check_run
+from secura.github_app.checks import create_check_run, update_check_run
 from secura.github_app.pr_scanner import scan_github_pull_request
 
 
@@ -46,7 +45,6 @@ async def github_webhook(
 ):
     if not WEBHOOK_SECRET:
         logger.error("SECURA_WEBHOOK_SECRET is not configured")
-
         raise HTTPException(
             status_code=500,
             detail="Webhook secret is not configured",
@@ -67,7 +65,6 @@ async def github_webhook(
         x_hub_signature_256,
     ):
         logger.warning("Invalid webhook signature received")
-
         raise HTTPException(
             status_code=401,
             detail="Invalid signature",
@@ -75,10 +72,8 @@ async def github_webhook(
 
     try:
         payload = json.loads(body)
-
     except json.JSONDecodeError:
         logger.exception("Invalid JSON payload received")
-
         raise HTTPException(
             status_code=400,
             detail="Invalid JSON payload",
@@ -91,11 +86,16 @@ async def github_webhook(
             "Installation event received. Action: %s",
             action,
         )
-
         return {
             "status": "received",
             "event": x_github_event,
             "action": action,
+        }
+
+    if x_github_event == "ping":
+        return {
+            "status": "ok",
+            "event": "ping",
         }
 
     if x_github_event != "pull_request":
@@ -103,7 +103,6 @@ async def github_webhook(
             "Ignoring unsupported GitHub event: %s",
             x_github_event,
         )
-
         return {
             "status": "ignored",
             "event": x_github_event,
@@ -120,8 +119,7 @@ async def github_webhook(
     head_sha = pull_request.get("head", {}).get("sha")
 
     logger.info(
-        "Pull request event received. "
-        "Action: %s, Repository: %s, PR number: %s",
+        "Pull request event received. Action: %s, Repository: %s, PR number: %s",
         action,
         repository_name,
         pull_number,
@@ -138,7 +136,6 @@ async def github_webhook(
             "Ignoring pull request action: %s",
             action,
         )
-
         return {
             "status": "ignored",
             "event": x_github_event,
@@ -159,7 +156,6 @@ async def github_webhook(
             installation_id,
             head_sha,
         )
-
         raise HTTPException(
             status_code=400,
             detail=(
@@ -168,24 +164,35 @@ async def github_webhook(
             ),
         )
 
-    try:
-        owner, repo = repository_name.split("/", 1)
+    check_run_id = None
+    installation_token = None
+    owner, repo = repository_name.split("/", 1)
 
+    try:
         logger.info(
             "Creating installation token for %s",
             repository_name,
         )
+        installation_token = create_installation_token(installation_id)
 
-        installation_token = create_installation_token(
-            installation_id
-        )
+        # 1. Start Check Run in_progress so the user immediately sees the pending check
+        try:
+            init_check = create_check_run(
+                installation_token=installation_token,
+                owner=owner,
+                repo=repo,
+                head_sha=head_sha,
+                status="in_progress",
+            )
+            check_run_id = init_check.get("id")
+        except Exception as exc:
+            logger.warning("Could not set check run to in_progress: %s", exc)
 
         logger.info(
             "Fetching changed files for %s PR #%s",
             repository_name,
             pull_number,
         )
-
         changed_files = get_pull_request_files(
             installation_token=installation_token,
             owner=owner,
@@ -203,7 +210,6 @@ async def github_webhook(
                 filename,
                 safe="/",
             )
-
             return get_repository_file_content(
                 installation_token=installation_token,
                 owner=owner,
@@ -226,72 +232,39 @@ async def github_webhook(
         result = scan_output["result"]
         findings = scan_output["findings"]
 
-        passed = result["passed"]
-        score = result["score"]
-        counts = result["counts"]
-        failures = result["failures"]
-
-        conclusion = "success" if passed else "failure"
-
-        title = (
-            "Secura security scan passed"
-            if passed
-            else "Secura security scan failed"
-        )
-
-        summary = (
-            f"**Security score:** {score}/100\n\n"
-            f"**Findings:**\n"
-            f"- Critical: {counts['CRITICAL']}\n"
-            f"- High: {counts['HIGH']}\n"
-            f"- Medium: {counts['MEDIUM']}\n"
-            f"- Low: {counts['LOW']}\n"
-        )
-
-        if failures:
-            summary += "\n**Policy failures:**\n"
-
-            for failure in failures:
-                summary += f"- {failure}\n"
-
-        if findings:
-            summary += "\n**Findings:**\n"
-
-            for finding in findings:
-                summary += (
-                    f"- **{finding.get('severity', 'MEDIUM')}** "
-                    f"{finding.get('type', 'Security finding')} "
-                    f"in `{finding.get('file', 'unknown')}` "
-                    f"at line {finding.get('line', '?')}\n"
-                )
-
-                recommendation = finding.get("recommendation")
-
-                if recommendation:
-                    summary += (
-                        f"  - Recommendation: "
-                        f"{recommendation}\n"
-                    )
-
         logger.info(
-            "Creating Secura Check Run for %s PR #%s",
+            "Finalizing Secura Check Run for %s PR #%s (findings: %s)",
             repository_name,
             pull_number,
+            len(findings),
         )
 
-        create_check_run(
-            installation_token=installation_token,
-            owner=owner,
-            repo=repo,
-            head_sha=head_sha,
-            conclusion=conclusion,
-            title=title,
-            summary=summary,
-        )
+        # 2. Update existing check run or create completed check run
+        if check_run_id:
+            check_run = update_check_run(
+                installation_token=installation_token,
+                owner=owner,
+                repo=repo,
+                check_run_id=check_run_id,
+                findings=findings,
+                result=result,
+            )
+        else:
+            check_run = create_check_run(
+                installation_token=installation_token,
+                owner=owner,
+                repo=repo,
+                head_sha=head_sha,
+                status="completed",
+                findings=findings,
+                result=result,
+            )
+
+        conclusion = check_run.get("conclusion")
+        score = result.get("score")
 
         logger.info(
-            "Secura scan completed for %s PR #%s. "
-            "Conclusion: %s, score: %s",
+            "Secura scan completed for %s PR #%s. Conclusion: %s, score: %s",
             repository_name,
             pull_number,
             conclusion,
@@ -299,36 +272,63 @@ async def github_webhook(
         )
 
         return {
-            "status": "received",
+            "status": "completed",
             "event": x_github_event,
             "action": action,
             "repository": repository_name,
             "pull_request": pull_number,
             "conclusion": conclusion,
             "score": score,
+            "findings_count": len(findings),
         }
 
     except HTTPException:
         raise
 
-    except RequestException:
+    except RequestException as exc:
         logger.exception(
             "GitHub API request failed for %s PR #%s",
             repository_name,
             pull_number,
         )
+        if check_run_id and installation_token:
+            try:
+                update_check_run(
+                    installation_token=installation_token,
+                    owner=owner,
+                    repo=repo,
+                    check_run_id=check_run_id,
+                    conclusion="failure",
+                    title="Secura Security Gate: API error",
+                    summary="GitHub API request failed during the security scan.",
+                )
+            except Exception:
+                pass
 
         raise HTTPException(
             status_code=502,
             detail="Unable to complete GitHub API request",
         )
 
-    except Exception:
+    except Exception as exc:
         logger.exception(
             "Unexpected error while scanning %s PR #%s",
             repository_name,
             pull_number,
         )
+        if check_run_id and installation_token:
+            try:
+                update_check_run(
+                    installation_token=installation_token,
+                    owner=owner,
+                    repo=repo,
+                    check_run_id=check_run_id,
+                    conclusion="failure",
+                    title="Secura Security Gate: Scan error",
+                    summary=f"An unexpected error occurred during scan: {exc}",
+                )
+            except Exception:
+                pass
 
         raise HTTPException(
             status_code=500,

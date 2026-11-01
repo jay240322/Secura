@@ -1,4 +1,4 @@
-
+import os
 import sys
 from pathlib import Path
 
@@ -10,24 +10,24 @@ from secura.report import generate_report
 from secura.pr_changes import (
     get_scannable_changed_files,
     get_changed_dependency_files,
+    is_scannable_file,
 )
 
-
-ALLOWED_EXTENSIONS = {
-    ".py", ".js", ".ts", ".jsx", ".tsx", ".java", ".cs", ".php", ".go",
-    ".rb", ".cpp", ".c", ".h", ".json", ".yaml", ".yml", ".xml", ".env",
-    ".ini", ".config", ".properties", ".toml",
-}
 
 SKIP_DIRECTORIES = {
     ".git",
     ".venv",
     "__pycache__",
+    ".pytest_cache",
     "tests",
 }
 
 SKIP_FILES = {
     "secura-report.json",
+}
+
+SKIP_SECRET_FILES = {
+    "secrets.py",
 }
 
 SKIP_SAST_FILES = {
@@ -36,7 +36,7 @@ SKIP_SAST_FILES = {
 }
 
 
-def should_skip_path(path):
+def should_skip_path(path: Path) -> bool:
     """Check whether a path should be excluded from scanning."""
     if path.name in SKIP_FILES:
         return True
@@ -47,27 +47,34 @@ def should_skip_path(path):
     return False
 
 
-def scan_directory(directory):
-    """Scan supported files for secrets and SAST findings."""
+def scan_directory(directory="."):
+    """Scan supported files for secrets and SAST findings efficiently."""
     root = Path(directory).resolve()
     all_findings = []
 
-    for path in root.rglob("*"):
-        if not path.is_file():
-            continue
+    for dirpath, dirnames, filenames in os.walk(root):
+        # Prune ignored and hidden directories so os.walk does not descend into them
+        dirnames[:] = [
+            d for d in dirnames
+            if d not in SKIP_DIRECTORIES and not (d.startswith(".") and d not in {".secrets"})
+        ]
 
-        if should_skip_path(path):
-            continue
+        for filename in filenames:
+            path = Path(dirpath) / filename
 
-        if path.suffix.lower() not in ALLOWED_EXTENSIONS:
-            continue
+            if should_skip_path(path):
+                continue
 
-        # Scan for secrets in supported files.
-        all_findings.extend(scan_secrets(path))
+            if not is_scannable_file(path):
+                continue
 
-        # Avoid scanning Secura's own rules and remediation examples.
-        if path.name not in SKIP_SAST_FILES:
-            all_findings.extend(scan_sast(path))
+            # Scan for secrets in supported files
+            if path.name not in SKIP_SECRET_FILES:
+                all_findings.extend(scan_secrets(path))
+
+            # Avoid scanning Secura's own rules and remediation examples
+            if path.name not in SKIP_SAST_FILES:
+                all_findings.extend(scan_sast(path))
 
     return all_findings
 
@@ -80,7 +87,7 @@ def scan_changed_files(directory=".", base_ref="origin/main"):
     for filename in get_scannable_changed_files(base_ref):
         path = (root / filename).resolve()
 
-        # Prevent paths from escaping the selected project directory.
+        # Prevent paths from escaping the selected project directory
         if not path.is_relative_to(root):
             continue
 
@@ -90,13 +97,14 @@ def scan_changed_files(directory=".", base_ref="origin/main"):
         if should_skip_path(path):
             continue
 
-        if path.suffix.lower() not in ALLOWED_EXTENSIONS:
+        if not is_scannable_file(path):
             continue
 
-        # Scan for secrets in changed files.
-        all_findings.extend(scan_secrets(path))
+        # Scan for secrets in changed files
+        if path.name not in SKIP_SECRET_FILES:
+            all_findings.extend(scan_secrets(path))
 
-        # Apply the same SAST exclusions as full-repository scanning.
+        # Apply the same SAST exclusions as full-repository scanning
         if path.name not in SKIP_SAST_FILES:
             all_findings.extend(scan_sast(path))
 
@@ -104,25 +112,31 @@ def scan_changed_files(directory=".", base_ref="origin/main"):
 
 
 def main():
+    if hasattr(sys.stdout, "reconfigure"):
+        try:
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
     args = sys.argv[1:]
     changed_mode = "--changed" in args
 
-    # Support an optional directory without treating flags as paths.
+    # Support an optional directory without treating flags as paths
     directory_args = [
         arg for arg in args if not arg.startswith("--")
     ]
     directory = directory_args[0] if directory_args else "."
 
-    print("=" * 50)
-    print("           SECURA SECURITY SCAN")
-    print("=" * 50)
+    print("=" * 60)
+    print("                 SECURA SECURITY SCAN")
+    print("=" * 60)
 
     if changed_mode:
-        print("Scanning changed files only...")
+        print("Mode: Scanning changed files relative to base branch...")
 
         findings = scan_changed_files(directory)
 
-        # Scan changed dependency manifests separately.
+        # Scan changed dependency manifests separately
         dependency_files = get_changed_dependency_files()
 
         if dependency_files:
@@ -133,14 +147,14 @@ def main():
             findings.extend(dependency_findings)
 
     else:
-        print("Scanning the full repository...")
+        print("Mode: Scanning full repository...")
 
         findings = scan_directory(directory)
 
         dependency_findings = scan_dependency_files(directory)
         findings.extend(dependency_findings)
 
-    # Evaluate findings and generate the JSON report.
+    # Evaluate findings and generate the JSON report
     policy = load_policy()
     result = evaluate_policy(findings, policy)
     generate_report(result, findings)
@@ -165,11 +179,21 @@ def main():
                 f"-> {finding['file']}:{finding['line']}"
             )
 
-    if result["passed"]:
-        print("\n✓ SECURITY GATE: PASSED")
+    has_violations = not result["passed"] or len(findings) > 0 and (
+        result["counts"]["CRITICAL"] > 0 or result["counts"]["HIGH"] > 0
+    )
+
+    if not has_violations and result["passed"]:
+        print("\n" + "=" * 60)
+        print("  ✅ SECURITY GATE: PASSED - SAFE TO MERGE")
+        print("=" * 60)
         return 0
 
-    print("\n✗ SECURITY GATE: FAILED")
+    print("\n" + "=" * 60)
+    print("  ❌ SECURITY GATE: FAILED - UNSAFE TO MERGE")
+    print("  Do NOT merge this branch into main!")
+    print("  Potential secrets or policy violations were detected.")
+    print("=" * 60)
 
     if result["failures"]:
         print("\nPolicy violations:")
