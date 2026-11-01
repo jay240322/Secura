@@ -9,24 +9,31 @@ from secura.github_app.auth import GITHUB_API_URL
 logger = logging.getLogger("secura.github_app.checks")
 
 
-def create_check_run(
-    installation_token: str,
-    owner: str,
-    repo: str,
-    head_sha: str,
+ALLOWED_CONCLUSIONS = {
+    "success",
+    "failure",
+    "neutral",
+    "cancelled",
+    "timed_out",
+    "action_required",
+    "skipped",
+}
+
+
+def build_check_output(
     findings: list[dict] | None = None,
-    name: str = "Secura Security Gate",
-):
-    """Create a GitHub Check Run based on scanner findings."""
+) -> tuple[str, str, str]:
+    """
+    Build the Check Run conclusion, title, and summary
+    from scanner findings.
+    """
 
     findings = findings or []
 
-    has_findings = len(findings) > 0
-
-    conclusion = "failure" if has_findings else "success"
-
-    if has_findings:
+    if findings:
+        conclusion = "failure"
         title = "Secura detected potential secrets"
+
         summary = (
             f"Secura detected {len(findings)} potential secret(s).\n\n"
             "Review the findings below and remove any exposed credentials."
@@ -41,10 +48,36 @@ def create_check_run(
             )
 
     else:
+        conclusion = "success"
         title = "Secura security scan passed"
         summary = "Secura did not find policy violations."
 
-    url = f"{GITHUB_API_URL}/repos/{owner}/{repo}/check-runs"
+    return conclusion, title, summary
+
+
+def create_check_run(
+    installation_token: str,
+    owner: str,
+    repo: str,
+    head_sha: str,
+    findings: list[dict] | None = None,
+    name: str = "Secura Security Gate",
+):
+    """
+    Create a completed GitHub Check Run based on scanner findings.
+    """
+
+    conclusion, title, summary = build_check_output(findings)
+
+    if conclusion not in ALLOWED_CONCLUSIONS:
+        raise ValueError(
+            f"Invalid Check Run conclusion: {conclusion}"
+        )
+
+    url = (
+        f"{GITHUB_API_URL}/repos/"
+        f"{owner}/{repo}/check-runs"
+    )
 
     response = requests.post(
         url,
@@ -68,7 +101,8 @@ def create_check_run(
 
     if not response.ok:
         logger.error(
-            "GitHub Check Run API error. Status: %s, Response: %s",
+            "GitHub Check Run API error. "
+            "Status: %s, Response: %s",
             response.status_code,
             response.text,
         )
