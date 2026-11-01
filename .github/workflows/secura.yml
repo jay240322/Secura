@@ -4,6 +4,9 @@ on:
   pull_request:
     branches:
       - main
+  push:
+    branches-ignore:
+      - main
 
 permissions:
   contents: read
@@ -37,15 +40,16 @@ jobs:
         id: secura
         continue-on-error: true
         run: |
-          git fetch origin main
+          git fetch origin main || true
           python -m secura.scanner . --changed
 
       - name: Publish GitHub Security Annotations
-        if: always() && github.event_name == 'pull_request'
+        if: always()
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_EVENT_PATH: ${{ github.event_path }}
+          GITHUB_SHA: ${{ github.sha }}
         run: |
           if [ -f secura-report.json ]; then
             python -m secura.github_annotations
@@ -53,10 +57,14 @@ jobs:
             echo "Secura report was not generated."
           fi
 
-      - name: Fail if Secura security gate failed
+      - name: Check Secura Gate Result
         if: steps.secura.outcome == 'failure'
         run: |
-          echo "Secura security gate failed."
+          echo "::error::Secura security gate FAILED! Unsafe to merge into main. Secrets or policy violations were detected."
+          echo "=========================================================================="
+          echo "  ❌ UNSAFE TO MERGE: Secura detected potential secrets or security violations."
+          echo "  Do NOT merge this branch into main until these findings are resolved."
+          echo "=========================================================================="
           exit 1
 
       - name: Upload Secura Security Report

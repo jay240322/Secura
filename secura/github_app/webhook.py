@@ -1,110 +1,336 @@
-
+import hashlib
+import hmac
+import json
 import logging
+import os
+from urllib.parse import quote
 
-import requests
+from fastapi import FastAPI, Header, HTTPException, Request
+from requests.exceptions import RequestException
 
-from secura.github_app.auth import GITHUB_API_URL
-
-
-logger = logging.getLogger("secura.github_app.checks")
-
-
-ALLOWED_CONCLUSIONS = {
-    "success",
-    "failure",
-    "neutral",
-    "cancelled",
-    "timed_out",
-    "action_required",
-    "skipped",
-}
+from secura.github_app.auth import (
+    create_installation_token,
+    get_pull_request_files,
+    get_repository_file_content,
+)
+from secura.github_app.checks import create_check_run, update_check_run
+from secura.github_app.pr_scanner import scan_github_pull_request
 
 
-def create_check_run(
-    installation_token: str,
-    owner: str,
-    repo: str,
-    head_sha: str,
-    conclusion: str,
-    title: str,
-    summary: str,
-    name: str = "Secura Security Gate",
-) -> dict:
-    """
-    Create a completed GitHub Check Run for a Secura security scan.
+app = FastAPI(title="Secura GitHub App")
 
-    Args:
-        installation_token: GitHub App installation access token.
-        owner: GitHub repository owner.
-        repo: GitHub repository name.
-        head_sha: Commit SHA associated with the scan.
-        conclusion: Final result of the security scan.
-        title: Check Run output title.
-        summary: Check Run output summary.
-        name: Name displayed for the Check Run.
+WEBHOOK_SECRET = os.environ.get("SECURA_WEBHOOK_SECRET")
 
-    Returns:
-        The GitHub Check Run response as a dictionary.
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+)
 
-    Raises:
-        ValueError: If the conclusion is not valid.
-        requests.HTTPError: If GitHub returns an unsuccessful response.
-        requests.RequestException: If the request fails.
-    """
+logger = logging.getLogger("secura.github_app")
 
-    # Validate the Check Run conclusion.
-    if conclusion not in ALLOWED_CONCLUSIONS:
-        raise ValueError(
-            f"Invalid Check Run conclusion: {conclusion}"
+
+@app.get("/health")
+def health():
+    return {
+        "status": "ok",
+        "service": "Secura GitHub App",
+    }
+
+
+@app.post("/webhook")
+async def github_webhook(
+    request: Request,
+    x_hub_signature_256: str = Header(default=""),
+    x_github_event: str = Header(default=""),
+):
+    if not WEBHOOK_SECRET:
+        logger.error("SECURA_WEBHOOK_SECRET is not configured")
+        raise HTTPException(
+            status_code=500,
+            detail="Webhook secret is not configured",
         )
 
-    # GitHub Check Runs API endpoint.
-    url = (
-        f"{GITHUB_API_URL}/repos/"
-        f"{owner}/{repo}/check-runs"
-    )
+    body = await request.body()
 
-    # Create the Check Run.
-    response = requests.post(
-        url,
-        headers={
-            "Authorization": f"Bearer {installation_token}",
-            "Accept": "application/vnd.github+json",
-            "X-GitHub-Api-Version": "2022-11-28",
-        },
-        json={
-            "name": name,
-            "head_sha": head_sha,
-            "status": "completed",
-            "conclusion": conclusion,
-            "output": {
-                "title": title,
-                "summary": summary,
-            },
-        },
-        timeout=15,
-    )
+    digest = hmac.new(
+        WEBHOOK_SECRET.encode("utf-8"),
+        body,
+        hashlib.sha256,
+    ).hexdigest()
 
-    # Log API errors before raising the exception.
-    if not response.ok:
-        logger.error(
-            "GitHub Check Run API error. "
-            "Status: %s, Response: %s",
-            response.status_code,
-            response.text,
+    expected_signature = f"sha256={digest}"
+
+    if not hmac.compare_digest(
+        expected_signature,
+        x_hub_signature_256,
+    ):
+        logger.warning("Invalid webhook signature received")
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid signature",
         )
 
-    response.raise_for_status()
+    try:
+        payload = json.loads(body)
+    except json.JSONDecodeError:
+        logger.exception("Invalid JSON payload received")
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid JSON payload",
+        )
 
-    # Parse the GitHub response.
-    check_run = response.json()
+    action = payload.get("action")
 
-    # Log successful Check Run creation.
+    if x_github_event == "installation":
+        logger.info(
+            "Installation event received. Action: %s",
+            action,
+        )
+        return {
+            "status": "received",
+            "event": x_github_event,
+            "action": action,
+        }
+
+    if x_github_event == "ping":
+        return {
+            "status": "ok",
+            "event": "ping",
+        }
+
+    if x_github_event != "pull_request":
+        logger.info(
+            "Ignoring unsupported GitHub event: %s",
+            x_github_event,
+        )
+        return {
+            "status": "ignored",
+            "event": x_github_event,
+            "action": action,
+        }
+
+    pull_request = payload.get("pull_request", {})
+    repository = payload.get("repository", {})
+    installation = payload.get("installation", {})
+
+    repository_name = repository.get("full_name")
+    pull_number = pull_request.get("number")
+    installation_id = installation.get("id")
+    head_sha = pull_request.get("head", {}).get("sha")
+
     logger.info(
-        "Created Check Run: %s (ID: %s, Conclusion: %s)",
-        check_run.get("name"),
-        check_run.get("id"),
-        check_run.get("conclusion"),
+        "Pull request event received. Action: %s, Repository: %s, PR number: %s",
+        action,
+        repository_name,
+        pull_number,
     )
 
-    return check_run
+    supported_actions = {
+        "opened",
+        "reopened",
+        "synchronize",
+    }
+
+    if action not in supported_actions:
+        logger.info(
+            "Ignoring pull request action: %s",
+            action,
+        )
+        return {
+            "status": "ignored",
+            "event": x_github_event,
+            "action": action,
+        }
+
+    if (
+        not repository_name
+        or not pull_number
+        or not installation_id
+        or not head_sha
+    ):
+        logger.error(
+            "Missing required PR information. "
+            "Repository: %s, PR: %s, Installation: %s, SHA: %s",
+            repository_name,
+            pull_number,
+            installation_id,
+            head_sha,
+        )
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Missing repository, PR number, "
+                "installation ID, or head SHA"
+            ),
+        )
+
+    check_run_id = None
+    installation_token = None
+    owner, repo = repository_name.split("/", 1)
+
+    try:
+        logger.info(
+            "Creating installation token for %s",
+            repository_name,
+        )
+        installation_token = create_installation_token(installation_id)
+
+        # 1. Start Check Run in_progress so the user immediately sees the pending check
+        try:
+            init_check = create_check_run(
+                installation_token=installation_token,
+                owner=owner,
+                repo=repo,
+                head_sha=head_sha,
+                status="in_progress",
+            )
+            check_run_id = init_check.get("id")
+        except Exception as exc:
+            logger.warning("Could not set check run to in_progress: %s", exc)
+
+        logger.info(
+            "Fetching changed files for %s PR #%s",
+            repository_name,
+            pull_number,
+        )
+        changed_files = get_pull_request_files(
+            installation_token=installation_token,
+            owner=owner,
+            repo=repo,
+            pull_number=pull_number,
+        )
+
+        logger.info(
+            "Fetched %s changed files",
+            len(changed_files),
+        )
+
+        def fetch_file_content(filename):
+            encoded_path = quote(
+                filename,
+                safe="/",
+            )
+            return get_repository_file_content(
+                installation_token=installation_token,
+                owner=owner,
+                repo=repo,
+                path=encoded_path,
+                ref=head_sha,
+            )
+
+        logger.info(
+            "Starting Secura scan for %s PR #%s",
+            repository_name,
+            pull_number,
+        )
+
+        scan_output = scan_github_pull_request(
+            changed_files=changed_files,
+            fetch_file_content=fetch_file_content,
+        )
+
+        result = scan_output["result"]
+        findings = scan_output["findings"]
+
+        logger.info(
+            "Finalizing Secura Check Run for %s PR #%s (findings: %s)",
+            repository_name,
+            pull_number,
+            len(findings),
+        )
+
+        # 2. Update existing check run or create completed check run
+        if check_run_id:
+            check_run = update_check_run(
+                installation_token=installation_token,
+                owner=owner,
+                repo=repo,
+                check_run_id=check_run_id,
+                findings=findings,
+                result=result,
+            )
+        else:
+            check_run = create_check_run(
+                installation_token=installation_token,
+                owner=owner,
+                repo=repo,
+                head_sha=head_sha,
+                status="completed",
+                findings=findings,
+                result=result,
+            )
+
+        conclusion = check_run.get("conclusion")
+        score = result.get("score")
+
+        logger.info(
+            "Secura scan completed for %s PR #%s. Conclusion: %s, score: %s",
+            repository_name,
+            pull_number,
+            conclusion,
+            score,
+        )
+
+        return {
+            "status": "completed",
+            "event": x_github_event,
+            "action": action,
+            "repository": repository_name,
+            "pull_request": pull_number,
+            "conclusion": conclusion,
+            "score": score,
+            "findings_count": len(findings),
+        }
+
+    except HTTPException:
+        raise
+
+    except RequestException as exc:
+        logger.exception(
+            "GitHub API request failed for %s PR #%s",
+            repository_name,
+            pull_number,
+        )
+        if check_run_id and installation_token:
+            try:
+                update_check_run(
+                    installation_token=installation_token,
+                    owner=owner,
+                    repo=repo,
+                    check_run_id=check_run_id,
+                    conclusion="failure",
+                    title="Secura Security Gate: API error",
+                    summary="GitHub API request failed during the security scan.",
+                )
+            except Exception:
+                pass
+
+        raise HTTPException(
+            status_code=502,
+            detail="Unable to complete GitHub API request",
+        )
+
+    except Exception as exc:
+        logger.exception(
+            "Unexpected error while scanning %s PR #%s",
+            repository_name,
+            pull_number,
+        )
+        if check_run_id and installation_token:
+            try:
+                update_check_run(
+                    installation_token=installation_token,
+                    owner=owner,
+                    repo=repo,
+                    check_run_id=check_run_id,
+                    conclusion="failure",
+                    title="Secura Security Gate: Scan error",
+                    summary=f"An unexpected error occurred during scan: {exc}",
+                )
+            except Exception:
+                pass
+
+        raise HTTPException(
+            status_code=500,
+            detail="Unexpected error during Secura scan",
+        )
