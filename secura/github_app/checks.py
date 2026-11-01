@@ -1,3 +1,4 @@
+
 import requests
 
 from secura.github_app.auth import GITHUB_API_URL
@@ -37,6 +38,11 @@ def create_check_run(
         },
         timeout=15,
     )
+
+    if not response.ok:
+        print("GitHub Check Run API error:")
+        print("Status:", response.status_code)
+        print("Response:", response.text)
 
     response.raise_for_status()
 

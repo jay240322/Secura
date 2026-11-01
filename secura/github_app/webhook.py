@@ -22,7 +22,11 @@ app = FastAPI(title="Secura GitHub App")
 
 WEBHOOK_SECRET = os.environ.get("SECURA_WEBHOOK_SECRET")
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+)
+
 logger = logging.getLogger("secura.github_app")
 
 
@@ -41,6 +45,8 @@ async def github_webhook(
     x_github_event: str = Header(default=""),
 ):
     if not WEBHOOK_SECRET:
+        logger.error("SECURA_WEBHOOK_SECRET is not configured")
+
         raise HTTPException(
             status_code=500,
             detail="Webhook secret is not configured",
@@ -60,6 +66,8 @@ async def github_webhook(
         expected_signature,
         x_hub_signature_256,
     ):
+        logger.warning("Invalid webhook signature received")
+
         raise HTTPException(
             status_code=401,
             detail="Invalid signature",
@@ -67,7 +75,10 @@ async def github_webhook(
 
     try:
         payload = json.loads(body)
+
     except json.JSONDecodeError:
+        logger.exception("Invalid JSON payload received")
+
         raise HTTPException(
             status_code=400,
             detail="Invalid JSON payload",
@@ -81,159 +92,245 @@ async def github_webhook(
             action,
         )
 
-    elif x_github_event == "pull_request":
-        pull_request = payload.get("pull_request", {})
-        repository = payload.get("repository", {})
-        installation = payload.get("installation", {})
+        return {
+            "status": "received",
+            "event": x_github_event,
+            "action": action,
+        }
 
-        repository_name = repository.get("full_name")
-        pull_number = pull_request.get("number")
-        installation_id = installation.get("id")
-        head_sha = pull_request.get("head", {}).get("sha")
+    if x_github_event != "pull_request":
+        logger.info(
+            "Ignoring unsupported GitHub event: %s",
+            x_github_event,
+        )
+
+        return {
+            "status": "ignored",
+            "event": x_github_event,
+            "action": action,
+        }
+
+    pull_request = payload.get("pull_request", {})
+    repository = payload.get("repository", {})
+    installation = payload.get("installation", {})
+
+    repository_name = repository.get("full_name")
+    pull_number = pull_request.get("number")
+    installation_id = installation.get("id")
+    head_sha = pull_request.get("head", {}).get("sha")
+
+    logger.info(
+        "Pull request event received. "
+        "Action: %s, Repository: %s, PR number: %s",
+        action,
+        repository_name,
+        pull_number,
+    )
+
+    supported_actions = {
+        "opened",
+        "reopened",
+        "synchronize",
+    }
+
+    if action not in supported_actions:
+        logger.info(
+            "Ignoring pull request action: %s",
+            action,
+        )
+
+        return {
+            "status": "ignored",
+            "event": x_github_event,
+            "action": action,
+        }
+
+    if (
+        not repository_name
+        or not pull_number
+        or not installation_id
+        or not head_sha
+    ):
+        logger.error(
+            "Missing required PR information. "
+            "Repository: %s, PR: %s, Installation: %s, SHA: %s",
+            repository_name,
+            pull_number,
+            installation_id,
+            head_sha,
+        )
+
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Missing repository, PR number, "
+                "installation ID, or head SHA"
+            ),
+        )
+
+    try:
+        owner, repo = repository_name.split("/", 1)
 
         logger.info(
-            "Pull request event received. Action: %s, "
-            "Repository: %s, PR number: %s",
-            action,
+            "Creating installation token for %s",
+            repository_name,
+        )
+
+        installation_token = create_installation_token(
+            installation_id
+        )
+
+        logger.info(
+            "Fetching changed files for %s PR #%s",
             repository_name,
             pull_number,
         )
 
-        # Process PR creation, reopening, and new commits.
-        if action in {"opened", "reopened", "synchronize"}:
-            if (
-                not repository_name
-                or not pull_number
-                or not installation_id
-                or not head_sha
-            ):
-                raise HTTPException(
-                    status_code=400,
-                    detail=(
-                        "Missing repository, PR number, "
-                        "installation ID, or head SHA"
-                    ),
-                )
-
-            owner, repo = repository_name.split("/", 1)
-
-            try:
-                installation_token = create_installation_token(
-                    installation_id
-                )
-
-                changed_files = get_pull_request_files(
-                    installation_token=installation_token,
-                    owner=owner,
-                    repo=repo,
-                    pull_number=pull_number,
-                )
-
-                def fetch_file_content(filename):
-                    encoded_path = quote(filename, safe="/")
-
-                    return get_repository_file_content(
-                        installation_token=installation_token,
-                        owner=owner,
-                        repo=repo,
-                        path=encoded_path,
-                        ref=head_sha,
-                    )
-
-                scan_output = scan_github_pull_request(
-                    changed_files=changed_files,
-                    fetch_file_content=fetch_file_content,
-                )
-
-                result = scan_output["result"]
-                findings = scan_output["findings"]
-
-                passed = result["passed"]
-                score = result["score"]
-                counts = result["counts"]
-                failures = result["failures"]
-
-                conclusion = "success" if passed else "failure"
-
-                title = (
-                    "Secura security scan passed"
-                    if passed
-                    else "Secura security scan failed"
-                )
-
-                summary = (
-                    f"**Security score:** {score}/100\n\n"
-                    f"**Findings:**\n"
-                    f"- Critical: {counts['CRITICAL']}\n"
-                    f"- High: {counts['HIGH']}\n"
-                    f"- Medium: {counts['MEDIUM']}\n"
-                    f"- Low: {counts['LOW']}\n"
-                )
-
-                if failures:
-                    summary += "\n**Policy failures:**\n"
-
-                    for failure in failures:
-                        summary += f"- {failure}\n"
-
-                if findings:
-                    summary += "\n**Findings:**\n"
-
-                    for finding in findings:
-                        summary += (
-                            f"- **{finding.get('severity', 'MEDIUM')}** "
-                            f"{finding.get('type', 'Security finding')} "
-                            f"in `{finding.get('file', 'unknown')}` "
-                            f"at line {finding.get('line', '?')}\n"
-                        )
-
-                        recommendation = finding.get("recommendation")
-
-                        if recommendation:
-                            summary += (
-                                f"  - Recommendation: {recommendation}\n"
-                            )
-
-                create_check_run(
-                    installation_token=installation_token,
-                    owner=owner,
-                    repo=repo,
-                    head_sha=head_sha,
-                    conclusion=conclusion,
-                    title=title,
-                    summary=summary,
-                )
-
-                logger.info(
-                    "Secura scan completed for %s PR #%s. "
-                    "Conclusion: %s, score: %s",
-                    repository_name,
-                    pull_number,
-                    conclusion,
-                    score,
-                )
-
-            except RequestException:
-                logger.exception(
-                    "GitHub API request failed for %s PR #%s",
-                    repository_name,
-                    pull_number,
-                )
-
-                raise HTTPException(
-                    status_code=502,
-                    detail="Unable to complete GitHub API request",
-                )
-
-    else:
-        logger.info(
-            "GitHub event received: %s, Action: %s",
-            x_github_event,
-            action,
+        changed_files = get_pull_request_files(
+            installation_token=installation_token,
+            owner=owner,
+            repo=repo,
+            pull_number=pull_number,
         )
 
-    return {
-        "status": "received",
-        "event": x_github_event,
-        "action": action,
-    }
+        logger.info(
+            "Fetched %s changed files",
+            len(changed_files),
+        )
+
+        def fetch_file_content(filename):
+            encoded_path = quote(
+                filename,
+                safe="/",
+            )
+
+            return get_repository_file_content(
+                installation_token=installation_token,
+                owner=owner,
+                repo=repo,
+                path=encoded_path,
+                ref=head_sha,
+            )
+
+        logger.info(
+            "Starting Secura scan for %s PR #%s",
+            repository_name,
+            pull_number,
+        )
+
+        scan_output = scan_github_pull_request(
+            changed_files=changed_files,
+            fetch_file_content=fetch_file_content,
+        )
+
+        result = scan_output["result"]
+        findings = scan_output["findings"]
+
+        passed = result["passed"]
+        score = result["score"]
+        counts = result["counts"]
+        failures = result["failures"]
+
+        conclusion = "success" if passed else "failure"
+
+        title = (
+            "Secura security scan passed"
+            if passed
+            else "Secura security scan failed"
+        )
+
+        summary = (
+            f"**Security score:** {score}/100\n\n"
+            f"**Findings:**\n"
+            f"- Critical: {counts['CRITICAL']}\n"
+            f"- High: {counts['HIGH']}\n"
+            f"- Medium: {counts['MEDIUM']}\n"
+            f"- Low: {counts['LOW']}\n"
+        )
+
+        if failures:
+            summary += "\n**Policy failures:**\n"
+
+            for failure in failures:
+                summary += f"- {failure}\n"
+
+        if findings:
+            summary += "\n**Findings:**\n"
+
+            for finding in findings:
+                summary += (
+                    f"- **{finding.get('severity', 'MEDIUM')}** "
+                    f"{finding.get('type', 'Security finding')} "
+                    f"in `{finding.get('file', 'unknown')}` "
+                    f"at line {finding.get('line', '?')}\n"
+                )
+
+                recommendation = finding.get("recommendation")
+
+                if recommendation:
+                    summary += (
+                        f"  - Recommendation: "
+                        f"{recommendation}\n"
+                    )
+
+        logger.info(
+            "Creating Secura Check Run for %s PR #%s",
+            repository_name,
+            pull_number,
+        )
+
+        create_check_run(
+            installation_token=installation_token,
+            owner=owner,
+            repo=repo,
+            head_sha=head_sha,
+            conclusion=conclusion,
+            title=title,
+            summary=summary,
+        )
+
+        logger.info(
+            "Secura scan completed for %s PR #%s. "
+            "Conclusion: %s, score: %s",
+            repository_name,
+            pull_number,
+            conclusion,
+            score,
+        )
+
+        return {
+            "status": "received",
+            "event": x_github_event,
+            "action": action,
+            "repository": repository_name,
+            "pull_request": pull_number,
+            "conclusion": conclusion,
+            "score": score,
+        }
+
+    except HTTPException:
+        raise
+
+    except RequestException:
+        logger.exception(
+            "GitHub API request failed for %s PR #%s",
+            repository_name,
+            pull_number,
+        )
+
+        raise HTTPException(
+            status_code=502,
+            detail="Unable to complete GitHub API request",
+        )
+
+    except Exception:
+        logger.exception(
+            "Unexpected error while scanning %s PR #%s",
+            repository_name,
+            pull_number,
+        )
+
+        raise HTTPException(
+            status_code=500,
+            detail="Unexpected error during Secura scan",
+        )
