@@ -283,7 +283,7 @@ def update_check_run(
 
     if not response.ok:
         logger.error(
-            "GitHub Check Run update error. Status: %s, Response: %s",
+            "GitHub Check Run modification failed. Status: %s, Response: %s",
             response.status_code,
             response.text,
         )

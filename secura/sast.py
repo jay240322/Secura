@@ -7,7 +7,7 @@ SAST_RULES = [
         "type": "SQL Injection",
         "severity": "HIGH",
         "pattern": re.compile(
-            r"""(?i)\b(?:SELECT|INSERT|UPDATE|DELETE)\b.*(?:\+|%|\.\s*format\s*\(|\bf["'])"""
+            r"""(?i)\b(?:SELECT\s+.*?\s+FROM|INSERT\s+INTO|UPDATE\s+.*?\s+SET|DELETE\s+FROM)\b.*(?:\+|%|\.\s*format\s*\(|\bf["'])"""
         ),
     },
     {
