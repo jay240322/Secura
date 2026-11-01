@@ -1,7 +1,12 @@
 
+import logging
+
 import requests
 
 from secura.github_app.auth import GITHUB_API_URL
+
+
+logger = logging.getLogger("secura.github_app.checks")
 
 
 def create_check_run(
@@ -9,10 +14,10 @@ def create_check_run(
     owner: str,
     repo: str,
     head_sha: str,
-    name: str = "Secura Security Scan",
+    name: str = "Secura Security Gate",
     status: str = "completed",
     conclusion: str = "success",
-    title: str = "Security scan passed",
+    title: str = "Secura security scan passed",
     summary: str = "Secura did not find policy violations.",
 ):
     """Create a GitHub Check Run for a commit."""
@@ -40,10 +45,20 @@ def create_check_run(
     )
 
     if not response.ok:
-        print("GitHub Check Run API error:")
-        print("Status:", response.status_code)
-        print("Response:", response.text)
+        logger.error(
+            "GitHub Check Run API error. Status: %s, Response: %s",
+            response.status_code,
+            response.text,
+        )
 
     response.raise_for_status()
 
-    return response.json()
+    check_run = response.json()
+
+    logger.info(
+        "Created Check Run: %s (ID: %s)",
+        check_run.get("name"),
+        check_run.get("id"),
+    )
+
+    return check_run
