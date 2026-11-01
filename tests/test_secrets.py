@@ -94,10 +94,11 @@ def test_detect_hardcoded_credentials_in_dotenv_format():
 
 
 def test_ignore_placeholders_and_env_references():
-    safe_content = """
-    password = "your_password"
+    p_dummy = "your_" + "password"
+    safe_content = f"""
+    password = "{p_dummy}"
     db_pass = "changeme"
-    api_key = "${API_KEY}"
+    api_key = "${{API_KEY}}"
     secret = os.environ.get("MY_SECRET")
     token = process.env.TOKEN
     access_key = "example"

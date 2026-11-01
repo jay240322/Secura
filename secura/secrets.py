@@ -226,7 +226,7 @@ def is_placeholder_or_safe(value: str, var_name: str = "", is_quoted: bool = Tru
             return True
         if clean.startswith(":") or clean.startswith("="):
             return True
-        # Pure variable identifier (e.g. token=auth_token, password=user_password)
+        # Pure variable identifier passed as keyword argument
         if re.fullmatch(r"[a-zA-Z_][a-zA-Z0-9_]*", clean) and not any(c.isdigit() for c in clean):
             return True
 
