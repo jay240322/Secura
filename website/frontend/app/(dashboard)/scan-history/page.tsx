@@ -1,11 +1,11 @@
 "use client";
 
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useEffect, useState } from "react";
+import { Card, CardContent } from "@/components/ui/card";
 import { StatusBadge } from "@/components/ui/status-badge";
-import { MOCK_SCANS } from "@/lib/mock-data";
+import { api } from "@/lib/api-client";
 import type { Scan } from "@/types";
 import { Clock, GitCommit } from "lucide-react";
-import Link from "next/link";
 
 function formatDuration(seconds: number | null): string {
   if (seconds === null) return "—";
@@ -27,15 +27,13 @@ function ScoreChip({ score }: { score: number | null }) {
 }
 
 function ScanRow({ scan }: { scan: Scan }) {
+  const repoName = scan.repository.includes("/") ? scan.repository.split("/")[1] : scan.repository;
+  const repoOwner = scan.repository.includes("/") ? scan.repository.split("/")[0] : "";
   return (
     <tr className="border-b border-white/[0.04] hover:bg-white/[0.02] transition-colors">
       <td className="py-3.5 pr-4">
-        <p className="text-sm text-slate-200">
-          {scan.repository.split("/")[1]}
-        </p>
-        <p className="text-xs text-slate-500 mt-0.5">
-          {scan.repository.split("/")[0]}
-        </p>
+        <p className="text-sm text-slate-200">{repoName}</p>
+        {repoOwner && <p className="text-xs text-slate-500 mt-0.5">{repoOwner}</p>}
       </td>
       <td className="py-3.5 pr-4">
         <span className="font-mono text-xs text-slate-400">{scan.branch}</span>
@@ -90,41 +88,65 @@ function ScanRow({ scan }: { scan: Scan }) {
 }
 
 export default function ScanHistoryPage() {
+  const [scans, setScans] = useState<Scan[]>([]);
+
+  useEffect(() => {
+    let mounted = true;
+    async function load() {
+      try {
+        const res = await api.getScans();
+        if (mounted) {
+          setScans(res.scans);
+        }
+      } catch (e) {
+        console.error("Failed to fetch scans:", e);
+      }
+    }
+    void load();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
   return (
     <div className="max-w-screen-xl mx-auto space-y-5">
-      <p className="text-sm text-slate-500">
-        Showing {MOCK_SCANS.length} most recent scans across all repositories.
-        <span className="ml-1 text-yellow-400 text-xs">
-          (Mock data)
-        </span>
-      </p>
+      <div className="flex items-center justify-between">
+        <h2 className="text-sm font-medium text-slate-400">
+          Scan executions ({scans.length})
+        </h2>
+      </div>
 
       <Card>
         <CardContent>
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-white/[0.08] text-xs text-slate-500">
-                  <th className="pb-3 text-left font-medium">Repository</th>
-                  <th className="pb-3 text-left font-medium">Branch</th>
-                  <th className="pb-3 text-left font-medium">Commit</th>
-                  <th className="pb-3 text-left font-medium">Date</th>
-                  <th className="pb-3 text-left font-medium">Duration</th>
-                  <th className="pb-3 text-left font-medium">Result</th>
-                  <th className="pb-3 text-right font-medium">Findings</th>
-                  <th className="pb-3 text-right font-medium">Score</th>
-                </tr>
-              </thead>
-              <tbody>
-                {MOCK_SCANS.map((scan) => (
-                  <ScanRow key={scan.id} scan={scan} />
-                ))}
-              </tbody>
-            </table>
-          </div>
+          {scans.length === 0 ? (
+            <div className="py-12 text-center text-sm text-slate-500">
+              No scans recorded yet. Trigger a scan from the Repositories page to see scan history.
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-white/[0.08] text-xs text-slate-500">
+                    <th className="pb-3 text-left font-medium">Repository</th>
+                    <th className="pb-3 text-left font-medium">Branch</th>
+                    <th className="pb-3 text-left font-medium">Commit</th>
+                    <th className="pb-3 text-left font-medium">Date</th>
+                    <th className="pb-3 text-left font-medium">Duration</th>
+                    <th className="pb-3 text-left font-medium">Result</th>
+                    <th className="pb-3 text-right font-medium">Findings</th>
+                    <th className="pb-3 text-right font-medium">Score</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {scans.map((scan) => (
+                    <ScanRow key={scan.id} scan={scan} />
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>
   );
 }
-

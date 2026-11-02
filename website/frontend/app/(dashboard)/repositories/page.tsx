@@ -1,15 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { SeverityBadge } from "@/components/ui/severity-badge";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { api } from "@/lib/api-client";
-import { MOCK_REPOSITORIES } from "@/lib/mock-data";
 import type { Repository } from "@/types";
 import {
-  AlertTriangle,
-  CheckCircle2,
   Database,
   ExternalLink,
   GitBranch,
@@ -38,7 +33,7 @@ function RepoCard({
   isScanning,
 }: {
   repo: Repository;
-  onScan: (id: string) => void;
+  onScan: (id: string) => Promise<void> | void;
   isScanning: boolean;
 }) {
   return (
@@ -101,7 +96,9 @@ function RepoCard({
         </p>
         <div className="flex gap-2">
           <button
-            onClick={() => onScan(repo.id)}
+            onClick={() => {
+              void onScan(repo.id);
+            }}
             disabled={isScanning}
             className="flex items-center gap-1 rounded-lg border border-white/[0.08] px-2.5 py-1 text-xs text-slate-400 hover:bg-white/[0.04] hover:text-slate-200 transition-colors disabled:opacity-50"
             title="Trigger manual scan"
@@ -134,31 +131,45 @@ function RepoCard({
 }
 
 export default function RepositoriesPage() {
-  const [repos, setRepos] = useState<Repository[]>(MOCK_REPOSITORIES);
+  const [repos, setRepos] = useState<Repository[]>([]);
   const [isLive, setIsLive] = useState(false);
   const [scanningRepoId, setScanningRepoId] = useState<string | null>(null);
 
-  const fetchRepos = async () => {
+  useEffect(() => {
+    let mounted = true;
+    async function loadRepos() {
+      try {
+        const res = await api.getRepositories();
+        if (mounted) {
+          setRepos(res.repositories);
+          setIsLive(res.isLive);
+        }
+      } catch (e) {
+        console.error("Failed to load repos:", e);
+      }
+    }
+    void loadRepos();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const handleRefresh = async () => {
     try {
       const res = await api.getRepositories();
       setRepos(res.repositories);
       setIsLive(res.isLive);
     } catch (e) {
-      console.error("Failed to load repos:", e);
+      console.error("Failed to refresh repos:", e);
     }
   };
-
-  useEffect(() => {
-    fetchRepos();
-  }, []);
 
   const handleScan = async (repoId: string) => {
     setScanningRepoId(repoId);
     try {
       await api.triggerScan(repoId);
-      // Refresh list after triggering scan
       setTimeout(() => {
-        fetchRepos();
+        void handleRefresh();
         setScanningRepoId(null);
       }, 1500);
     } catch {
@@ -171,23 +182,25 @@ export default function RepositoriesPage() {
 
   return (
     <div className="max-w-screen-xl mx-auto space-y-6">
-      {/* Live / Demo indicator */}
-      {isLive ? (
+      {/* Live indicator */}
+      {isLive && (
         <div className="flex items-center justify-between rounded-lg border border-emerald-500/20 bg-emerald-500/[0.06] px-4 py-2.5 text-xs text-emerald-400">
           <div className="flex items-center gap-2">
             <Database className="h-3.5 w-3.5 animate-pulse" />
             <span>
-              <strong>Neon Database:</strong> Showing repositories synced with PostgreSQL.
+              <strong>Neon Database:</strong> Repositories synced with PostgreSQL.
             </span>
           </div>
           <button
-            onClick={fetchRepos}
+            onClick={() => {
+              void handleRefresh();
+            }}
             className="flex items-center gap-1 text-[11px] hover:underline"
           >
             <RefreshCcw className="h-3 w-3" /> Refresh
           </button>
         </div>
-      ) : null}
+      )}
 
       {/* Connect CTA */}
       <div className="flex items-center gap-4 rounded-xl border border-blue-500/20 bg-blue-500/[0.05] p-5">
@@ -217,16 +230,22 @@ export default function RepositoriesPage() {
         <h2 className="text-sm font-medium text-slate-300 mb-4">
           Monitored repositories ({monitored.length})
         </h2>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {monitored.map((repo) => (
-            <RepoCard
-              key={repo.id}
-              repo={repo}
-              onScan={handleScan}
-              isScanning={scanningRepoId === repo.id}
-            />
-          ))}
-        </div>
+        {monitored.length === 0 ? (
+          <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-8 text-center text-sm text-slate-500">
+            No repositories monitored yet. Connect your GitHub account to import repositories.
+          </div>
+        ) : (
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {monitored.map((repo) => (
+              <RepoCard
+                key={repo.id}
+                repo={repo}
+                onScan={handleScan}
+                isScanning={scanningRepoId === repo.id}
+              />
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Available (unmonitored) repos */}

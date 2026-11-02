@@ -1,6 +1,6 @@
 "use client";
 
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   Bell,
   ExternalLink,
@@ -31,10 +31,10 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
   );
 }
 
-function ComingSoon({ label }: { label: string }) {
+function ComingSoon({ label = "coming soon" }: { label?: string }) {
   return (
     <span className="inline-flex items-center rounded-full bg-slate-700/50 px-2 py-0.5 text-[10px] text-slate-500 ml-2">
-      Coming soon
+      {label}
     </span>
   );
 }
@@ -70,16 +70,22 @@ export default function SettingsPage() {
         <Card>
           <CardContent className="space-y-4">
             <div>
-              <label className="block text-xs text-slate-500 mb-1">Name</label>
+              <label htmlFor="settings-name" className="block text-xs text-slate-500 mb-1">
+                Name
+              </label>
               <input
+                id="settings-name"
                 type="text"
                 defaultValue="Jay"
                 className="w-full rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-sm text-slate-300 outline-none focus:border-blue-500/50"
               />
             </div>
             <div>
-              <label className="block text-xs text-slate-500 mb-1">Email</label>
+              <label htmlFor="settings-email" className="block text-xs text-slate-500 mb-1">
+                Email
+              </label>
               <input
+                id="settings-email"
                 type="email"
                 defaultValue="jay@example.com"
                 className="w-full rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-sm text-slate-300 outline-none focus:border-blue-500/50"
@@ -136,10 +142,11 @@ export default function SettingsPage() {
           <CardContent className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs text-slate-500 mb-1">
+                <label htmlFor="policy-max-critical" className="block text-xs text-slate-500 mb-1">
                   Max critical findings
                 </label>
                 <input
+                  id="policy-max-critical"
                   type="number"
                   defaultValue={0}
                   min={0}
@@ -147,10 +154,11 @@ export default function SettingsPage() {
                 />
               </div>
               <div>
-                <label className="block text-xs text-slate-500 mb-1">
+                <label htmlFor="policy-max-high" className="block text-xs text-slate-500 mb-1">
                   Max high findings
                 </label>
                 <input
+                  id="policy-max-high"
                   type="number"
                   defaultValue={0}
                   min={0}
@@ -158,10 +166,11 @@ export default function SettingsPage() {
                 />
               </div>
               <div>
-                <label className="block text-xs text-slate-500 mb-1">
+                <label htmlFor="policy-min-score" className="block text-xs text-slate-500 mb-1">
                   Minimum security score
                 </label>
                 <input
+                  id="policy-min-score"
                   type="number"
                   defaultValue={80}
                   min={0}

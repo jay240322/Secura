@@ -1,22 +1,22 @@
 "use client";
 
+import { useEffect, useState, Suspense } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { SeverityBadge } from "@/components/ui/severity-badge";
 import { StatusBadge } from "@/components/ui/status-badge";
-import { MOCK_FINDINGS } from "@/lib/mock-data";
+import { api } from "@/lib/api-client";
+import type { Finding } from "@/types";
 import {
   AlertTriangle,
   ArrowLeft,
   CheckCircle2,
   Code,
-  ExternalLink,
   FileText,
   MapPin,
   ShieldAlert,
 } from "lucide-react";
 import Link from "next/link";
-import { notFound, useParams } from "next/navigation";
-import { Suspense } from "react";
+import { useParams } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
@@ -30,10 +30,61 @@ export default function FindingDetailPage() {
 
 function FindingDetailContent() {
   const params = useParams<{ id: string }>();
-  const finding = MOCK_FINDINGS.find((f) => f.id === params?.id);
+  const [finding, setFinding] = useState<Finding | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    let mounted = true;
+    if (!params?.id) return;
+
+    async function loadFinding() {
+      try {
+        const res = await api.getFindingById(params.id);
+        if (mounted) {
+          setFinding(res.finding);
+        }
+      } catch (e) {
+        console.error("Failed to load finding:", e);
+      } finally {
+        if (mounted) {
+          setIsLoading(false);
+        }
+      }
+    }
+
+    void loadFinding();
+    return () => {
+      mounted = false;
+    };
+  }, [params?.id]);
+
+  const handleStatusChange = async (status: "open" | "resolved" | "ignored") => {
+    if (!finding) return;
+    try {
+      await api.updateFindingStatus(finding.id, status);
+      const res = await api.getFindingById(finding.id);
+      setFinding(res.finding);
+    } catch (e) {
+      console.error("Status update error:", e);
+    }
+  };
+
+  if (isLoading) {
+    return <div className="p-8 text-slate-500">Loading finding details...</div>;
+  }
 
   if (!finding) {
-    notFound();
+    return (
+      <div className="max-w-2xl mx-auto py-12 text-center space-y-4">
+        <p className="text-sm text-slate-400">Finding not found or has been removed.</p>
+        <Link
+          href="/findings"
+          className="inline-flex items-center gap-1.5 text-xs text-blue-400 hover:text-blue-300"
+        >
+          <ArrowLeft className="h-3.5 w-3.5" /> Back to findings
+        </Link>
+      </div>
+    );
   }
 
   return (
@@ -58,99 +109,58 @@ function FindingDetailContent() {
                 {finding.ruleId}
               </span>
             </div>
-            <h2 className="text-lg font-semibold text-slate-100">
-              {finding.type}
-            </h2>
-            <p className="text-sm text-slate-400 mt-1">
-              {finding.repository}
-            </p>
+            <h1 className="text-xl font-bold text-slate-100">{finding.type}</h1>
+            <div className="mt-2 flex items-center gap-2 text-xs text-slate-400">
+              <MapPin className="h-3.5 w-3.5 shrink-0" />
+              <span className="font-mono text-slate-300">
+                {finding.filePath}:{finding.lineNumber}
+              </span>
+              <span>·</span>
+              <span>{finding.repository}</span>
+            </div>
           </div>
-          <a
-            href={`https://github.com/${finding.repository}/blob/main/${finding.filePath}#L${finding.lineNumber}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-1.5 shrink-0 rounded-lg border border-white/[0.08] px-3 py-1.5 text-xs text-slate-400 hover:bg-white/[0.04] hover:text-slate-200 transition-colors"
-          >
-            <ExternalLink className="h-3.5 w-3.5" />
-            View on GitHub
-          </a>
         </div>
       </Card>
 
       <div className="grid gap-5 lg:grid-cols-3">
-        {/* Main column */}
+        {/* Main content */}
         <div className="space-y-5 lg:col-span-2">
-          {/* Location */}
+          {/* Location & redacted code */}
           <Card>
             <CardHeader>
-              <CardTitle>
-                <MapPin className="inline h-4 w-4 mr-1.5 text-slate-500" />
-                Location
+              <CardTitle className="flex items-center gap-2">
+                <Code className="h-4 w-4 text-blue-400" />
+                Detected location
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="font-mono text-sm text-slate-300 bg-white/[0.03] rounded-lg px-4 py-3 border border-white/[0.06]">
-                <span className="text-blue-400">{finding.filePath}</span>
-                <span className="text-slate-500">:</span>
-                <span className="text-yellow-400">{finding.lineNumber}</span>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Code snippet (safe, redacted) */}
-          <Card>
-            <CardHeader>
-              <CardTitle>
-                <Code className="inline h-4 w-4 mr-1.5 text-slate-500" />
-                Code location
-              </CardTitle>
-              <span className="text-xs text-slate-500">
-                Secret value is redacted
-              </span>
-            </CardHeader>
-            <CardContent>
-              <div className="rounded-lg bg-black/40 border border-white/[0.06] overflow-x-auto">
-                <div className="flex items-center gap-2 border-b border-white/[0.06] px-4 py-2">
-                  <span className="text-xs text-slate-500 font-mono">
-                    {finding.filePath}
+              <div className="rounded-lg border border-white/[0.06] bg-[#080b0f] p-4 font-mono text-xs text-slate-400">
+                <div className="flex items-center gap-2 text-slate-500 mb-2">
+                  <FileText className="h-3.5 w-3.5" />
+                  <span>{finding.filePath}</span>
+                </div>
+                <div className="flex items-center gap-4 bg-red-950/20 -mx-4 px-4 py-1.5 border-l-2 border-red-500 text-slate-200">
+                  <span className="text-slate-600 select-none w-6 text-right">
+                    {finding.lineNumber}
+                  </span>
+                  <span className="text-red-300">
+                    [REDACTED SECRET DETECTED ON LINE {finding.lineNumber}]
                   </span>
                 </div>
-                <pre className="text-xs font-mono p-4 text-slate-300">
-                  <span className="text-slate-600">
-                    {finding.lineNumber - 1 > 0
-                      ? `${finding.lineNumber - 1}  ...\n`
-                      : ""}
-                  </span>
-                  <span className="bg-red-500/10 -mx-4 px-4 block border-l-2 border-red-500/50">
-                    {finding.lineNumber}{"  "}
-                    <span className="text-slate-400">
-                      {finding.type === "Database Connection String"
-                        ? `DATABASE_URL = "`
-                        : `${finding.type.replace(/\s+/g, "_").toUpperCase()} = "`}
-                    </span>
-                    <span className="bg-red-900/40 text-red-300 rounded px-1">
-                      [REDACTED — secret value not stored]
-                    </span>
-                    <span className="text-slate-400">{`"`}</span>
-                  </span>
-                  <span className="text-slate-600">
-                    {`${finding.lineNumber + 1}  ...`}
-                  </span>
-                </pre>
               </div>
-              <p className="mt-2 text-xs text-slate-500">
-                ⚠ The actual secret value is never stored or displayed by Secura.
+              <p className="mt-2 text-[11px] text-slate-600">
+                🔒 Detected credential values are redacted to prevent further exposure.
               </p>
             </CardContent>
           </Card>
 
-          {/* Risk */}
+          {/* Risk explanation */}
           {finding.risk && (
             <Card>
               <CardHeader>
-                <CardTitle>
-                  <ShieldAlert className="inline h-4 w-4 mr-1.5 text-red-400" />
-                  Why this is dangerous
+                <CardTitle className="flex items-center gap-2">
+                  <ShieldAlert className="h-4 w-4 text-orange-400" />
+                  Security risk
                 </CardTitle>
               </CardHeader>
               <CardContent>
@@ -165,18 +175,18 @@ function FindingDetailContent() {
           {finding.recommendation && (
             <Card>
               <CardHeader>
-                <CardTitle>
-                  <CheckCircle2 className="inline h-4 w-4 mr-1.5 text-emerald-400" />
-                  How to fix it
+                <CardTitle className="flex items-center gap-2">
+                  <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+                  Remediation guidance
                 </CardTitle>
               </CardHeader>
-              <CardContent>
-                <p className="text-sm text-slate-300 leading-relaxed mb-4">
+              <CardContent className="space-y-3">
+                <p className="text-sm text-slate-300 leading-relaxed">
                   {finding.recommendation}
                 </p>
 
-                {/* Safe code example */}
-                <div className="rounded-lg bg-black/40 border border-emerald-500/20 overflow-x-auto">
+                {/* Safe example */}
+                <div className="rounded-lg border border-white/[0.06] bg-[#080b0f] overflow-hidden">
                   <div className="flex items-center gap-2 border-b border-white/[0.06] px-4 py-2">
                     <span className="text-xs text-emerald-400">
                       ✓ Safe example
@@ -213,17 +223,32 @@ function FindingDetailContent() {
             <CardContent className="space-y-2">
               {finding.status === "open" && (
                 <>
-                  <button className="flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-600/20 border border-emerald-600/30 px-3 py-2 text-sm text-emerald-400 hover:bg-emerald-600/30 transition-colors">
+                  <button
+                    onClick={() => {
+                      void handleStatusChange("resolved");
+                    }}
+                    className="flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-600/20 border border-emerald-600/30 px-3 py-2 text-sm text-emerald-400 hover:bg-emerald-600/30 transition-colors"
+                  >
                     <CheckCircle2 className="h-4 w-4" />
                     Mark as resolved
                   </button>
-                  <button className="flex w-full items-center justify-center gap-2 rounded-lg border border-white/[0.08] px-3 py-2 text-sm text-slate-400 hover:bg-white/[0.04] transition-colors">
+                  <button
+                    onClick={() => {
+                      void handleStatusChange("ignored");
+                    }}
+                    className="flex w-full items-center justify-center gap-2 rounded-lg border border-white/[0.08] px-3 py-2 text-sm text-slate-400 hover:bg-white/[0.04] transition-colors"
+                  >
                     Ignore with reason
                   </button>
                 </>
               )}
               {finding.status !== "open" && (
-                <button className="flex w-full items-center justify-center gap-2 rounded-lg border border-white/[0.08] px-3 py-2 text-sm text-slate-400 hover:bg-white/[0.04] transition-colors">
+                <button
+                  onClick={() => {
+                    void handleStatusChange("open");
+                  }}
+                  className="flex w-full items-center justify-center gap-2 rounded-lg border border-white/[0.08] px-3 py-2 text-sm text-slate-400 hover:bg-white/[0.04] transition-colors"
+                >
                   <AlertTriangle className="h-4 w-4" />
                   Reopen finding
                 </button>
@@ -256,7 +281,7 @@ function FindingDetailContent() {
                 </div>
                 <div>
                   <dt className="text-slate-500 mb-0.5">Scan ID</dt>
-                  <dd className="text-slate-300 font-mono">{finding.scanId}</dd>
+                  <dd className="text-slate-300 font-mono">{finding.scanId || "—"}</dd>
                 </div>
                 <div>
                   <dt className="text-slate-500 mb-0.5">Rule ID</dt>
@@ -322,4 +347,3 @@ API_KEY = os.environ["API_KEY"]  # Not hardcoded`,
   };
   return examples[findingType] ?? examples["default"];
 }
-

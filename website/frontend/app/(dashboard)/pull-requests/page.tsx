@@ -1,8 +1,9 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatusBadge } from "@/components/ui/status-badge";
-import { MOCK_PULL_REQUESTS } from "@/lib/mock-data";
+import { api } from "@/lib/api-client";
 import type { PullRequest } from "@/types";
 import {
   CheckCircle2,
@@ -27,6 +28,7 @@ function CheckIcon({
 }
 
 function PRRow({ pr }: { pr: PullRequest }) {
+  const repoName = pr.repository.includes("/") ? pr.repository.split("/")[1] : pr.repository;
   return (
     <div className="flex items-start gap-4 border-b border-white/[0.04] py-4 last:border-0">
       <div className="mt-0.5">
@@ -46,10 +48,8 @@ function PRRow({ pr }: { pr: PullRequest }) {
           <StatusBadge status={pr.checkRunStatus} />
         </div>
         <p className="text-xs text-slate-500">
-          <span className="font-medium text-slate-400">
-            {pr.repository.split("/")[1]}
-          </span>{" "}
-          · #{pr.number} · {pr.branch} → {pr.baseBranch} · by{" "}
+          <span className="font-medium text-slate-400">{repoName}</span>
+          {" · "}#{pr.number} · {pr.branch} → {pr.baseBranch} · by{" "}
           <span className="text-slate-300">@{pr.author}</span>
         </p>
       </div>
@@ -72,15 +72,29 @@ function PRRow({ pr }: { pr: PullRequest }) {
 }
 
 export default function PullRequestsPage() {
-  const failed = MOCK_PULL_REQUESTS.filter(
-    (p) => p.checkRunStatus === "failure"
-  );
-  const passed = MOCK_PULL_REQUESTS.filter(
-    (p) => p.checkRunStatus === "success"
-  );
-  const running = MOCK_PULL_REQUESTS.filter(
-    (p) => p.checkRunStatus === "in_progress"
-  );
+  const [pullRequests, setPullRequests] = useState<PullRequest[]>([]);
+
+  useEffect(() => {
+    let mounted = true;
+    async function load() {
+      try {
+        const res = await api.getPullRequests();
+        if (mounted) {
+          setPullRequests(res.pullRequests);
+        }
+      } catch (e) {
+        console.error("Failed to fetch pull requests:", e);
+      }
+    }
+    void load();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const failed = pullRequests.filter((p) => p.checkRunStatus === "failure");
+  const passed = pullRequests.filter((p) => p.checkRunStatus === "success");
+  const running = pullRequests.filter((p) => p.checkRunStatus === "in_progress");
 
   return (
     <div className="max-w-screen-xl mx-auto space-y-5">
@@ -128,17 +142,19 @@ export default function PullRequestsPage() {
             <GitPullRequest className="inline h-4 w-4 mr-1.5 text-slate-500" />
             Pull Requests
           </CardTitle>
-          <span className="text-xs text-yellow-400">Mock data</span>
         </CardHeader>
         <CardContent>
-          {MOCK_PULL_REQUESTS.length === 0 ? (
+          {pullRequests.length === 0 ? (
             <div className="flex flex-col items-center py-10 text-slate-500">
               <GitPullRequest className="h-8 w-8 mb-2" />
               <p className="text-sm">No pull requests scanned yet</p>
+              <p className="text-xs text-slate-600 mt-1">
+                Install the Secura GitHub App to automatically scan PRs upon push.
+              </p>
             </div>
           ) : (
             <div>
-              {MOCK_PULL_REQUESTS.map((pr) => (
+              {pullRequests.map((pr) => (
                 <PRRow key={pr.id} pr={pr} />
               ))}
             </div>
@@ -148,4 +164,3 @@ export default function PullRequestsPage() {
     </div>
   );
 }
-

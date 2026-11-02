@@ -4,16 +4,14 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { SeverityBadge } from "@/components/ui/severity-badge";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { api } from "@/lib/api-client";
-import { MOCK_FINDINGS } from "@/lib/mock-data";
 import type { Finding, FindingStatus, Severity } from "@/types";
 import {
-  AlertTriangle,
   ChevronRight,
   Database,
-  ExternalLink,
   Filter,
   RefreshCcw,
   Search,
+  ShieldCheck,
   X,
 } from "lucide-react";
 import Link from "next/link";
@@ -33,26 +31,41 @@ export default function FindingsPage() {
 }
 
 function FindingsContent() {
-  const [findings, setFindings] = useState<Finding[]>(MOCK_FINDINGS);
+  const [findings, setFindings] = useState<Finding[]>([]);
   const [isLive, setIsLive] = useState(false);
   const [query, setQuery] = useState("");
   const [severityFilter, setSeverityFilter] = useState<Severity | "">("");
   const [statusFilter, setStatusFilter] = useState<FindingStatus | "">("");
   const [repoFilter, setRepoFilter] = useState("");
 
-  const loadFindings = async () => {
+  useEffect(() => {
+    let mounted = true;
+    async function fetchFindings() {
+      try {
+        const res = await api.getFindings();
+        if (mounted) {
+          setFindings(res.findings);
+          setIsLive(res.isLive);
+        }
+      } catch (e) {
+        console.error("Failed to fetch findings:", e);
+      }
+    }
+    void fetchFindings();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const handleRefresh = async () => {
     try {
       const res = await api.getFindings();
       setFindings(res.findings);
       setIsLive(res.isLive);
     } catch (e) {
-      console.error("Failed to fetch findings:", e);
+      console.error("Failed to refresh findings:", e);
     }
   };
-
-  useEffect(() => {
-    loadFindings();
-  }, []);
 
   const repos = useMemo(
     () => [...new Set(findings.map((f) => f.repository))],
@@ -92,7 +105,9 @@ function FindingsContent() {
             </span>
           </div>
           <button
-            onClick={loadFindings}
+            onClick={() => {
+              void handleRefresh();
+            }}
             className="flex items-center gap-1 text-[11px] hover:underline"
           >
             <RefreshCcw className="h-3 w-3" /> Refresh
@@ -185,8 +200,18 @@ function FindingsContent() {
         <CardContent>
           {filtered.length === 0 ? (
             <div className="flex flex-col items-center py-12 text-slate-500">
-              <Filter className="h-8 w-8 mb-3" />
-              <p className="text-sm">No findings match your filters</p>
+              {findings.length === 0 ? (
+                <>
+                  <ShieldCheck className="h-10 w-10 mb-3 text-emerald-500" />
+                  <p className="text-sm font-medium text-slate-300">No security findings</p>
+                  <p className="text-xs text-slate-500 mt-1">All scanned repositories are clean and secure</p>
+                </>
+              ) : (
+                <>
+                  <Filter className="h-8 w-8 mb-3" />
+                  <p className="text-sm">No findings match your filters</p>
+                </>
+              )}
             </div>
           ) : (
             <div className="divide-y divide-white/[0.04]">

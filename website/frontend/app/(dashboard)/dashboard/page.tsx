@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { SeverityBadge } from "@/components/ui/severity-badge";
 import { StatusBadge } from "@/components/ui/status-badge";
-import { api } from "@/lib/api-client";
+import { api, DEFAULT_SUMMARY } from "@/lib/api-client";
 import {
   Finding,
   Repository,
@@ -13,14 +13,6 @@ import {
   FindingOverTime,
   FindingBySeverity,
 } from "@/types";
-import {
-  MOCK_FINDINGS,
-  MOCK_FINDINGS_BY_SEVERITY,
-  MOCK_FINDINGS_OVER_TIME,
-  MOCK_REPOSITORIES,
-  MOCK_SCANS,
-  MOCK_SUMMARY,
-} from "@/lib/mock-data";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -52,7 +44,7 @@ const SEV_COLORS: Record<string, string> = {
   LOW: "#3b82f6",
 };
 
-// ─── Live / Demo Data Banner ──────────────────────────────────────────────
+// ─── Live / Connection Banner ─────────────────────────────────────────────
 function StatusBanner({ isLive }: { isLive: boolean }) {
   if (isLive) {
     return (
@@ -60,7 +52,7 @@ function StatusBanner({ isLive }: { isLive: boolean }) {
         <div className="flex items-center gap-2">
           <Database className="h-3.5 w-3.5 shrink-0 text-emerald-400 animate-pulse" />
           <span>
-            <strong>Live Neon PostgreSQL:</strong> Connected to database. Showing real-time security posture.
+            <strong>Connected:</strong> Security posture synced with Neon PostgreSQL.
           </span>
         </div>
         <span className="rounded bg-emerald-500/20 px-2 py-0.5 font-mono text-[10px] text-emerald-300">
@@ -71,16 +63,13 @@ function StatusBanner({ isLive }: { isLive: boolean }) {
   }
 
   return (
-    <div className="mb-6 flex items-center justify-between gap-2 rounded-lg border border-yellow-500/20 bg-yellow-500/[0.06] px-4 py-2.5 text-xs text-yellow-400">
+    <div className="mb-6 flex items-center justify-between gap-2 rounded-lg border border-white/[0.06] bg-white/[0.02] px-4 py-2.5 text-xs text-slate-400">
       <div className="flex items-center gap-2">
-        <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+        <Shield className="h-3.5 w-3.5 shrink-0 text-slate-500" />
         <span>
-          <strong>Demo mode:</strong> FastAPI backend offline or loading. Showing realistic mock data.
+          Backend API is ready at http://localhost:8000. Start backend to view live scan findings.
         </span>
       </div>
-      <span className="rounded bg-yellow-500/20 px-2 py-0.5 font-mono text-[10px] text-yellow-300">
-        DEMO
-      </span>
     </div>
   );
 }
@@ -206,12 +195,12 @@ function ChartTooltip({
 // ─── Dashboard page ───────────────────────────────────────────────────────
 export default function DashboardPage() {
   const [isLive, setIsLive] = useState(false);
-  const [summary, setSummary] = useState<DashboardSummary>(MOCK_SUMMARY);
-  const [findingsOverTime, setFindingsOverTime] = useState<FindingOverTime[]>(MOCK_FINDINGS_OVER_TIME);
-  const [findingsBySeverity, setFindingsBySeverity] = useState<FindingBySeverity[]>(MOCK_FINDINGS_BY_SEVERITY);
-  const [recentFindings, setRecentFindings] = useState<Finding[]>(MOCK_FINDINGS.slice(0, 5));
-  const [recentScans, setRecentScans] = useState<Scan[]>(MOCK_SCANS.slice(0, 4));
-  const [repos, setRepos] = useState<Repository[]>(MOCK_REPOSITORIES);
+  const [summary, setSummary] = useState<DashboardSummary>(DEFAULT_SUMMARY);
+  const [findingsOverTime, setFindingsOverTime] = useState<FindingOverTime[]>([]);
+  const [findingsBySeverity, setFindingsBySeverity] = useState<FindingBySeverity[]>([]);
+  const [recentFindings, setRecentFindings] = useState<Finding[]>([]);
+  const [recentScans, setRecentScans] = useState<Scan[]>([]);
+  const [repos, setRepos] = useState<Repository[]>([]);
 
   useEffect(() => {
     let mounted = true;
@@ -224,20 +213,18 @@ export default function DashboardPage() {
 
         if (mounted) {
           setIsLive(insightsData.isLive);
-          if (insightsData.isLive) {
-            setSummary(insightsData.summary);
-            setFindingsOverTime(insightsData.findingsOverTime);
-            setFindingsBySeverity(insightsData.findingsBySeverity);
-            setRepos(reposData.repositories);
-            setRecentFindings(findingsData.findings.slice(0, 5));
-            setRecentScans(scansData.scans.slice(0, 4));
-          }
+          setSummary(insightsData.summary);
+          setFindingsOverTime(insightsData.findingsOverTime);
+          setFindingsBySeverity(insightsData.findingsBySeverity);
+          setRepos(reposData.repositories);
+          setRecentFindings(findingsData.findings.slice(0, 5));
+          setRecentScans(scansData.scans.slice(0, 4));
         }
       } catch (e) {
         console.error("Dashboard data load error:", e);
       }
     }
-    loadData();
+    void loadData();
     return () => {
       mounted = false;
     };
@@ -262,9 +249,7 @@ export default function DashboardPage() {
           label="Open Findings"
           value={summary.totalOpenFindings}
           icon={<AlertTriangle className="h-5 w-5" />}
-          trend="up"
-          trendLabel="+3 since yesterday"
-          highlight="neutral"
+          highlight={summary.totalOpenFindings > 0 ? "critical" : "neutral"}
         />
         <SummaryCard
           label="Critical Findings"
@@ -283,8 +268,6 @@ export default function DashboardPage() {
           value={summary.resolvedFindings}
           icon={<CheckCircle2 className="h-5 w-5 text-emerald-400" />}
           highlight="success"
-          trend="down"
-          trendLabel="14 this month"
         />
       </div>
 
@@ -297,55 +280,62 @@ export default function DashboardPage() {
             <span className="text-xs text-slate-500">Trend & Resolution</span>
           </CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={200}>
-              <AreaChart data={findingsOverTime}>
-                <defs>
-                  <linearGradient id="gc" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#ef4444" stopOpacity={0.2} />
-                    <stop offset="95%" stopColor="#ef4444" stopOpacity={0} />
-                  </linearGradient>
-                  <linearGradient id="gh" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#f97316" stopOpacity={0.15} />
-                    <stop offset="95%" stopColor="#f97316" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <XAxis
-                  dataKey="date"
-                  tickLine={false}
-                  stroke="#475569"
-                  fontSize={11}
-                />
-                <YAxis
-                  tickLine={false}
-                  stroke="#475569"
-                  fontSize={11}
-                  width={24}
-                />
-                <Tooltip content={<ChartTooltip />} />
-                <Area
-                  type="monotone"
-                  dataKey="critical"
-                  stroke="#ef4444"
-                  fill="url(#gc)"
-                  strokeWidth={2}
-                />
-                <Area
-                  type="monotone"
-                  dataKey="high"
-                  stroke="#f97316"
-                  fill="url(#gh)"
-                  strokeWidth={2}
-                />
-                <Area
-                  type="monotone"
-                  dataKey="resolved"
-                  stroke="#10b981"
-                  fill="none"
-                  strokeWidth={1.5}
-                  strokeDasharray="4 2"
-                />
-              </AreaChart>
-            </ResponsiveContainer>
+            {findingsOverTime.length === 0 ? (
+              <div className="flex h-[200px] flex-col items-center justify-center text-xs text-slate-500">
+                <CheckCircle2 className="h-6 w-6 text-emerald-500/80 mb-2" />
+                <span>No historical findings recorded</span>
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height={200}>
+                <AreaChart data={findingsOverTime}>
+                  <defs>
+                    <linearGradient id="gc" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#ef4444" stopOpacity={0.2} />
+                      <stop offset="95%" stopColor="#ef4444" stopOpacity={0} />
+                    </linearGradient>
+                    <linearGradient id="gh" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#f97316" stopOpacity={0.15} />
+                      <stop offset="95%" stopColor="#f97316" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <XAxis
+                    dataKey="date"
+                    tickLine={false}
+                    stroke="#475569"
+                    fontSize={11}
+                  />
+                  <YAxis
+                    tickLine={false}
+                    stroke="#475569"
+                    fontSize={11}
+                    width={24}
+                  />
+                  <Tooltip content={<ChartTooltip />} />
+                  <Area
+                    type="monotone"
+                    dataKey="critical"
+                    stroke="#ef4444"
+                    fill="url(#gc)"
+                    strokeWidth={2}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="high"
+                    stroke="#f97316"
+                    fill="url(#gh)"
+                    strokeWidth={2}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="resolved"
+                    stroke="#10b981"
+                    fill="none"
+                    strokeWidth={1.5}
+                    strokeDasharray="4 2"
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            )}
           </CardContent>
         </Card>
 
@@ -355,33 +345,40 @@ export default function DashboardPage() {
             <CardTitle>By severity</CardTitle>
           </CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={200}>
-              <PieChart>
-                <Pie
-                  data={findingsBySeverity}
-                  dataKey="count"
-                  nameKey="severity"
-                  cx="50%"
-                  cy="50%"
-                  outerRadius={70}
-                  innerRadius={40}
-                >
-                  {findingsBySeverity.map((entry) => (
-                    <Cell
-                      key={entry.severity}
-                      fill={SEV_COLORS[entry.severity] || "#94a3b8"}
-                      opacity={0.85}
-                    />
-                  ))}
-                </Pie>
-                <Tooltip content={<ChartTooltip />} />
-                <Legend
-                  formatter={(v) => (
-                    <span className="text-xs text-slate-400">{v}</span>
-                  )}
-                />
-              </PieChart>
-            </ResponsiveContainer>
+            {findingsBySeverity.length === 0 ? (
+              <div className="flex h-[200px] flex-col items-center justify-center text-xs text-slate-500">
+                <CheckCircle2 className="h-6 w-6 text-emerald-500/80 mb-2" />
+                <span>No active findings by severity</span>
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height={200}>
+                <PieChart>
+                  <Pie
+                    data={findingsBySeverity}
+                    dataKey="count"
+                    nameKey="severity"
+                    cx="50%"
+                    cy="50%"
+                    outerRadius={70}
+                    innerRadius={40}
+                  >
+                    {findingsBySeverity.map((entry) => (
+                      <Cell
+                        key={entry.severity}
+                        fill={SEV_COLORS[entry.severity] || "#94a3b8"}
+                        opacity={0.85}
+                      />
+                    ))}
+                  </Pie>
+                  <Tooltip content={<ChartTooltip />} />
+                  <Legend
+                    formatter={(v) => (
+                      <span className="text-xs text-slate-400">{v}</span>
+                    )}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -495,48 +492,54 @@ export default function DashboardPage() {
           </Link>
         </CardHeader>
         <CardContent>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-white/[0.06] text-xs text-slate-500">
-                  <th className="pb-3 text-left font-medium">Repository</th>
-                  <th className="pb-3 text-left font-medium">Branch</th>
-                  <th className="pb-3 text-left font-medium">Commit</th>
-                  <th className="pb-3 text-left font-medium">Result</th>
-                  <th className="pb-3 text-right font-medium">Findings</th>
-                  <th className="pb-3 text-right font-medium">Score</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-white/[0.04]">
-                {recentScans.map((scan) => (
-                  <tr key={scan.id} className="hover:bg-white/[0.02]">
-                    <td className="py-3 text-slate-300">
-                      {scan.repository.includes("/") ? scan.repository.split("/")[1] : scan.repository}
-                    </td>
-                    <td className="py-3 text-slate-400 font-mono text-xs">{scan.branch}</td>
-                    <td className="py-3 text-slate-400 font-mono text-xs">{scan.commitSha}</td>
-                    <td className="py-3">
-                      {scan.result && <StatusBadge status={scan.result} />}
-                    </td>
-                    <td className="py-3 text-right text-slate-300">{scan.totalFindings}</td>
-                    <td className="py-3 text-right">
-                      <span
-                        className={
-                          (scan.score ?? 0) >= 80
-                            ? "text-emerald-400"
-                            : (scan.score ?? 0) >= 50
-                            ? "text-yellow-400"
-                            : "text-red-400"
-                        }
-                      >
-                        {scan.score}/100
-                      </span>
-                    </td>
+          {recentScans.length === 0 ? (
+            <div className="py-8 text-center text-sm text-slate-500">
+              No scans recorded yet. Select a repository to run a scan.
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-white/[0.06] text-xs text-slate-500">
+                    <th className="pb-3 text-left font-medium">Repository</th>
+                    <th className="pb-3 text-left font-medium">Branch</th>
+                    <th className="pb-3 text-left font-medium">Commit</th>
+                    <th className="pb-3 text-left font-medium">Result</th>
+                    <th className="pb-3 text-right font-medium">Findings</th>
+                    <th className="pb-3 text-right font-medium">Score</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className="divide-y divide-white/[0.04]">
+                  {recentScans.map((scan) => (
+                    <tr key={scan.id} className="hover:bg-white/[0.02]">
+                      <td className="py-3 text-slate-300">
+                        {scan.repository.includes("/") ? scan.repository.split("/")[1] : scan.repository}
+                      </td>
+                      <td className="py-3 text-slate-400 font-mono text-xs">{scan.branch}</td>
+                      <td className="py-3 text-slate-400 font-mono text-xs">{scan.commitSha}</td>
+                      <td className="py-3">
+                        {scan.result && <StatusBadge status={scan.result} />}
+                      </td>
+                      <td className="py-3 text-right text-slate-300">{scan.totalFindings}</td>
+                      <td className="py-3 text-right">
+                        <span
+                          className={
+                            (scan.score ?? 0) >= 80
+                              ? "text-emerald-400"
+                              : (scan.score ?? 0) >= 50
+                              ? "text-yellow-400"
+                              : "text-red-400"
+                          }
+                        >
+                          {scan.score}/100
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>
