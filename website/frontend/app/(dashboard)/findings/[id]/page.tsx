@@ -297,24 +297,22 @@ DATABASE_URL = get_secret("prod/database/url")`,
 
 import os
 token = os.environ["GH_TOKEN"]`,
-    "SQL Injection": `# ✓ Use parameterized queries
-cursor.execute(
-    "SELECT * FROM users WHERE email = %s",
-    (user_email,)  # Safe: parameterized
-)`,
+    "SQL Injection": `# ✓ Use an ORM or safe query builder
+stmt = select(User).where(User.email == user_email)
+user = session.scalars(stmt).first()`,
     "Command Injection": `# ✓ Use subprocess with argument list
 import subprocess
 result = subprocess.run(
     ["ls", "-la", safe_directory],
     check=True,
     capture_output=True,
-    shell=False,  # Never use shell=True with input
+    shell=False,  # Never execute raw shell commands with input
 )`,
-    "SSL Verification Disabled": `# ✓ Enable TLS verification
+    "SSL Verification Disabled": `# ✓ Enable TLS certificate verification
 import requests
 response = requests.get(
     "https://api.example.com",
-    # verify=False  ← remove this
+    verify=True,  # Ensure TLS certificate verification is enabled
     timeout=10,
 )`,
     default: `# ✓ Store secrets in environment variables
