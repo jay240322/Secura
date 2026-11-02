@@ -9,8 +9,8 @@
 ---
 
 [![Secura Security Gate](https://github.com/jay240322/Secura/actions/workflows/secura.yml/badge.svg)](https://github.com/jay240322/Secura/actions/workflows/secura.yml)
-[![SonarQube Quality Gate](https://img.shields.io/badge/SonarQube-Quality%20Gate%20Passed-4E9BCD?logo=sonarqube&logoColor=white)](https://www.sonarqube.org/)
-[![SonarQube Security](https://img.shields.io/badge/SonarQube-Security%20Rating%20A-brightgreen?logo=sonarqube&logoColor=white)](https://www.sonarqube.org/)
+[![Quality gate status](https://sonarcloud.io/api/project_badges/measure?project=jay240322_Secura&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=jay240322_Secura)
+[![Security Rating](https://sonarcloud.io/api/project_badges/measure?project=jay240322_Secura&metric=security_rating)](https://sonarcloud.io/summary/new_code?id=jay240322_Secura)
 [![CodeRabbit AI Review](https://img.shields.io/badge/CodeRabbit-AI%20Reviewed-FF5722?logo=coderabbit&logoColor=white)](https://coderabbit.ai/)
 [![Codeac.io Protected](https://img.shields.io/badge/Codeac.io-Code%20Quality%20A-00C49F?logo=codeac&logoColor=white)](https://www.codeac.io/)
 [![Python](https://img.shields.io/badge/Python-3.11%20%7C%203.12%20%7C%203.13-3776AB?logo=python&logoColor=white)](https://www.python.org/)
