@@ -299,3 +299,105 @@ def update_check_run(
     )
 
     return check_run
+
+
+def post_pull_request_comment(
+    installation_token: str,
+    owner: str,
+    repo: str,
+    pull_number: int,
+    findings: list[dict] | None = None,
+    result: dict | None = None,
+    base_branch: str = "main",
+) -> dict | None:
+    """
+    Post or update an informative security gate comment on a GitHub Pull Request.
+    Uses an invisible marker <!-- secura-security-gate --> to update previous comments
+    and avoid spamming PR conversation timelines with duplicate comments.
+    """
+    findings = findings or []
+    result = result or {}
+
+    passed = result.get("passed", len(findings) == 0)
+    score = result.get("score", 100 if passed else 0)
+
+    marker = "<!-- secura-security-gate -->"
+
+    if not passed or findings:
+        table_rows = []
+        for idx, f in enumerate(findings[:30], start=1):
+            sev = f.get("severity", "HIGH")
+            ftype = f.get("type", "Secret Finding")
+            fpath = str(f.get("file", "unknown")).replace("\\", "/")
+            line = f.get("line", "?")
+            rec = f.get("recommendation") or "Remove credential and store in GitHub Secrets or .env."
+            table_rows.append(
+                f"| `{idx}` | **{sev}** | {ftype} | `{fpath}:{line}` | {rec} |"
+            )
+
+        more_note = f"\n\n*...and {len(findings) - 30} additional finding(s).*" if len(findings) > 30 else ""
+
+        body = (
+            f"{marker}\n"
+            f"## 🚨 Secura Security Gate: FAILED — Unsafe to Merge\n\n"
+            f"Secura scanned the files in this pull request and detected **{len(findings)} security finding(s)**. "
+            f"Merging into `{base_branch}` is **blocked** to prevent credential leakage and security vulnerabilities.\n\n"
+            f"### ⚠️ Detected Findings & Exposed Secrets\n"
+            f"| # | Severity | Finding Type | File & Line | Recommendation |\n"
+            f"| :-: | :--- | :--- | :--- | :--- |\n"
+            + "\n".join(table_rows)
+            + more_note
+            + f"\n\n**Security Score:** `{score}/100`\n\n"
+            f"---\n"
+            f"🔒 **Action Required:** Remove or revoke these exposed credentials before merging this pull request into `{base_branch}`.\n"
+            f"*Secura Security Scanner — Automated Pull Request Protection*"
+        )
+    else:
+        body = (
+            f"{marker}\n"
+            f"## ✅ Secura Security Gate: PASSED\n\n"
+            f"Secura scanned all changed files in this pull request and found **no secrets or security policy violations**.\n\n"
+            f"- **Secrets Detected:** `0`\n"
+            f"- **Policy Violations:** `0`\n"
+            f"- **Security Score:** `100/100`\n\n"
+            f"✅ **Safe to Merge:** This pull request satisfies all security policies for `{base_branch}`.\n\n"
+            f"*Secura Security Scanner — Automated Pull Request Protection*"
+        )
+
+    headers = {
+        "Authorization": f"Bearer {installation_token}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+
+    try:
+        # Check existing comments to update instead of creating duplicate
+        list_url = f"{GITHUB_API_URL}/repos/{owner}/{repo}/issues/{pull_number}/comments"
+        list_res = requests.get(list_url, headers=headers, params={"per_page": 50}, timeout=15)
+        existing_comment_id = None
+
+        if list_res.ok:
+            for comment in list_res.json():
+                comment_body = comment.get("body", "")
+                if marker in comment_body or "## 🚨 Secura Security Gate" in comment_body or "## ✅ Secura Security Gate" in comment_body:
+                    existing_comment_id = comment.get("id")
+                    break
+
+        if existing_comment_id:
+            patch_url = f"{GITHUB_API_URL}/repos/{owner}/{repo}/issues/comments/{existing_comment_id}"
+            patch_res = requests.patch(patch_url, headers=headers, json={"body": body}, timeout=15)
+            if patch_res.ok:
+                logger.info("Updated existing Secura comment on PR #%s", pull_number)
+                return patch_res.json()
+
+        post_res = requests.post(list_url, headers=headers, json={"body": body}, timeout=15)
+        if post_res.ok:
+            logger.info("Created Secura comment on PR #%s", pull_number)
+            return post_res.json()
+        else:
+            logger.warning("Failed to post comment to PR #%s: %s", pull_number, post_res.text)
+            return None
+    except Exception as exc:
+        logger.error("Exception posting PR comment to #%s: %s", pull_number, exc)
+        return None
+

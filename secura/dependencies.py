@@ -93,7 +93,7 @@ def scan_dependencies(directory, files=None):
             continue
 
         if any(
-            part in {".git", ".venv", "__pycache__", "tests"}
+            part in {".git", ".venv", "__pycache__", "tests", "node_modules", ".next"}
             for part in path.parts
         ):
             continue

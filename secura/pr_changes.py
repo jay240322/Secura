@@ -13,7 +13,7 @@ DEPENDENCY_MANIFESTS = {
     "package.json",
 }
 
-IGNORED_PARTS = {".git", ".venv", "__pycache__", "tests"}
+IGNORED_PARTS = {".git", ".venv", "__pycache__", "tests", "node_modules", ".next"}
 
 
 def is_scannable_file(filename_or_path: str | Path) -> bool:

@@ -28,14 +28,8 @@ SAST_RULES = [
 ]
 
 
-def scan_file(file_path):
+def scan_content(content: str, file_path: str = "<memory>") -> list[dict]:
     findings = []
-
-    try:
-        content = Path(file_path).read_text(encoding="utf-8")
-    except (UnicodeDecodeError, OSError):
-        return findings
-
     for line_number, line in enumerate(content.splitlines(), start=1):
         for rule in SAST_RULES:
             if rule["pattern"].search(line):
@@ -47,5 +41,13 @@ def scan_file(file_path):
                         "line": line_number,
                     }
                 )
-
     return findings
+
+
+def scan_file(file_path):
+    try:
+        content = Path(file_path).read_text(encoding="utf-8")
+    except (UnicodeDecodeError, OSError):
+        return []
+
+    return scan_content(content, file_path=str(file_path))

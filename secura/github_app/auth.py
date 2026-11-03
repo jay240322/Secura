@@ -1,11 +1,15 @@
 
+import logging
 import os
+from pathlib import Path
 import time
-
 import jwt
 import requests
+from dotenv import load_dotenv
 
+load_dotenv()
 
+logger = logging.getLogger("secura.github_app.auth")
 GITHUB_API_URL = "https://api.github.com"
 
 
@@ -21,20 +25,42 @@ def create_app_jwt() -> str:
     if not private_key_path:
         raise RuntimeError("GITHUB_PRIVATE_KEY_PATH is not configured")
 
-    if not os.path.isfile(private_key_path):
-        raise FileNotFoundError(
-            f"GitHub App private key not found: {private_key_path}"
-        )
+    key_file_path = Path(private_key_path)
+    if not key_file_path.is_file():
+        # Check relative to repository root (auth.py -> github_app -> secura -> root)
+        repo_root = Path(__file__).resolve().parent.parent.parent
+        candidates = [
+            repo_root / private_key_path,
+            repo_root / ".secrets" / Path(private_key_path).name,
+            Path.cwd() / private_key_path,
+            Path("/home/jay/projects/Secura/.secrets/github-app-private-key.pem"),
+            Path(r"\\wsl.localhost\Ubuntu\home\jay\projects\Secura\.secrets\github-app-private-key.pem"),
+        ]
+        found = False
+        for candidate in candidates:
+            if candidate.is_file():
+                key_file_path = candidate
+                found = True
+                break
+        if not found:
+            raise FileNotFoundError(
+                f"GitHub App private key not found at {private_key_path} or {candidates}"
+            )
 
-    with open(private_key_path, "r", encoding="utf-8") as key_file:
+    with open(key_file_path, "r", encoding="utf-8") as key_file:
         private_key = key_file.read()
 
     now = int(time.time())
 
+    try:
+        iss_val: int | str = int(app_id)
+    except (ValueError, TypeError):
+        iss_val = app_id
+
     payload = {
         "iat": now - 60,
         "exp": now + 9 * 60,
-        "iss": app_id,
+        "iss": iss_val,
     }
 
     return jwt.encode(
@@ -63,6 +89,14 @@ def create_installation_token(installation_id: int) -> str:
         },
         timeout=15,
     )
+
+    if not response.ok:
+        logger.error(
+            "GitHub token exchange failed for installation %s. Status: %s, Response: %s",
+            installation_id,
+            response.status_code,
+            response.text,
+        )
 
     response.raise_for_status()
 
