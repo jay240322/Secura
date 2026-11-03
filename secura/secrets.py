@@ -247,6 +247,18 @@ def is_placeholder_or_safe(value: str, var_name: str = "", is_quoted: bool = Tru
         return True
 
     if not is_quoted:
+        # Common type annotations in Python / TypeScript (e.g. Optional[str], Union[...], Record<...>)
+        raw_clean = value.strip().rstrip(",;:")
+        raw_lower = raw_clean.lower()
+        if raw_lower in SAFE_UNQUOTED_VALUES or lower in SAFE_UNQUOTED_VALUES:
+            return True
+
+        if any(raw_lower.startswith(p) for p in ("optional[", "union[", "list[", "dict[", "set[", "record<", "literal[")):
+            return True
+
+        if "[" in raw_clean or "]" in raw_clean or "|" in raw_clean or "<" in raw_clean or ">" in raw_clean:
+            return True
+
         # Function calls or invocations (e.g. create_access_token(...))
         if "(" in clean or ")" in clean:
             return True

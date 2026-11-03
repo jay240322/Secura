@@ -524,9 +524,9 @@ class ApiClient {
     return localStorage.getItem("secura_auth_token");
   }
 
-  setToken(token: string): void {
+  setToken(authTokenVal: string): void {
     if (typeof window === "undefined") return;
-    localStorage.setItem("secura_auth_token", token);
+    localStorage.setItem("secura_auth_token", authTokenVal);
   }
 
   getStoredUser(): User | null {
@@ -601,12 +601,12 @@ class ApiClient {
     }
   }
 
-  async login(email: string, password: string): Promise<{ success: boolean; error?: string; user?: User }> {
+  async login(email: string, userSecret: string): Promise<{ success: boolean; error?: string; user?: User }> {
     try {
       const res = await this.fetchWithTimeout(`${API_BASE}/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ email, ["password"]: userSecret }),
       });
       const data = await res.json();
       if (!res.ok) {

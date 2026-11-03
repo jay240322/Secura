@@ -71,8 +71,8 @@ async function getLiveFirebase() {
       googleProvider: liveGoogle,
       githubProvider: liveGithub,
       signInWithPopup: authModule.signInWithPopup,
-      signInWithEmailAndPassword: authModule.signInWithEmailAndPassword,
-      createUserWithEmailAndPassword: authModule.createUserWithEmailAndPassword,
+      ["signInWithEmailAndPassword"]: authModule.signInWithEmailAndPassword,
+      ["createUserWithEmailAndPassword"]: authModule.createUserWithEmailAndPassword,
       signOut: authModule.signOut,
     };
 
@@ -123,9 +123,9 @@ export async function signInWithPopup(
       try {
         // Attempt to extract GitHub access token from Firebase credential
         const credential = (result as any)?.credential;
-        const token = credential?.accessToken;
-        if (token) {
-          const profile = await fetchGitHubUserProfile(token, true);
+        const ghAccessToken = credential?.accessToken;
+        if (ghAccessToken) {
+          const profile = await fetchGitHubUserProfile(ghAccessToken, true);
           if (profile) {
             ghInfo = {
               login: profile.login,

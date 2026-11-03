@@ -1,4 +1,5 @@
 import datetime
+import os
 from typing import Optional
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -13,6 +14,7 @@ from app.models.user import User
 from app.schemas.user import OAuthLogin, TokenResponse, UserLogin, UserProfileUpdate, UserRegister, UserResponse
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
+DEFAULT_AUTH_SCHEME = os.getenv("AUTH_SCHEME", "bearer")
 
 
 @router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
@@ -48,14 +50,14 @@ def register(payload: UserRegister, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(user)
 
-    token = create_access_token(
+    access_jwt = create_access_token(
         subject=user.id,
         extra_claims={"email": user.email, "name": user.name or ""},
     )
 
     return TokenResponse(
-        access_token=token,
-        token_type="bearer",
+        access_token=access_jwt,
+        token_type=DEFAULT_AUTH_SCHEME,
         user=UserResponse.model_validate(user),
     )
 
@@ -78,14 +80,14 @@ def login(payload: UserLogin, db: Session = Depends(get_db)):
             detail="Account is inactive.",
         )
 
-    token = create_access_token(
+    access_jwt = create_access_token(
         subject=user.id,
         extra_claims={"email": user.email, "name": user.name or ""},
     )
 
     return TokenResponse(
-        access_token=token,
-        token_type="bearer",
+        access_token=access_jwt,
+        token_type=DEFAULT_AUTH_SCHEME,
         user=UserResponse.model_validate(user),
     )
 
@@ -130,7 +132,7 @@ def oauth_sign_in(payload: OAuthLogin, db: Session = Depends(get_db)):
             detail=f"Database error during OAuth sign-in: {exc}",
         )
 
-    token = create_access_token(
+    access_jwt = create_access_token(
         subject=user.id,
         extra_claims={
             "email": user.email,
@@ -140,8 +142,8 @@ def oauth_sign_in(payload: OAuthLogin, db: Session = Depends(get_db)):
     )
 
     return TokenResponse(
-        access_token=token,
-        token_type="bearer",
+        access_token=access_jwt,
+        token_type=DEFAULT_AUTH_SCHEME,
         user=UserResponse.model_validate(user),
     )
 
@@ -300,8 +302,8 @@ async def github_oauth_callback(payload: dict, db: Session = Depends(get_db)):
             detail=f"Database error saving user: {db_err}",
         )
 
-    # 5. Generate signed JWT token
-    jwt_token = create_access_token(
+    # 5. Generate signed JWT access credential
+    access_jwt = create_access_token(
         subject=user.id,
         extra_claims={
             "email": user.email,
@@ -312,8 +314,8 @@ async def github_oauth_callback(payload: dict, db: Session = Depends(get_db)):
     )
 
     return TokenResponse(
-        access_token=jwt_token,
-        token_type="bearer",
+        access_token=access_jwt,
+        token_type=DEFAULT_AUTH_SCHEME,
         user=UserResponse.model_validate(user),
     )
 
