@@ -140,7 +140,7 @@ def sync_pull_requests(
                 enqueued_count += 1
 
     logger.info("Enqueued %s open PRs for background scan", enqueued_count)
-    return list_pull_requests(db, current_user)
+    return list_pull_requests(repository_id=None, db=db, current_user=current_user)
 
 
 @router.post("/{repository_id}/{pull_number}/scan")

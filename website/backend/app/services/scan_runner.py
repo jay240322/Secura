@@ -354,3 +354,174 @@ def execute_pr_scan(
         db.close()
 
 
+def record_pr_scan_results(
+    repository_name: str,
+    pull_number: int,
+    commit_sha: str = "HEAD",
+    branch: str = "main",
+    base_branch: str = "main",
+    pr_title: Optional[str] = None,
+    pr_author: Optional[str] = None,
+    pr_html_url: Optional[str] = None,
+    result: Optional[Dict[str, Any]] = None,
+    findings: Optional[List[Dict[str, Any]]] = None,
+    check_run_id: Optional[int] = None,
+    installation_id: Optional[int] = None,
+) -> Optional[str]:
+    """
+    Persist PR scan results from GitHub App webhook into the Secura database.
+    Finds or registers the repository, creates/updates a Scan record, and inserts Findings.
+    """
+    db: Session = SessionLocal()
+    try:
+        repo = db.query(Repository).filter(Repository.full_name == repository_name).first()
+        if not repo:
+            from app.models.installation import Installation
+            from app.models.user import User
+            inst = None
+            if installation_id:
+                inst = db.query(Installation).filter(Installation.github_installation_id == installation_id).first()
+            if not inst:
+                inst = db.query(Installation).first()
+
+            user = None
+            if inst:
+                user = db.query(User).filter(User.id == inst.user_id).first()
+            if not user:
+                user = db.query(User).first()
+
+            if user:
+                owner, r_name = repository_name.split("/", 1) if "/" in repository_name else ("", repository_name)
+                repo = Repository(
+                    name=r_name,
+                    full_name=repository_name,
+                    owner=owner,
+                    default_branch=base_branch or "main",
+                    is_private=False,
+                    is_monitored=True,
+                    html_url=f"https://github.com/{repository_name}",
+                    user_id=user.id,
+                    installation_id=inst.id if inst else None,
+                )
+                db.add(repo)
+                db.commit()
+                db.refresh(repo)
+
+        if not repo:
+            logger.warning("No user found to associate repository %s", repository_name)
+            return None
+
+        findings_data = findings or []
+        eval_result = result or {}
+        counts = eval_result.get("counts", {})
+
+        short_sha = commit_sha[:12] if commit_sha else "HEAD"
+        scan = (
+            db.query(Scan)
+            .filter(
+                Scan.repository_id == repo.id,
+                Scan.pull_number == pull_number,
+                Scan.commit_sha == short_sha,
+            )
+            .first()
+        )
+        if not scan:
+            scan = Scan(
+                repository_id=repo.id,
+                commit_sha=short_sha,
+                branch=branch,
+                base_branch=base_branch,
+                pull_number=pull_number,
+                pr_title=pr_title or f"Pull Request #{pull_number}",
+                pr_author=pr_author or repo.owner,
+                pr_html_url=pr_html_url or f"https://github.com/{repository_name}/pull/{pull_number}",
+            )
+            db.add(scan)
+            db.commit()
+            db.refresh(scan)
+        else:
+            scan.branch = branch
+            scan.base_branch = base_branch
+            if pr_title:
+                scan.pr_title = pr_title
+            if pr_author:
+                scan.pr_author = pr_author
+            if pr_html_url:
+                scan.pr_html_url = pr_html_url
+
+        has_violations = not eval_result.get("passed", True) or len(findings_data) > 0 and (
+            counts.get("CRITICAL", 0) > 0 or counts.get("HIGH", 0) > 0
+        )
+
+        scan.scan_status = "completed"
+        scan.scan_result = "failed" if (has_violations or len(findings_data) > 0) else "passed"
+        scan.score = eval_result.get("score", 100 if len(findings_data) == 0 else 0)
+        scan.total_findings = len(findings_data)
+        scan.critical_count = counts.get("CRITICAL", 0)
+        scan.high_count = counts.get("HIGH", 0)
+        scan.medium_count = counts.get("MEDIUM", 0)
+        scan.low_count = counts.get("LOW", 0)
+        if check_run_id:
+            scan.check_run_id = check_run_id
+        scan.completed_at = datetime.datetime.utcnow()
+
+        # Delete previous findings for this scan run to prevent duplicates on synchronize
+        db.query(Finding).filter(Finding.scan_id == scan.id).delete()
+
+        # Save findings
+        for item in findings_data:
+            f_type = item.get("type", "Unknown")
+            rule_id = map_type_to_rule_id(f_type)
+            f_path = str(item.get("file", ""))
+            line_no = int(item.get("line", 1))
+            sev = str(item.get("severity", "MEDIUM")).upper()
+
+            fingerprint = compute_finding_fingerprint(repo.id, rule_id, f_path, line_no)
+
+            existing_finding = (
+                db.query(Finding)
+                .filter(
+                    Finding.repository_id == repo.id,
+                    Finding.fingerprint == fingerprint,
+                )
+                .first()
+            )
+
+            now = datetime.datetime.utcnow()
+            first_seen = existing_finding.first_detected if existing_finding else now
+
+            finding_record = Finding(
+                scan_id=scan.id,
+                repository_id=repo.id,
+                rule_id=rule_id,
+                finding_type=f_type,
+                severity=sev,
+                file_path=f_path,
+                line_number=line_no,
+                fingerprint=fingerprint,
+                status="open",
+                risk=item.get("risk"),
+                recommendation=item.get("recommendation") or "Remove credential or secret from pull request.",
+                first_detected=first_seen,
+                last_detected=now,
+            )
+            db.add(finding_record)
+
+        # Update repository stats
+        repo.last_scanned_at = datetime.datetime.utcnow()
+        repo.last_scan_status = scan.scan_result
+        repo.open_findings = len(findings_data)
+        repo.critical_findings = counts.get("CRITICAL", 0)
+        repo.high_findings = counts.get("HIGH", 0)
+
+        db.commit()
+        logger.info("Persisted PR #%s scan for repo %s to database (findings: %s)", pull_number, repository_name, len(findings_data))
+        return scan.id
+    except Exception as exc:
+        db.rollback()
+        logger.exception("Failed to persist PR scan for %s to database: %s", repository_name, exc)
+        return None
+    finally:
+        db.close()
+
+

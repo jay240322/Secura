@@ -1,7 +1,7 @@
 // Secura — Firebase SDK Bridge & Configuration
 
 export const firebaseConfig = {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "AIzaSyB2l-Wtxpg4cuGLakE98tKBWGvdc5xA3W8",
+  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "",
   authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || "secura-35ffc.firebaseapp.com",
   projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || "secura-35ffc",
   storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || "secura-35ffc.firebasestorage.app",

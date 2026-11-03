@@ -170,6 +170,12 @@ PLACEHOLDERS = {
     "fixme",
     "string",
     "number",
+    "bearer",
+    "basic",
+    "jwt",
+    "oauth",
+    "session",
+    "digest",
 }
 
 SAFE_PREFIXES = (
@@ -185,6 +191,7 @@ SAFE_PREFIXES = (
     "get(",
     "get_env(",
     "dotenv",
+    "settings.",
 )
 
 SAFE_UNQUOTED_VALUES = {
@@ -197,35 +204,68 @@ SAFE_UNQUOTED_VALUES = {
     "undefined",
     "true",
     "false",
+    "string",
+    "number",
+    "boolean",
+    "any",
+    "unknown",
+    "never",
+    "void",
     "optional[str]",
 }
 
 
 def is_placeholder_or_safe(value: str, var_name: str = "", is_quoted: bool = True) -> bool:
     """Check if value is a harmless placeholder, variable reference, or environment reference."""
-    clean = value.strip().rstrip(",")
+    clean = value.strip().rstrip(",;:()[]{}>")
     lower = clean.lower()
     var_lower = var_name.strip().lower()
 
     if not clean or len(clean) < 4:
         return True
 
+    # Ignore function/method signatures & handlers containing credential keywords
+    if var_lower.startswith((
+        "signin", "createuser", "handle", "get", "set", "verify", "hash", "validate", "on", "test"
+    )):
+        return True
+
+    # Ignore OAuth/HTTP token type or scheme fields (e.g. token_type="bearer", auth_type="basic")
+    if var_lower.endswith(("_type", "type")) or var_lower in ("token_type", "auth_type", "grant_type"):
+        if lower in (
+            "bearer", "basic", "jwt", "oauth", "session", "digest",
+            "client_credentials", "authorization_code", "refresh_token", "password"
+        ):
+            return True
+
     if lower in PLACEHOLDERS:
         return True
 
-    if lower.startswith(SAFE_PREFIXES):
+    if any(prefix in lower for prefix in (
+        "process.env", "os.environ", "os.getenv", "settings.", "config.", "${", "{{", "dotenv", "system.getenv", "sys.env"
+    )):
         return True
 
     if not is_quoted:
-        # A variable passed to a parameter with the same name (e.g. token=token, installation_token=installation_token)
+        # Function calls or invocations (e.g. create_access_token(...))
+        if "(" in clean or ")" in clean:
+            return True
+
+        # Property access or method reference (e.g. authModule.signInWithEmailAndPassword, credential?.accessToken)
+        if "." in clean or "?." in clean:
+            return True
+
+        # Variable passed to a parameter with the same name
         if lower == var_lower:
             return True
+
+        # Common types in TypeScript / Python
         if lower in SAFE_UNQUOTED_VALUES:
             return True
-        if clean.endswith(")") or clean.endswith("}"):
-            return True
+
         if clean.startswith(":") or clean.startswith("="):
             return True
+
         # Pure variable identifier passed as keyword argument
         if re.fullmatch(r"[a-zA-Z_][a-zA-Z0-9_]*", clean) and not any(c.isdigit() for c in clean):
             return True

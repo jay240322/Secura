@@ -271,6 +271,32 @@ async def github_webhook(
             score,
         )
 
+        # Persist to Secura website database so live results appear on the dashboard
+        try:
+            import sys
+            from pathlib import Path
+            backend_dir = str(Path(__file__).resolve().parents[2] / "website" / "backend")
+            if backend_dir not in sys.path:
+                sys.path.insert(0, backend_dir)
+
+            from app.services.scan_runner import record_pr_scan_results
+            record_pr_scan_results(
+                repository_name=repository_name,
+                pull_number=pull_number,
+                commit_sha=head_sha,
+                branch=pull_request.get("head", {}).get("ref", "main"),
+                base_branch=pull_request.get("base", {}).get("ref", "main"),
+                pr_title=pull_request.get("title"),
+                pr_author=pull_request.get("user", {}).get("login"),
+                pr_html_url=pull_request.get("html_url"),
+                result=result,
+                findings=findings,
+                check_run_id=check_run_id,
+                installation_id=installation_id,
+            )
+        except Exception as db_err:
+            logger.warning("Could not persist PR scan to Secura database: %s", db_err)
+
         return {
             "status": "completed",
             "event": x_github_event,
