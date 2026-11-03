@@ -1,0 +1,160 @@
+// ─── Severity ──────────────────────────────────────────────────────────────
+export type Severity = "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
+
+// ─── Finding ───────────────────────────────────────────────────────────────
+export type FindingStatus = "open" | "resolved" | "ignored";
+
+export interface Finding {
+  id: string;
+  ruleId: string;
+  type: string;
+  severity: Severity;
+  status: FindingStatus;
+  repository: string;
+  repositoryId: string;
+  filePath: string;
+  lineNumber: number;
+  firstDetected: string;
+  lastDetected: string;
+  scanId: string;
+  risk?: string;
+  recommendation?: string;
+  ignoreReason?: string;
+}
+
+// ─── Repository ────────────────────────────────────────────────────────────
+export type ScanStatus = "clean" | "failed" | "scanning" | "pending" | "never";
+
+export interface Repository {
+  id: string;
+  name: string;
+  fullName: string;
+  owner: string;
+  defaultBranch: string;
+  isPrivate: boolean;
+  lastScanAt: string | null;
+  lastScanStatus: ScanStatus;
+  openFindings: number;
+  criticalFindings: number;
+  highFindings: number;
+  isMonitored: boolean;
+  htmlUrl: string;
+}
+
+export interface AvailableRepository {
+  githubRepoId?: number;
+  name: string;
+  fullName: string;
+  owner: string;
+  defaultBranch: string;
+  isPrivate: boolean;
+  htmlUrl: string;
+  description?: string;
+  installationId?: number;
+  alreadyMonitored: boolean;
+}
+
+// ─── Scan ──────────────────────────────────────────────────────────────────
+export type ScanResult = "passed" | "failed" | "error";
+
+export interface Scan {
+  id: string;
+  repositoryId: string;
+  repository: string;
+  branch: string;
+  commitSha: string;
+  status: "running" | "completed" | "failed";
+  result: ScanResult | null;
+  totalFindings: number;
+  criticalFindings: number;
+  highFindings: number;
+  mediumFindings: number;
+  lowFindings: number;
+  duration: number | null; // seconds
+  score: number | null;
+  createdAt: string;
+  completedAt: string | null;
+}
+
+// ─── Pull Request ──────────────────────────────────────────────────────────
+export interface PullRequest {
+  id: string;
+  number: number;
+  title: string;
+  repository: string;
+  repositoryId: string;
+  branch: string;
+  baseBranch: string;
+  commitSha: string;
+  author: string;
+  scanStatus: "pending" | "running" | "completed" | "failed";
+  checkRunStatus: "success" | "failure" | "in_progress" | "neutral";
+  totalFindings: number;
+  criticalFindings: number;
+  highFindings: number;
+  createdAt: string;
+  htmlUrl: string;
+}
+
+// ─── Dashboard ─────────────────────────────────────────────────────────────
+export interface DashboardSummary {
+  connectedRepositories: number;
+  totalOpenFindings: number;
+  criticalFindings: number;
+  highFindings: number;
+  resolvedFindings: number;
+  securityScore: number;
+}
+
+export interface FindingOverTime {
+  date: string;
+  critical: number;
+  high: number;
+  medium: number;
+  low: number;
+  resolved: number;
+}
+
+export interface FindingBySeverity {
+  severity: Severity;
+  count: number;
+}
+
+export interface FindingByRepository {
+  repository: string;
+  total: number;
+  critical: number;
+  high: number;
+}
+
+// ─── Insight ───────────────────────────────────────────────────────────────
+export interface InsightData {
+  findingsOverTime: FindingOverTime[];
+  findingsBySeverity: FindingBySeverity[];
+  findingsByRepository: FindingByRepository[];
+  topFindingTypes: { type: string; count: number }[];
+  averageResolutionDays: number;
+  securityScore: number;
+  scoreHistory: { date: string; score: number }[];
+}
+
+// ─── User & Authentication ──────────────────────────────────────────────────
+export interface User {
+  id: string;
+  email: string;
+  name?: string;
+  avatarUrl?: string;
+  githubUsername?: string;
+  githubProfileUrl?: string;
+  githubReposCount?: number;
+  provider?: string;
+  isActive: boolean;
+  createdAt: string;
+}
+
+export interface AuthResponse {
+  accessToken: string;
+  tokenType: string;
+  user: User;
+}
+

@@ -20,6 +20,8 @@ SKIP_DIRECTORIES = {
     "__pycache__",
     ".pytest_cache",
     "tests",
+    "node_modules",
+    ".next",
 }
 
 SKIP_FILES = {
@@ -176,7 +178,7 @@ def main():
             print(
                 f"[{finding.get('severity', 'MEDIUM')}] "
                 f"{finding['type']} "
-                f"-> {finding['file']}:{finding['line']}"
+                f"-> {finding['file']}:{finding.get('line', '?')}"
             )
 
     has_violations = not result["passed"] or len(findings) > 0 and (

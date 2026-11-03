@@ -52,8 +52,15 @@ function FindingsContent() {
       }
     }
     void fetchFindings();
+
+    // Live polling every 6 seconds for new findings detected on pull requests
+    const interval = setInterval(() => {
+      void fetchFindings();
+    }, 6000);
+
     return () => {
       mounted = false;
+      clearInterval(interval);
     };
   }, []);
 

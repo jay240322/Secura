@@ -19,16 +19,19 @@ def parse_requirements(file_path):
         if line.startswith("-"):
             continue
 
+        line_clean = line.split("#")[0].strip()
         match = re.match(
-            r"^([A-Za-z0-9_.-]+)\s*([<>=!~]+)\s*([A-Za-z0-9_.+!-]+)",
-            line,
+            r"^([A-Za-z0-9_.-]+)(?:\[[^\]]*\])?\s*([<>=!~]+)\s*([A-Za-z0-9_.+!-]+)",
+            line_clean,
         )
 
         if match:
+            pkg_name = match.group(1).strip()
+            clean_ver = match.group(3).lstrip("^~>=< ").strip()
             dependencies.append(
                 {
-                    "name": match.group(1),
-                    "version": match.group(3),
+                    "name": pkg_name,
+                    "version": clean_ver,
                     "file": str(file_path),
                 }
             )
@@ -47,10 +50,11 @@ def parse_package_json(file_path):
         packages = data.get(section, {})
 
         for name, version in packages.items():
+            clean_ver = str(version).lstrip("^~>=< ").strip()
             dependencies.append(
                 {
                     "name": name,
-                    "version": version,
+                    "version": clean_ver,
                     "file": str(file_path),
                 }
             )
@@ -93,7 +97,7 @@ def scan_dependencies(directory, files=None):
             continue
 
         if any(
-            part in {".git", ".venv", "__pycache__", "tests"}
+            part in {".git", ".venv", "__pycache__", "tests", "node_modules", ".next"}
             for part in path.parts
         ):
             continue
