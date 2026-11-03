@@ -38,13 +38,18 @@ export function TopNav() {
     if (stored) {
       setCurrentUser(stored);
     }
-    api.getMe().then((user) => {
-      if (user) {
-        setCurrentUser(user);
-      } else {
-        setCurrentUser(null);
-      }
-    });
+    void api
+      .getMe()
+      .then((user) => {
+        if (user) {
+          setCurrentUser(user);
+        } else {
+          setCurrentUser(null);
+        }
+      })
+      .catch(() => {
+        // Silently ignore auth refresh error
+      });
   }, [pathname]);
 
   const handleSignOut = () => {

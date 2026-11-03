@@ -370,7 +370,7 @@ export default function SettingsPage() {
                     type="number"
                     min={0}
                     value={maxCritical}
-                    onChange={(e) => setMaxCritical(parseInt(e.target.value, 10) || 0)}
+                    onChange={(e) => setMaxCritical(Number.parseInt(e.target.value, 10) || 0)}
                     className="w-full rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-xs text-slate-200 outline-none focus:border-blue-500/60"
                   />
                   <p className="text-[10px] text-slate-500 mt-1">Default: 0 (block on any AWS key, DB string, or private key)</p>
@@ -385,7 +385,7 @@ export default function SettingsPage() {
                     type="number"
                     min={0}
                     value={maxHigh}
-                    onChange={(e) => setMaxHigh(parseInt(e.target.value, 10) || 0)}
+                    onChange={(e) => setMaxHigh(Number.parseInt(e.target.value, 10) || 0)}
                     className="w-full rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-xs text-slate-200 outline-none focus:border-blue-500/60"
                   />
                   <p className="text-[10px] text-slate-500 mt-1">Default: 0 (block on API tokens & webhooks)</p>
@@ -401,7 +401,7 @@ export default function SettingsPage() {
                     min={0}
                     max={100}
                     value={minScore}
-                    onChange={(e) => setMinScore(parseInt(e.target.value, 10) || 0)}
+                    onChange={(e) => setMinScore(Number.parseInt(e.target.value, 10) || 0)}
                     className="w-full rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-xs text-slate-200 outline-none focus:border-blue-500/60"
                   />
                   <p className="text-[10px] text-slate-500 mt-1">Default: 80</p>

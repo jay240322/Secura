@@ -64,17 +64,23 @@ export function AuthCard({ initialMode = "login" }: AuthCardProps) {
     if (code) {
       setLoading(true);
       setErrorMessage(null);
-      api.completeGitHubOAuth(code).then((res) => {
-        setLoading(false);
-        if (res.success && res.user) {
-          setSuccessMessage(
-            `Authenticated as @${res.user.githubUsername || res.user.name} via GitHub! Redirecting to command center...`
-          );
-          setTimeout(() => router.push(redirectUrl), 700);
-        } else {
-          setErrorMessage(res.error || "GitHub authentication failed.");
-        }
-      });
+      void api
+        .completeGitHubOAuth(code)
+        .then((res) => {
+          setLoading(false);
+          if (res.success && res.user) {
+            setSuccessMessage(
+              `Authenticated as @${res.user.githubUsername || res.user.name} via GitHub! Redirecting to command center...`
+            );
+            setTimeout(() => router.push(redirectUrl), 700);
+          } else {
+            setErrorMessage(res.error || "GitHub authentication failed.");
+          }
+        })
+        .catch(() => {
+          setLoading(false);
+          setErrorMessage("Network error during GitHub authentication.");
+        });
     }
   }, [searchParams, redirectUrl, router]);
 
@@ -546,12 +552,13 @@ export function AuthCard({ initialMode = "login" }: AuthCardProps) {
         <form onSubmit={handleSubmit} className="space-y-4" suppressHydrationWarning>
           {mode === "signup" && (
             <div>
-              <label className="block text-xs font-medium text-slate-300 mb-1.5">
+              <label htmlFor="full-name-input" className="block text-xs font-medium text-slate-300 mb-1.5">
                 Full Name
               </label>
               <div className="relative">
                 <User className="absolute left-3 top-2.5 h-4 w-4 text-slate-500" />
                 <input
+                  id="full-name-input"
                   type="text"
                   required
                   suppressHydrationWarning
@@ -565,12 +572,13 @@ export function AuthCard({ initialMode = "login" }: AuthCardProps) {
           )}
 
           <div>
-            <label className="block text-xs font-medium text-slate-300 mb-1.5">
+            <label htmlFor="work-email-input" className="block text-xs font-medium text-slate-300 mb-1.5">
               Work Email
             </label>
             <div className="relative">
               <Mail className="absolute left-3 top-2.5 h-4 w-4 text-slate-500" />
               <input
+                id="work-email-input"
                 type="email"
                 required
                 suppressHydrationWarning
@@ -584,7 +592,7 @@ export function AuthCard({ initialMode = "login" }: AuthCardProps) {
 
           <div>
             <div className="flex items-center justify-between mb-1.5">
-              <label className="text-xs font-medium text-slate-300">
+              <label htmlFor="auth-password-input" className="text-xs font-medium text-slate-300">
                 Password
               </label>
               {mode === "login" && (
@@ -601,6 +609,7 @@ export function AuthCard({ initialMode = "login" }: AuthCardProps) {
             <div className="relative">
               <Lock className="absolute left-3 top-2.5 h-4 w-4 text-slate-500" />
               <input
+                id="auth-password-input"
                 type={showPassword ? "text" : "password"}
                 required
                 suppressHydrationWarning
@@ -657,12 +666,13 @@ export function AuthCard({ initialMode = "login" }: AuthCardProps) {
 
           {mode === "signup" && (
             <div>
-              <label className="block text-xs font-medium text-slate-300 mb-1.5">
+              <label htmlFor="confirm-password-input" className="block text-xs font-medium text-slate-300 mb-1.5">
                 Confirm Password
               </label>
               <div className="relative">
                 <Lock className="absolute left-3 top-2.5 h-4 w-4 text-slate-500" />
                 <input
+                  id="confirm-password-input"
                   type={showPassword ? "text" : "password"}
                   required
                   suppressHydrationWarning

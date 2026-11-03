@@ -759,6 +759,14 @@ export default function RepositoriesPage() {
                     return (
                       <div
                         key={repo.fullName}
+                        role="button"
+                        tabIndex={repo.alreadyMonitored ? -1 : 0}
+                        onKeyDown={(e) => {
+                          if (!repo.alreadyMonitored && (e.key === "Enter" || e.key === " ")) {
+                            e.preventDefault();
+                            toggleSelectRepo(repo.fullName);
+                          }
+                        }}
                         onClick={() => {
                           if (!repo.alreadyMonitored) {
                             toggleSelectRepo(repo.fullName);
@@ -892,10 +900,11 @@ export default function RepositoriesPage() {
               >
                 <div className="grid sm:grid-cols-3 gap-3">
                   <div className="sm:col-span-2">
-                    <label className="block text-[11px] text-slate-400 mb-1">
+                    <label htmlFor="new-repo-fullname-input" className="block text-[11px] text-slate-400 mb-1">
                       Repository Full Name (owner/repo)
                     </label>
                     <input
+                      id="new-repo-fullname-input"
                       type="text"
                       required
                       value={newRepoFullName}
@@ -905,8 +914,9 @@ export default function RepositoriesPage() {
                     />
                   </div>
                   <div>
-                    <label className="block text-[11px] text-slate-400 mb-1">Branch</label>
+                    <label htmlFor="new-repo-branch-input" className="block text-[11px] text-slate-400 mb-1">Branch</label>
                     <input
+                      id="new-repo-branch-input"
                       type="text"
                       value={newRepoBranch}
                       onChange={(e) => setNewRepoBranch(e.target.value)}

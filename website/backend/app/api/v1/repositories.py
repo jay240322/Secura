@@ -1,3 +1,4 @@
+import datetime
 from typing import List
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -63,7 +64,7 @@ def enrich_repository_response(repo: Repository, db: Session) -> RepositoryRespo
         high_findings_count=high_count,
         last_scan_status=latest_scan.scan_result if latest_scan else "passed",
         last_scan_at=latest_scan.created_at if latest_scan else None,
-        created_at=repo.created_at or datetime.datetime.utcnow(),
+        created_at=repo.created_at or datetime.datetime.now(datetime.timezone.utc),
     )
 
 

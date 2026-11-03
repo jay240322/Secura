@@ -20,7 +20,8 @@ const rawApiBase =
   typeof window !== "undefined"
     ? "/api"
     : process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000/api";
-const API_BASE = rawApiBase.endsWith("/api") ? rawApiBase : `${rawApiBase.replace(/\/+$/, "")}/api`;
+const cleanBase = rawApiBase.endsWith("/") ? rawApiBase.slice(0, -1) : rawApiBase;
+const API_BASE = cleanBase.endsWith("/api") ? cleanBase : `${cleanBase}/api`;
 
 // ─── Clean Default Empty States ──────────────────────────────────────────────
 
@@ -524,9 +525,9 @@ class ApiClient {
     return localStorage.getItem("secura_auth_token");
   }
 
-  setToken(authTokenVal: string): void {
+  setToken(val: string): void {
     if (typeof window === "undefined") return;
-    localStorage.setItem("secura_auth_token", authTokenVal);
+    localStorage.setItem("secura_auth_token", val);
   }
 
   getStoredUser(): User | null {
@@ -601,12 +602,12 @@ class ApiClient {
     }
   }
 
-  async login(email: string, userSecret: string): Promise<{ success: boolean; error?: string; user?: User }> {
+  async login(email: string, userCred: string): Promise<{ success: boolean; error?: string; user?: User }> {
     try {
       const res = await this.fetchWithTimeout(`${API_BASE}/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, ["password"]: userSecret }),
+        body: JSON.stringify({ email, ["password"]: userCred }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -620,12 +621,12 @@ class ApiClient {
     }
   }
 
-  async register(email: string, password: string, name?: string): Promise<{ success: boolean; error?: string; user?: User }> {
+  async register(email: string, userCred: string, name?: string): Promise<{ success: boolean; error?: string; user?: User }> {
     try {
       const res = await this.fetchWithTimeout(`${API_BASE}/auth/register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password, name }),
+        body: JSON.stringify({ email, ["password"]: userCred, name }),
       });
       const data = await res.json();
       if (!res.ok) {

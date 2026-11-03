@@ -148,19 +148,25 @@ export default function PullRequestsPage() {
     void loadData();
 
     // Automatically sync open PRs from GitHub on initial load
-    api.syncPullRequests().then((res) => {
-      if (mounted && res.success && res.pullRequests.length > 0) {
-        setPullRequests(res.pullRequests);
-      }
-    });
+    void api
+      .syncPullRequests()
+      .then((res) => {
+        if (mounted && res.success && res.pullRequests.length > 0) {
+          setPullRequests(res.pullRequests);
+        }
+      })
+      .catch(() => {});
 
     // Auto-poll every 5 seconds for live PR data and background scan completions
     const interval = setInterval(() => {
-      api.getPullRequests().then((res) => {
-        if (mounted && res.pullRequests) {
-          setPullRequests(res.pullRequests);
-        }
-      });
+      void api
+        .getPullRequests()
+        .then((res) => {
+          if (mounted && res.pullRequests) {
+            setPullRequests(res.pullRequests);
+          }
+        })
+        .catch(() => {});
     }, 5000);
 
     return () => {

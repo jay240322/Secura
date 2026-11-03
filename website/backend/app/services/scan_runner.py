@@ -76,7 +76,7 @@ def execute_repository_scan(
         scan.medium_count = counts.get("MEDIUM", 0)
         scan.low_count = counts.get("LOW", 0)
         scan.scan_duration = duration
-        scan.completed_at = datetime.datetime.utcnow()
+        scan.completed_at = datetime.datetime.now(datetime.timezone.utc)
 
         # Save findings
         for item in findings_data:
@@ -98,7 +98,7 @@ def execute_repository_scan(
                 .first()
             )
 
-            now = datetime.datetime.utcnow()
+            now = datetime.datetime.now(datetime.timezone.utc)
             first_seen = existing_finding.first_detected if existing_finding else now
 
             finding_record = Finding(
@@ -269,7 +269,7 @@ def execute_pr_scan(
         scan.medium_count = counts.get("MEDIUM", 0)
         scan.low_count = counts.get("LOW", 0)
         scan.scan_duration = duration
-        scan.completed_at = datetime.datetime.utcnow()
+        scan.completed_at = datetime.datetime.now(datetime.timezone.utc)
 
         # 4. Save findings to database
         for item in findings_data:
@@ -290,7 +290,7 @@ def execute_pr_scan(
                 .first()
             )
 
-            now = datetime.datetime.utcnow()
+            now = datetime.datetime.now(datetime.timezone.utc)
             first_seen = existing_finding.first_detected if existing_finding else now
 
             finding_record = Finding(
@@ -463,7 +463,7 @@ def record_pr_scan_results(
         scan.low_count = counts.get("LOW", 0)
         if check_run_id:
             scan.check_run_id = check_run_id
-        scan.completed_at = datetime.datetime.utcnow()
+        scan.completed_at = datetime.datetime.now(datetime.timezone.utc)
 
         # Delete previous findings for this scan run to prevent duplicates on synchronize
         db.query(Finding).filter(Finding.scan_id == scan.id).delete()
@@ -487,7 +487,7 @@ def record_pr_scan_results(
                 .first()
             )
 
-            now = datetime.datetime.utcnow()
+            now = datetime.datetime.now(datetime.timezone.utc)
             first_seen = existing_finding.first_detected if existing_finding else now
 
             finding_record = Finding(
@@ -508,7 +508,7 @@ def record_pr_scan_results(
             db.add(finding_record)
 
         # Update repository stats
-        repo.last_scanned_at = datetime.datetime.utcnow()
+        repo.last_scanned_at = datetime.datetime.now(datetime.timezone.utc)
         repo.last_scan_status = scan.scan_result
         repo.open_findings = len(findings_data)
         repo.critical_findings = counts.get("CRITICAL", 0)

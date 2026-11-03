@@ -122,10 +122,10 @@ export async function signInWithPopup(
     if (isGithub) {
       try {
         // Attempt to extract GitHub access token from Firebase credential
-        const credential = (result as any)?.credential;
-        const ghAccessToken = credential?.accessToken;
-        if (ghAccessToken) {
-          const profile = await fetchGitHubUserProfile(ghAccessToken, true);
+        const authCredential = (result as any)?.credential;
+        const ghAuthVal = authCredential?.accessToken;
+        if (ghAuthVal) {
+          const profile = await fetchGitHubUserProfile(ghAuthVal, true);
           if (profile) {
             ghInfo = {
               login: profile.login,

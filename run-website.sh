@@ -9,7 +9,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 echo "🛡️  Starting Secura Development Environment..."
 
 # 1. Activate Python virtual environment if present
-if [ -f "$REPO_ROOT/.venv/bin/activate" ]; then
+if [[ -f "$REPO_ROOT/.venv/bin/activate" ]]; then
     echo "📦 Activating Python virtual environment (.venv)..."
     source "$REPO_ROOT/.venv/bin/activate"
 fi
@@ -38,9 +38,9 @@ sleep 2
 # 3. Start Next.js Frontend in background
 echo "🌐 Starting Frontend on http://localhost:3000..."
 cd "$REPO_ROOT/website/frontend"
-if [ ! -d "node_modules/firebase" ]; then
+if [[ ! -d "node_modules/firebase" ]]; then
     echo "📦 Ensuring frontend dependencies (including firebase) are installed..."
-    npm install firebase --no-audit --no-fund || true
+    npm install firebase --ignore-scripts --no-audit --no-fund || true
 fi
 npm run dev &
 FRONTEND_PID=$!

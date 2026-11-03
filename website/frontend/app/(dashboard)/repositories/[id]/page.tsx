@@ -74,17 +74,19 @@ function RepositoryDetailContent() {
     // Auto-poll every 6 seconds to keep PRs and findings live for this repository
     const interval = setInterval(() => {
       if (params?.id) {
-        Promise.all([
+        void Promise.all([
           api.getRepositoryById(params.id),
           api.getPullRequests(params.id),
           api.getFindings({ repositoryId: params.id }),
-        ]).then(([r, p, f]) => {
-          if (mounted) {
-            if (r) setRepo(r);
-            if (p.pullRequests) setPullRequests(p.pullRequests);
-            if (f.findings) setFindings(f.findings);
-          }
-        });
+        ])
+          .then(([r, p, f]) => {
+            if (mounted) {
+              if (r) setRepo(r);
+              if (p.pullRequests) setPullRequests(p.pullRequests);
+              if (f.findings) setFindings(f.findings);
+            }
+          })
+          .catch(() => {});
       }
     }, 6000);
 
