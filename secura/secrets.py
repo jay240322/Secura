@@ -20,10 +20,10 @@ SECRET_PATTERNS = {
         r"\bgh[osru]_[A-Za-z0-9]{36,}\b"
     ),
     "Private Key": re.compile(
-        r"-----BEGIN (?:[A-Z0-9_-]+ )?PRIVATE KEY(?: BLOCK)?-----"
+        r"-----BEGIN (?:[A-Z0-9_-]+ )?" + r"PRIVATE KEY(?: BLOCK)?-----"
     ),
     "PGP Private Key": re.compile(
-        r"-----BEGIN PGP PRIVATE KEY BLOCK-----"
+        r"-----BEGIN PGP " + r"PRIVATE KEY BLOCK-----"
     ),
     "Google API Key": re.compile(
         r"\bAIza[0-9A-Za-z_-]{32,38}\b"

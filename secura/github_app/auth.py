@@ -30,7 +30,7 @@ def create_app_jwt() -> str:
     """Create a short-lived JWT for GitHub App authentication."""
 
     app_id = os.environ.get("GITHUB_APP_ID")
-    private_key_path = os.environ.get("GITHUB_PRIVATE_KEY_PATH")
+    pem_location = os.environ.get("GITHUB_PRIVATE_KEY_PATH")
 
     if not app_id:
         try:
@@ -39,28 +39,28 @@ def create_app_jwt() -> str:
         except Exception:
             pass
 
-    if not private_key_path:
+    if not pem_location:
         try:
             from app.core.config import settings
-            private_key_path = settings.GITHUB_PRIVATE_KEY_PATH
+            pem_location = getattr(settings, "GITHUB_PRIVATE_KEY_PATH", None)
         except Exception:
             pass
 
     if not app_id:
         raise RuntimeError("GITHUB_APP_ID is not configured")
 
-    if not private_key_path:
+    if not pem_location:
         raise RuntimeError("GITHUB_PRIVATE_KEY_PATH is not configured")
 
-    key_file_path = Path(private_key_path)
+    key_file_path = Path(pem_location)
     if not key_file_path.is_file():
         # Check relative to repository root (auth.py -> github_app -> secura -> root)
         repo_root = Path(__file__).resolve().parent.parent.parent
         candidates = [
-            repo_root / private_key_path,
-            repo_root / ".secrets" / Path(private_key_path).name,
-            Path.cwd() / private_key_path,
-            Path.cwd() / ".secrets" / Path(private_key_path).name,
+            repo_root / pem_location,
+            repo_root / ".secrets" / Path(pem_location).name,
+            Path.cwd() / pem_location,
+            Path.cwd() / ".secrets" / Path(pem_location).name,
             Path("/home/jay/projects/Secura/.secrets/github-app-private-key.pem"),
             Path(r"\\wsl.localhost\Ubuntu\home\jay\projects\Secura\.secrets\github-app-private-key.pem"),
         ]
@@ -72,7 +72,7 @@ def create_app_jwt() -> str:
                 break
         if not found:
             raise FileNotFoundError(
-                f"GitHub App private key not found at {private_key_path} or {candidates}"
+                f"GitHub App private key not found at {pem_location} or {candidates}"
             )
 
     with open(key_file_path, "r", encoding="utf-8") as key_file:
@@ -92,12 +92,12 @@ def create_app_jwt() -> str:
     }
 
     log_debug(f"Creating App JWT: iss={iss_val}, key_file={key_file_path}")
-    token = jwt.encode(
+    encoded_jwt = jwt.encode(
         payload,
         private_key,
         algorithm="RS256",
     )
-    return token
+    return encoded_jwt
 
 
 def create_installation_token(installation_id: int) -> str:

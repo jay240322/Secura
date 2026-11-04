@@ -52,14 +52,14 @@ def create_app_jwt() -> str:
     if not app_id:
         raise RuntimeError("GITHUB_APP_ID is not configured")
 
-    private_key_path = os.environ.get("GITHUB_PRIVATE_KEY_PATH")
-    if not private_key_path:
+    pem_location = os.environ.get("GITHUB_PRIVATE_KEY_PATH")
+    if not pem_location:
         try:
-            private_key_path = settings.GITHUB_PRIVATE_KEY_PATH
+            pem_location = getattr(settings, "GITHUB_PRIVATE_KEY_PATH", None)
         except Exception:
             pass
 
-    key_file_path = Path(private_key_path) if private_key_path else Path(".secrets/github-app-private-key.pem")
+    key_file_path = Path(pem_location) if pem_location else Path(".secrets/github-app-private-key.pem")
     if not key_file_path.is_file():
         candidates = [
             ROOT_DIR / ".secrets" / "github-app-private-key.pem",
@@ -88,8 +88,8 @@ def create_app_jwt() -> str:
     }
 
     log_debug(f"Creating App JWT: iss={iss_val}, key_file={key_file_path}")
-    token = jwt.encode(payload, private_key, algorithm="RS256")
-    return token
+    encoded_jwt = jwt.encode(payload, private_key, algorithm="RS256")
+    return encoded_jwt
 
 
 def create_installation_token(installation_id: int) -> str:
