@@ -1,5 +1,5 @@
 import datetime
-from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, String
+from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
 from app.core.database import Base
 from app.models.base import generate_uuid
@@ -32,6 +32,10 @@ class Scan(Base):
     pr_author = Column(String(100), nullable=True)
     pr_html_url = Column(String(512), nullable=True)
     base_branch = Column(String(100), nullable=True)
+    pr_state = Column(String(32), default="open", nullable=True, index=True)  # open, merged, closed
+    pr_merged_at = Column(DateTime, nullable=True)
+    pr_closed_at = Column(DateTime, nullable=True)
+    pr_commits_json = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.datetime.utcnow, nullable=False, index=True)
     completed_at = Column(DateTime, nullable=True)
 

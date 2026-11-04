@@ -39,6 +39,8 @@ export interface Repository {
   highFindings: number;
   isMonitored: boolean;
   htmlUrl: string;
+  githubInstallationId?: number;
+  githubAppUrl?: string;
 }
 
 export interface AvailableRepository {
@@ -77,6 +79,28 @@ export interface Scan {
 }
 
 // ─── Pull Request ──────────────────────────────────────────────────────────
+export interface PRCommit {
+  sha: string;
+  fullSha?: string;
+  message: string;
+  author: string;
+  authorAvatar?: string | null;
+  date?: string | null;
+  htmlUrl?: string;
+}
+
+export interface PRFinding {
+  id: string;
+  ruleId: string;
+  findingType: string;
+  severity: Severity;
+  filePath: string;
+  lineNumber: number;
+  status?: string;
+  risk?: string;
+  recommendation?: string;
+}
+
 export interface PullRequest {
   id: string;
   number: number;
@@ -87,13 +111,19 @@ export interface PullRequest {
   baseBranch: string;
   commitSha: string;
   author: string;
+  state: "open" | "merged" | "closed";
+  mergedAt?: string | null;
+  closedAt?: string | null;
   scanStatus: "pending" | "running" | "completed" | "failed";
   checkRunStatus: "success" | "failure" | "in_progress" | "neutral";
   totalFindings: number;
   criticalFindings: number;
   highFindings: number;
+  score?: number;
   createdAt: string;
   htmlUrl: string;
+  findings?: PRFinding[];
+  commits?: PRCommit[];
 }
 
 // ─── Dashboard ─────────────────────────────────────────────────────────────

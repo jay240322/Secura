@@ -271,15 +271,27 @@ async def github_oauth_callback(payload: dict, db: Session = Depends(get_db)):
 
     # 4. Save or update user in database with authentic GitHub details
     clean_email = email.strip().lower()
+    gh_login = gh_user.get("login") or ""
+    gh_id_str = str(gh_user.get("id")) if gh_user.get("id") else None
+
     try:
-        user = db.query(User).filter(User.email == clean_email).first()
+        from sqlalchemy import func
+        user = None
+        if gh_id_str:
+            user = db.query(User).filter(User.github_id == gh_id_str).first()
+        if not user and gh_login:
+            user = db.query(User).filter(func.lower(User.github_username) == gh_login.lower()).first()
+        if not user and clean_email:
+            user = db.query(User).filter(User.email == clean_email).first()
+
         if not user:
             user = User(
                 email=clean_email,
-                name=gh_user.get("name") or gh_user["login"],
+                name=gh_user.get("name") or gh_login,
                 avatar_url=gh_user.get("avatar_url"),
-                github_username=gh_user["login"],
-                github_id=str(gh_user["id"]),
+                github_username=gh_login,
+                github_id=gh_id_str,
+                github_access_token=gh_access_token,
                 provider="github",
                 is_active=True,
             )
@@ -287,8 +299,10 @@ async def github_oauth_callback(payload: dict, db: Session = Depends(get_db)):
             db.commit()
             db.refresh(user)
         else:
-            user.github_username = gh_user["login"]
-            user.github_id = str(gh_user["id"])
+            user.github_username = gh_login
+            if gh_id_str:
+                user.github_id = gh_id_str
+            user.github_access_token = gh_access_token
             if gh_user.get("avatar_url"):
                 user.avatar_url = gh_user["avatar_url"]
             if gh_user.get("name") and not user.name:

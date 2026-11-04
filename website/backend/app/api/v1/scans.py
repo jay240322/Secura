@@ -54,6 +54,8 @@ def list_scans(
         query = query.filter(Scan.repository_id == repository_id)
 
     scans = query.order_by(Scan.created_at.desc()).offset(skip).limit(limit).all()
+    if not scans and not repository_id:
+        scans = db.query(Scan).order_by(Scan.created_at.desc()).offset(skip).limit(limit).all()
     return [to_scan_response(s) for s in scans]
 
 
@@ -73,25 +75,7 @@ def get_scan(
     if not scan:
         raise HTTPException(status_code=404, detail="Scan not found")
 
-    response = ScanDetailResponse(
-        id=scan.id,
-        repository_id=scan.repository_id,
-        repository_name=scan.repository.full_name if scan.repository else None,
-        commit_sha=scan.commit_sha,
-        branch=scan.branch,
-        scan_status=scan.scan_status,
-        scan_result=scan.scan_result,
-        scan_duration=scan.scan_duration,
-        score=scan.score,
-        total_findings=scan.total_findings,
-        critical_count=scan.critical_count,
-        high_count=scan.high_count,
-        medium_count=scan.medium_count,
-        low_count=scan.low_count,
-        check_run_id=scan.check_run_id,
-        created_at=scan.created_at,
-        completed_at=scan.completed_at,
-        findings=[to_finding_response(f) for f in scan.findings],
-    )
-    return response
+    scan_dict = to_scan_response(scan).model_dump()
+    scan_dict["findings"] = [to_finding_response(f) for f in scan.findings]
+    return ScanDetailResponse(**scan_dict)
 

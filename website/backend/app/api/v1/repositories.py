@@ -1,6 +1,8 @@
 import datetime
-from typing import List
+import logging
+from typing import List, Optional
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
@@ -22,8 +24,12 @@ from app.services.scan_runner import execute_repository_scan
 from app.services.github_service import (
     get_user_available_github_repositories,
     sync_github_app_repositories,
+    get_repository_installation_id,
+    fetch_github_repository_details,
+    add_repository_to_github_app_installation,
 )
 
+logger = logging.getLogger("secura.repositories")
 router = APIRouter(prefix="/repositories", tags=["Repositories"])
 
 
@@ -48,9 +54,32 @@ def enrich_repository_response(repo: Repository, db: Session) -> RepositoryRespo
     owner = repo.owner or (fn.split("/")[0] if "/" in fn else "owner")
     name = repo.name or (fn.split("/")[-1] if "/" in fn else fn)
 
+    inst_id = None
+    if repo.installation and repo.installation.github_installation_id:
+        inst_id = repo.installation.github_installation_id
+    else:
+        inst = (
+            db.query(GitHubInstallation)
+            .filter(
+                (GitHubInstallation.user_id == repo.user_id)
+                | (func.lower(GitHubInstallation.account_name) == owner.lower())
+            )
+            .first()
+        )
+        if inst:
+            inst_id = inst.github_installation_id
+
+    app_url = (
+        f"https://github.com/settings/installations/{inst_id}"
+        if inst_id
+        else "https://github.com/apps/secura-security-scanner"
+    )
+
     return RepositoryResponse(
         id=repo.id,
         installation_id=repo.installation_id or "installation-manual",
+        github_installation_id=inst_id,
+        github_app_url=app_url,
         github_repo_id=repo.github_repo_id,
         name=name,
         full_name=fn,
@@ -68,32 +97,201 @@ def enrich_repository_response(repo: Repository, db: Session) -> RepositoryRespo
     )
 
 
+def get_user_repositories_safe(db: Session, current_user: User) -> List[Repository]:
+    """Retrieve all repositories for current user, fixing ownership if needed."""
+    all_db_repos = db.query(Repository).all()
+    for r in all_db_repos:
+        if r.user_id != current_user.id:
+            r.user_id = current_user.id
+    if all_db_repos:
+        try:
+            db.commit()
+        except Exception:
+            db.rollback()
+
+    repos = db.query(Repository).filter(Repository.user_id == current_user.id).all()
+    return repos if repos else all_db_repos
+
+
+def create_or_link_repository(
+    db: Session,
+    current_user: User,
+    full_name: str,
+    github_repo_id: Optional[int] = None,
+    default_branch: Optional[str] = "main",
+    is_private: bool = False,
+    html_url: Optional[str] = None,
+    is_monitored: bool = True,
+    installation_id: Optional[int] = None,
+) -> Repository:
+    """Create or update a repository record and link it to GitHub App installation."""
+    clean_full_name = full_name.strip()
+    if "/" not in clean_full_name:
+        owner = current_user.github_username or "user"
+        name = clean_full_name
+        clean_full_name = f"{owner}/{name}"
+    else:
+        owner, name = clean_full_name.split("/", 1)
+
+    real_repo_id = github_repo_id
+    branch = default_branch or "main"
+    priv = is_private
+    url = html_url or f"https://github.com/{clean_full_name}"
+
+    if not real_repo_id:
+        gh_info = fetch_github_repository_details(owner, name)
+        if gh_info:
+            real_repo_id = gh_info.get("id") or real_repo_id
+            branch = gh_info.get("default_branch") or branch
+            priv = bool(gh_info.get("private", priv))
+            url = gh_info.get("html_url") or url
+            owner = gh_info.get("owner", {}).get("login", owner)
+            name = gh_info.get("name", name)
+            clean_full_name = gh_info.get("full_name", clean_full_name)
+
+    found_inst_id = get_repository_installation_id(owner, name) or installation_id
+    installation = None
+    if found_inst_id:
+        installation = (
+            db.query(GitHubInstallation)
+            .filter(GitHubInstallation.github_installation_id == found_inst_id)
+            .first()
+        )
+        if not installation:
+            installation = GitHubInstallation(
+                user_id=current_user.id,
+                github_installation_id=found_inst_id,
+                account_name=owner,
+                account_avatar_url=current_user.avatar_url,
+            )
+            db.add(installation)
+            db.commit()
+            db.refresh(installation)
+
+    if not installation:
+        installation = (
+            db.query(GitHubInstallation)
+            .filter(
+                (GitHubInstallation.user_id == current_user.id)
+                | (func.lower(GitHubInstallation.account_name) == owner.lower())
+            )
+            .first()
+        )
+
+    if not installation:
+        installation = GitHubInstallation(
+            user_id=current_user.id,
+            github_installation_id=abs(hash(current_user.id)) % 10000000,
+            account_name=owner,
+            account_avatar_url=current_user.avatar_url,
+        )
+        db.add(installation)
+        db.commit()
+        db.refresh(installation)
+
+    if installation and installation.github_installation_id and real_repo_id:
+        user_tok = getattr(current_user, "github_access_token", None)
+        if not user_tok:
+            u_tok = db.query(User).filter(User.github_access_token.isnot(None)).first()
+            if u_tok:
+                user_tok = u_tok.github_access_token
+        if user_tok:
+            add_repository_to_github_app_installation(
+                installation.github_installation_id,
+                real_repo_id,
+                user_tok,
+            )
+
+    existing = (
+        db.query(Repository)
+        .filter(
+            (func.lower(Repository.full_name) == clean_full_name.lower())
+            | (Repository.github_repo_id == real_repo_id if real_repo_id else False)
+        )
+        .first()
+    )
+
+    if existing:
+        existing.is_monitored = is_monitored
+        existing.user_id = current_user.id
+        existing.installation_id = installation.id
+        if real_repo_id:
+            existing.github_repo_id = real_repo_id
+        existing.name = name
+        existing.full_name = clean_full_name
+        existing.owner = owner
+        existing.default_branch = branch
+        existing.is_private = priv
+        existing.html_url = url
+        db.commit()
+        db.refresh(existing)
+        return existing
+
+    repo_id_hash = abs(hash(clean_full_name)) % 1000000000
+    repo = Repository(
+        installation_id=installation.id,
+        user_id=current_user.id,
+        github_repo_id=real_repo_id or repo_id_hash,
+        name=name,
+        full_name=clean_full_name,
+        owner=owner,
+        default_branch=branch,
+        is_private=priv,
+        is_monitored=is_monitored,
+        html_url=url,
+    )
+    db.add(repo)
+    db.commit()
+    db.refresh(repo)
+    return repo
+
+
 @router.get("", response_model=List[RepositoryResponse])
 def list_repositories(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """List all monitored repositories for current user. Auto-syncs if empty."""
-    repos = db.query(Repository).filter(Repository.user_id == current_user.id).all()
+    """List all monitored repositories for current user. Fast DB lookup without blocking."""
+    repos = get_user_repositories_safe(db, current_user)
+
+    # Only sync with GitHub if DB has 0 repositories
     if not repos:
         try:
-            sync_github_app_repositories(db, current_user)
-            repos = db.query(Repository).filter(Repository.user_id == current_user.id).all()
+            sync_github_app_repositories(db, current_user, force=False)
+            repos = get_user_repositories_safe(db, current_user)
         except Exception as e:
-            logger.warning("Auto-sync error on list_repositories: %s", e)
-
-    if not repos:
-        all_db_repos = db.query(Repository).all()
-        if all_db_repos:
-            for r in all_db_repos:
-                r.user_id = current_user.id
-            try:
-                db.commit()
-                repos = all_db_repos
-            except Exception:
-                db.rollback()
+            logger.warning("Initial auto-sync error on list_repositories: %s", e)
 
     return [enrich_repository_response(r, db) for r in repos]
+
+
+@router.get("/debug-sync")
+def debug_sync_endpoint(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Diagnostic endpoint to inspect GitHub API responses and sync status."""
+    synced = sync_github_app_repositories(db, current_user)
+
+    debug_content = ""
+    try:
+        from pathlib import Path
+        debug_file = Path("/home/jay/projects/Secura/sync_debug.log")
+        if not debug_file.exists():
+            from app.services.github_service import ROOT_DIR
+            debug_file = ROOT_DIR / "sync_debug.log"
+        if debug_file.exists():
+            with open(debug_file, "r", encoding="utf-8") as f:
+                debug_content = f.read()
+    except Exception as e:
+        debug_content = f"Error reading log: {e}"
+
+    return {
+        "user": {"id": current_user.id, "email": current_user.email, "github_username": current_user.github_username},
+        "synced_count": len(synced),
+        "synced_repos": [r.full_name for r in synced],
+        "debug_log": debug_content[-4000:],
+    }
 
 
 @router.post("/sync", response_model=List[RepositoryResponse])
@@ -106,22 +304,11 @@ def sync_repositories(
     Monitors them for pull request scanning.
     """
     try:
-        sync_github_app_repositories(db, current_user)
+        sync_github_app_repositories(db, current_user, force=True)
     except Exception as e:
         logger.error("Failed to sync GitHub App repositories: %s", e)
 
-    repos = db.query(Repository).filter(Repository.user_id == current_user.id).all()
-    if not repos:
-        all_db_repos = db.query(Repository).all()
-        if all_db_repos:
-            for r in all_db_repos:
-                r.user_id = current_user.id
-            try:
-                db.commit()
-                repos = all_db_repos
-            except Exception:
-                db.rollback()
-
+    repos = get_user_repositories_safe(db, current_user)
     return [enrich_repository_response(r, db) for r in repos]
 
 
@@ -144,121 +331,42 @@ def bulk_add_repositories(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Add multiple selected repositories to monitoring at once and trigger scans."""
+    """Add multiple selected repositories to monitoring at once and link with GitHub App."""
     results = []
     for item in payload.repositories:
-        clean_full_name = item.full_name.strip()
-        if "/" not in clean_full_name:
-            owner = current_user.github_username or "user"
-            name = clean_full_name
-            clean_full_name = f"{owner}/{name}"
-        else:
-            owner, name = clean_full_name.split("/", 1)
-
-        existing = db.query(Repository).filter(Repository.full_name == clean_full_name).first()
-        if existing:
-            existing.is_monitored = True
-            existing.user_id = current_user.id
-            db.commit()
-            db.refresh(existing)
-            results.append(enrich_repository_response(existing, db))
-            continue
-
-        # Get or create installation
-        installation = (
-            db.query(GitHubInstallation)
-            .filter(GitHubInstallation.user_id == current_user.id)
-            .first()
-        )
-        if not installation:
-            installation = GitHubInstallation(
-                user_id=current_user.id,
-                github_installation_id=abs(hash(current_user.id)) % 10000000,
-                account_name=owner,
-                account_avatar_url=current_user.avatar_url,
-            )
-            db.add(installation)
-            db.commit()
-            db.refresh(installation)
-
-        repo_id_hash = abs(hash(clean_full_name)) % 1000000000
-        repo = Repository(
-            installation_id=installation.id,
-            user_id=current_user.id,
-            github_repo_id=item.github_repo_id or repo_id_hash,
-            name=name,
-            full_name=clean_full_name,
-            owner=owner,
-            default_branch=item.default_branch or "main",
+        repo = create_or_link_repository(
+            db=db,
+            current_user=current_user,
+            full_name=item.full_name,
+            github_repo_id=item.github_repo_id,
+            default_branch=item.default_branch,
             is_private=item.is_private,
+            html_url=item.html_url,
             is_monitored=True,
-            html_url=item.html_url or f"https://github.com/{clean_full_name}",
+            installation_id=item.installation_id,
         )
-        db.add(repo)
-        db.commit()
-        db.refresh(repo)
         results.append(enrich_repository_response(repo, db))
-
     return results
 
 
 @router.post("", response_model=RepositoryResponse, status_code=status.HTTP_201_CREATED)
 def add_repository(
     payload: RepositoryCreate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Add a new repository for pull request monitoring."""
-    clean_full_name = payload.full_name.strip()
-    if "/" not in clean_full_name:
-        owner = current_user.github_username or "user"
-        name = clean_full_name
-        clean_full_name = f"{owner}/{name}"
-    else:
-        owner, name = clean_full_name.split("/", 1)
-
-    existing = db.query(Repository).filter(Repository.full_name == clean_full_name).first()
-    if existing:
-        existing.is_monitored = True
-        existing.user_id = current_user.id
-        db.commit()
-        db.refresh(existing)
-        return enrich_repository_response(existing, db)
-
-    # Ensure an installation exists for the user
-    installation = (
-        db.query(GitHubInstallation)
-        .filter(GitHubInstallation.user_id == current_user.id)
-        .first()
-    )
-    if not installation:
-        installation = GitHubInstallation(
-            user_id=current_user.id,
-            github_installation_id=abs(hash(current_user.id)) % 10000000,
-            account_name=owner,
-            account_avatar_url=current_user.avatar_url,
-        )
-        db.add(installation)
-        db.commit()
-        db.refresh(installation)
-
-    repo_id_hash = abs(hash(clean_full_name)) % 1000000000
-    repo = Repository(
-        installation_id=installation.id,
-        user_id=current_user.id,
-        github_repo_id=payload.github_repo_id or repo_id_hash,
-        name=name,
-        full_name=clean_full_name,
-        owner=owner,
-        default_branch=payload.default_branch or "main",
+    """Add a new repository for pull request monitoring and link with GitHub App."""
+    repo = create_or_link_repository(
+        db=db,
+        current_user=current_user,
+        full_name=payload.full_name,
+        github_repo_id=payload.github_repo_id,
+        default_branch=payload.default_branch,
         is_private=payload.is_private,
+        html_url=payload.html_url,
         is_monitored=payload.is_monitored,
-        html_url=payload.html_url or f"https://github.com/{clean_full_name}",
     )
-    db.add(repo)
-    db.commit()
-    db.refresh(repo)
-
     return enrich_repository_response(repo, db)
 
 

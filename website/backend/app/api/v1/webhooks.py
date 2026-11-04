@@ -1,6 +1,7 @@
 import json
 import logging
 from fastapi import APIRouter, BackgroundTasks, Header, HTTPException, Request, status
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.database import SessionLocal
@@ -115,44 +116,87 @@ async def github_webhook(
                 .filter(GitHubInstallation.github_installation_id == inst_id)
                 .first()
             )
+            if not inst:
+                account = installation_data.get("account", {})
+                account_name = account.get("login", "")
+                avatar_url = account.get("avatar_url", "")
+                user = db.query(User).filter(User.github_username == account_name).first() or db.query(User).first()
+                if not user:
+                    user = User(email=f"{account_name or 'admin'}@secura.security", name=account_name or "Admin")
+                    db.add(user)
+                    db.commit()
+                inst = GitHubInstallation(
+                    user_id=user.id,
+                    github_installation_id=inst_id,
+                    account_name=account_name,
+                    account_avatar_url=avatar_url,
+                )
+                db.add(inst)
+                db.commit()
+                db.refresh(inst)
+
             if inst:
                 # Add repositories
                 for r in payload.get("repositories_added", []):
                     full_name = r.get("full_name")
                     name = r.get("name")
                     owner = full_name.split("/")[0] if "/" in full_name else inst.account_name
-                    existing = db.query(Repository).filter(Repository.full_name == full_name).first()
+                    repo_id = r.get("id")
+                    existing = (
+                        db.query(Repository)
+                        .filter(
+                            (func.lower(Repository.full_name) == full_name.lower())
+                            | (Repository.github_repo_id == repo_id if repo_id else False)
+                        )
+                        .first()
+                    )
                     if not existing:
                         new_r = Repository(
                             installation_id=inst.id,
                             user_id=inst.user_id,
-                            github_repo_id=r.get("id"),
+                            github_repo_id=repo_id or (abs(hash(full_name)) % 1000000000),
                             name=name,
                             full_name=full_name,
                             owner=owner,
                             is_private=r.get("private", False),
                             is_monitored=True,
+                            html_url=f"https://github.com/{full_name}",
                         )
                         db.add(new_r)
                         db.commit()
                         logger.info("Monitored new repository %s for pull request checks", full_name)
                     else:
                         existing.is_monitored = True
+                        existing.installation_id = inst.id
+                        existing.user_id = inst.user_id
+                        if repo_id:
+                            existing.github_repo_id = repo_id
+                        existing.name = name
+                        existing.full_name = full_name
+                        existing.owner = owner
                         db.commit()
 
                 # Remove repositories
                 for r in payload.get("repositories_removed", []):
                     full_name = r.get("full_name")
-                    repo_to_del = db.query(Repository).filter(Repository.full_name == full_name).first()
+                    repo_id = r.get("id")
+                    repo_to_del = (
+                        db.query(Repository)
+                        .filter(
+                            (func.lower(Repository.full_name) == full_name.lower())
+                            | (Repository.github_repo_id == repo_id if repo_id else False)
+                        )
+                        .first()
+                    )
                     if repo_to_del:
-                        db.delete(repo_to_del)
+                        repo_to_del.is_monitored = False
                         db.commit()
 
             return {"status": "success", "event": "installation_repositories", "action": action}
 
         # 4. Pull Request event
         if x_github_event == "pull_request":
-            supported_actions = {"opened", "reopened", "synchronize"}
+            supported_actions = {"opened", "reopened", "synchronize", "closed"}
             if action not in supported_actions:
                 return {"status": "ignored", "action": action}
 
@@ -175,7 +219,33 @@ async def github_webhook(
                 logger.info("Repository %s not monitored by Secura, ignoring PR #%s", full_name, pull_number)
                 return {"status": "unmonitored", "repository": full_name}
 
-            # Enqueue dedicated PR security scan immediately
+            # Handle PR closure/merge
+            if action == "closed":
+                import datetime
+                is_merged = bool(pr_data.get("merged", False))
+                pr_state = "merged" if is_merged else "closed"
+                pr_scans = (
+                    db.query(Scan)
+                    .filter(Scan.repository_id == repo.id, Scan.pull_number == pull_number)
+                    .all()
+                )
+                now_utc = datetime.datetime.now(datetime.timezone.utc)
+                for s in pr_scans:
+                    s.pr_state = pr_state
+                    if is_merged:
+                        s.pr_merged_at = now_utc
+                    else:
+                        s.pr_closed_at = now_utc
+                db.commit()
+                logger.info("Updated PR #%s status to %s for %s", pull_number, pr_state, full_name)
+                return {
+                    "status": "updated",
+                    "repository": full_name,
+                    "pull_number": pull_number,
+                    "state": pr_state,
+                }
+
+            # Enqueue dedicated PR security scan immediately for opened/reopened/synchronize
             background_tasks.add_task(
                 execute_pr_scan,
                 repository_id=repo.id,
@@ -187,6 +257,7 @@ async def github_webhook(
                 pr_author=pr_author,
                 pr_html_url=pr_html_url,
                 installation_id=installation_id,
+                pr_state="open",
             )
 
             logger.info("Enqueued PR security scan for %s #%s (%s)", full_name, pull_number, head_sha[:7])

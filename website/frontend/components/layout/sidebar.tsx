@@ -16,7 +16,7 @@ import {
   ChevronRight,
   ExternalLink,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 const NAV_ITEMS = [
   { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
@@ -29,13 +29,20 @@ const NAV_ITEMS = [
 
 export function Sidebar() {
   const pathname = usePathname();
-  const [collapsed, setCollapsed] = useState(false);
+  const isRepoDetail = pathname.startsWith("/repositories/") && pathname !== "/repositories";
+  const [collapsed, setCollapsed] = useState(isRepoDetail);
+
+  // Automatically decrease sidebar width and show only icons when navigating to a repository details page
+  useEffect(() => {
+    const isDetail = pathname.startsWith("/repositories/") && pathname !== "/repositories";
+    setCollapsed(isDetail);
+  }, [pathname]);
 
   return (
     <aside
       className={cn(
-        "relative flex flex-col h-screen border-r border-white/[0.06] bg-[#0d1117] transition-all duration-200",
-        collapsed ? "w-16" : "w-60"
+        "relative flex flex-col h-screen border-r border-white/[0.06] bg-[#0d1117] transition-all duration-200 shrink-0 z-20",
+        collapsed ? "w-16 min-w-[4rem]" : "w-60 min-w-[15rem]"
       )}
     >
       {/* Logo */}

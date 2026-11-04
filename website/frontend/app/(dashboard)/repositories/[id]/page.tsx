@@ -8,15 +8,16 @@ import { SeverityBadge } from "@/components/ui/severity-badge";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { api } from "@/lib/api-client";
 import type { Repository, PullRequest, Finding } from "@/types";
+import { PullRequestRow } from "@/components/pull-requests/pull-request-row";
 import {
   ArrowLeft,
-  CheckCircle2,
   ExternalLink,
   GitBranch,
   GitPullRequest,
+  GitMerge,
+  GitCommit,
   Loader2,
   Lock,
-  Power,
   RefreshCcw,
   ShieldAlert,
   ShieldCheck,
@@ -25,7 +26,14 @@ import {
   XCircle,
   Play,
   FileCode,
+  FileCode2,
   X,
+  ChevronDown,
+  ChevronUp,
+  KeyRound,
+  Shield,
+  Layers,
+  ArrowUpDown,
 } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -48,6 +56,18 @@ function RepositoryDetailContent() {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<"prs" | "findings" | "info">("prs");
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [scanningMap, setScanningMap] = useState<Record<string, boolean>>({});
+  const [expandedPRs, setExpandedPRs] = useState<Record<string, boolean>>({});
+  const [syncLoading, setSyncLoading] = useState(false);
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
+  const [loadingCommits, setLoadingCommits] = useState<Record<string, boolean>>({});
+
+  // Keep PRs strictly ordered by numerical PR number (#1, #2, #3, ...)
+  const orderedPullRequests = useMemo(() => {
+    return [...pullRequests].sort((a, b) => {
+      return sortOrder === "asc" ? a.number - b.number : b.number - a.number;
+    });
+  }, [pullRequests, sortOrder]);
 
   const loadData = async () => {
     if (!params?.id) return;
@@ -71,7 +91,7 @@ function RepositoryDetailContent() {
     let mounted = true;
     void loadData();
 
-    // Auto-poll every 6 seconds to keep PRs and findings live for this repository
+    // Auto-poll every 5 seconds to keep PRs and findings live for this repository
     const interval = setInterval(() => {
       if (params?.id) {
         void Promise.all([
@@ -88,7 +108,7 @@ function RepositoryDetailContent() {
           })
           .catch(() => {});
       }
-    }, 6000);
+    }, 5000);
 
     return () => {
       mounted = false;
@@ -96,16 +116,19 @@ function RepositoryDetailContent() {
     };
   }, [params?.id]);
 
-  const handleToggleMonitoring = async () => {
-    if (!repo) return;
-    const nextStatus = !repo.isMonitored;
-    setRepo({ ...repo, isMonitored: nextStatus });
+  const loadCommitsForPR = async (repoId: string, pullNumber: number, prId: string) => {
+    setLoadingCommits((prev) => ({ ...prev, [prId]: true }));
     try {
-      await api.toggleRepositoryMonitoring(repo.id, nextStatus);
-      setFeedback(`Monitoring ${nextStatus ? "enabled" : "paused"} for ${repo.name}.`);
-      setTimeout(() => setFeedback(null), 3000);
-    } catch {
-      void loadData();
+      const commits = await api.getPullRequestCommits(repoId, pullNumber);
+      if (commits && commits.length > 0) {
+        setPullRequests((prev) =>
+          prev.map((item) => (item.id === prId ? { ...item, commits } : item))
+        );
+      }
+    } catch (e) {
+      console.error("Failed to fetch PR commits:", e);
+    } finally {
+      setLoadingCommits((prev) => ({ ...prev, [prId]: false }));
     }
   };
 
@@ -114,6 +137,55 @@ function RepositoryDetailContent() {
     if (confirm(`Remove "${repo.fullName}" from Secura? PR monitoring will stop.`)) {
       await api.removeRepository(repo.id);
       router.push("/repositories");
+    }
+  };
+
+  const handleSyncPRs = async () => {
+    if (!repo) return;
+    setSyncLoading(true);
+    setFeedback(null);
+    try {
+      const res = await api.syncPullRequests(repo.id);
+      if (res.success) {
+        setPullRequests(res.pullRequests);
+        setFeedback("Successfully synced all Pull Requests and commits from GitHub!");
+        setTimeout(() => setFeedback(null), 4000);
+      } else {
+        setFeedback("Sync request sent. Listening for GitHub App events.");
+        setTimeout(() => setFeedback(null), 3000);
+      }
+    } catch {
+      setFeedback("Sync request failed.");
+    } finally {
+      setSyncLoading(false);
+    }
+  };
+
+  const handleScanPR = async (pr: PullRequest) => {
+    setScanningMap((prev) => ({ ...prev, [pr.id]: true }));
+    setFeedback(null);
+    try {
+      const res = await api.scanPullRequest(pr.repositoryId, pr.number, pr.branch, pr.baseBranch);
+      if (res.success) {
+        setFeedback(`Scan started for PR #${pr.number}! Live findings will appear below.`);
+        setTimeout(() => setFeedback(null), 4000);
+        setTimeout(() => void loadData(), 2000);
+      } else {
+        setFeedback(res.message || "Failed to trigger scan.");
+      }
+    } catch {
+      setFeedback("Error launching scan.");
+    } finally {
+      setScanningMap((prev) => ({ ...prev, [pr.id]: false }));
+    }
+  };
+
+  const toggleExpand = (pr: PullRequest) => {
+    const nextState = !expandedPRs[pr.id];
+    setExpandedPRs((prev) => ({ ...prev, [pr.id]: nextState }));
+    // Auto-fetch full commit list from GitHub if empty or only 1 placeholder commit
+    if (nextState && (!pr.commits || pr.commits.length <= 1)) {
+      void loadCommitsForPR(pr.repositoryId, pr.number, pr.id);
     }
   };
 
@@ -150,7 +222,7 @@ function RepositoryDetailContent() {
 
   return (
     <div className="max-w-screen-xl mx-auto space-y-6">
-      {/* Top Breadcrumb */}
+      {/* ─── TOP BREADCRUMB ─────────────────────────────────────────────── */}
       <div className="flex items-center gap-2 text-xs text-slate-400">
         <Link href="/repositories" className="hover:text-slate-200 transition-colors flex items-center gap-1">
           <ArrowLeft className="h-3.5 w-3.5" />
@@ -160,7 +232,7 @@ function RepositoryDetailContent() {
         <span className="text-slate-200 font-medium">{repo.name}</span>
       </div>
 
-      {/* Header Card */}
+      {/* ─── TOP HEADER CARD (CONTAINER) ─────────────────────────────────── */}
       <div className="rounded-2xl border border-white/[0.08] bg-[#0d1117] p-6 shadow-xl">
         <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
           <div className="min-w-0">
@@ -176,42 +248,21 @@ function RepositoryDetailContent() {
                   <span>Public</span>
                 </span>
               )}
-              <span
-                className={`text-[11px] font-medium px-2 py-0.5 rounded-full ${
-                  repo.isMonitored
-                    ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/25"
-                    : "bg-slate-700/30 text-slate-400 border border-white/[0.06]"
-                }`}
-              >
-                {repo.isMonitored ? "Active PR Protection" : "Monitoring Paused"}
-              </span>
               <StatusBadge status={repo.lastScanStatus} />
             </div>
 
             <h1 className="text-xl sm:text-2xl font-bold text-slate-100 truncate">
-              {repo.fullName}
+              {repo.name}
             </h1>
             <p className="text-xs text-slate-400 font-mono mt-1 flex items-center gap-2">
-              <span>default branch: <strong className="text-slate-300">{repo.defaultBranch}</strong></span>
+              <span className="text-slate-300 font-semibold">@{repo.owner}</span>
               <span>·</span>
-              <span>owner: <strong className="text-slate-300">{repo.owner}</strong></span>
+              <span>default branch: <strong className="text-slate-300">{repo.defaultBranch}</strong></span>
             </p>
           </div>
 
           {/* Action buttons */}
           <div className="flex items-center gap-2 w-full lg:w-auto flex-wrap">
-            <button
-              onClick={handleToggleMonitoring}
-              className={`flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-semibold transition-all border ${
-                repo.isMonitored
-                  ? "bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20 border-emerald-500/30"
-                  : "bg-white/[0.04] text-slate-400 hover:bg-white/[0.08] hover:text-white border-white/[0.08]"
-              }`}
-            >
-              <Power className="h-3.5 w-3.5" />
-              <span>{repo.isMonitored ? "PR Protection Active" : "Resume PR Gate"}</span>
-            </button>
-
             <a
               href={repo.htmlUrl}
               target="_blank"
@@ -223,6 +274,14 @@ function RepositoryDetailContent() {
             </a>
 
             <button
+              onClick={() => void loadData()}
+              title="Refresh repository data"
+              className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/[0.08] bg-white/[0.04] text-slate-300 hover:text-white hover:bg-white/[0.08] transition-all"
+            >
+              <RefreshCcw className="h-4 w-4 text-slate-400 hover:text-white" />
+            </button>
+
+            <button
               onClick={handleRemove}
               className="flex h-9 w-9 items-center justify-center rounded-xl border border-red-500/20 text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition-colors"
               title="Remove repository from Secura"
@@ -232,7 +291,7 @@ function RepositoryDetailContent() {
           </div>
         </div>
 
-        {/* Feedback message */}
+        {/* Feedback message banner */}
         {feedback && (
           <div className="mt-4 rounded-xl border border-blue-500/30 bg-blue-500/10 p-2.5 text-xs text-blue-300 flex items-center justify-between">
             <span>{feedback}</span>
@@ -243,269 +302,256 @@ function RepositoryDetailContent() {
         )}
       </div>
 
-      {/* KPI Cards for This One Repository */}
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <Card className="border-white/[0.06]">
-          <p className="text-xs text-slate-500 mb-1">Monitored PRs</p>
-          <p className="text-2xl font-bold text-slate-100">{pullRequests.length}</p>
-        </Card>
+      {/* ─── TWO-COLUMN WORKSPACE: SECOND LEFT BAR + RIGHT CONTENT ──────── */}
+      <div className="flex flex-col lg:flex-row gap-6 items-start">
+        {/* ─── SECOND LEFT SIDEBAR (SHOW ONLY REPOSITORY VIEW BAR) ────────── */}
+        <aside className="w-full lg:w-64 shrink-0 rounded-2xl border border-white/[0.08] bg-[#0d1117] p-3 shadow-lg lg:sticky lg:top-4 space-y-1">
+          <div className="px-3 py-2 text-[11px] font-bold uppercase tracking-wider text-slate-400 border-b border-white/[0.06] mb-2 flex items-center justify-between">
+            <span className="flex items-center gap-1.5">
+              <Layers className="h-3.5 w-3.5 text-blue-400" />
+              <span>Repository View</span>
+            </span>
+            <span className="text-[10px] text-slate-500 font-mono">3 sections</span>
+          </div>
 
-        <Card className={criticalFindings.length > 0 ? "border-red-500/30" : "border-white/[0.06]"}>
-          <p className="text-xs text-slate-500 mb-1">Critical Secrets</p>
-          <p className={`text-2xl font-bold ${criticalFindings.length > 0 ? "text-red-400" : "text-slate-300"}`}>
-            {criticalFindings.length}
-          </p>
-        </Card>
-
-        <Card className={highFindings.length > 0 ? "border-orange-500/30" : "border-white/[0.06]"}>
-          <p className="text-xs text-slate-500 mb-1">High Severity</p>
-          <p className={`text-2xl font-bold ${highFindings.length > 0 ? "text-orange-400" : "text-slate-300"}`}>
-            {highFindings.length}
-          </p>
-        </Card>
-
-        <Card className="border-white/[0.06]">
-          <p className="text-xs text-slate-500 mb-1">Total Open Findings</p>
-          <p className="text-2xl font-bold text-slate-100">{openFindings.length}</p>
-        </Card>
-      </div>
-
-      {/* Tabs Toolbar */}
-      <div className="flex items-center gap-2 border-b border-white/[0.08] pb-1">
-        <button
-          onClick={() => setActiveTab("prs")}
-          className={`flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-lg transition-colors ${
-            activeTab === "prs"
-              ? "bg-blue-600/15 text-blue-400 border border-blue-500/30"
-              : "text-slate-400 hover:text-slate-200 hover:bg-white/[0.03]"
-          }`}
-        >
-          <GitPullRequest className="h-3.5 w-3.5" />
-          <span>Pull Requests ({pullRequests.length})</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab("findings")}
-          className={`flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-lg transition-colors ${
-            activeTab === "findings"
-              ? "bg-blue-600/15 text-blue-400 border border-blue-500/30"
-              : "text-slate-400 hover:text-slate-200 hover:bg-white/[0.03]"
-          }`}
-        >
-          <ShieldAlert className="h-3.5 w-3.5" />
-          <span>Security Findings ({openFindings.length})</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab("info")}
-          className={`flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-lg transition-colors ${
-            activeTab === "info"
-              ? "bg-blue-600/15 text-blue-400 border border-blue-500/30"
-              : "text-slate-400 hover:text-slate-200 hover:bg-white/[0.03]"
-          }`}
-        >
-          <FileCode className="h-3.5 w-3.5" />
-          <span>Integration & Config</span>
-        </button>
-      </div>
-
-      {/* ─── TAB 1: Pull Requests for this Repo ──────────────────────────────── */}
-      {activeTab === "prs" && (
-        <Card>
-          <CardHeader className="flex items-center justify-between pb-3">
-            <CardTitle className="text-sm font-semibold">
-              Pull Requests on {repo.name}
-            </CardTitle>
-            <button
-              onClick={() => void loadData()}
-              className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-white"
+          {/* Section 1: Pull Requests */}
+          <button
+            onClick={() => setActiveTab("prs")}
+            className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all ${
+              activeTab === "prs"
+                ? "bg-blue-600 text-white shadow-md shadow-blue-600/30"
+                : "text-slate-400 hover:bg-white/[0.04] hover:text-slate-200"
+            }`}
+          >
+            <div className="flex items-center gap-2.5 min-w-0">
+              <GitPullRequest className="h-4 w-4 shrink-0" />
+              <span className="truncate">Pull Requests</span>
+            </div>
+            <span
+              className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                activeTab === "prs" ? "bg-white/20 text-white" : "bg-white/[0.06] text-slate-400"
+              }`}
             >
-              <RefreshCcw className="h-3 w-3" />
-              <span>Refresh</span>
-            </button>
-          </CardHeader>
-          <CardContent>
-            {pullRequests.length === 0 ? (
-              <div className="py-12 text-center text-slate-500 flex flex-col items-center">
-                <GitPullRequest className="h-8 w-8 mb-2 text-slate-600" />
-                <p className="text-sm font-medium text-slate-300">No pull requests scanned yet for {repo.name}</p>
-                <p className="text-xs text-slate-500 mt-1 max-w-md">
-                  When a contributor opens or updates a Pull Request on this repository, Secura automatically scans the diff and posts the gate status.
-                </p>
-                <button
-                  onClick={() => setShowTestModal(true)}
-                  className="mt-4 flex items-center gap-1.5 rounded-xl bg-blue-600 px-3.5 py-2 text-xs font-semibold text-white hover:bg-blue-500 transition-all shadow-md shadow-blue-600/30"
-                >
-                  <Play className="h-3.5 w-3.5" />
-                  <span>Test a Pull Request Scan</span>
-                </button>
-              </div>
-            ) : (
-              <div className="divide-y divide-white/[0.04]">
-                {pullRequests.map((pr) => (
-                  <div
-                    key={pr.id}
-                    className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 py-3.5 hover:bg-white/[0.01] px-2 rounded-lg transition-colors"
-                  >
-                    <div className="flex items-start gap-3 min-w-0 flex-1">
-                      <div className="mt-1">
-                        {pr.checkRunStatus === "success" ? (
-                          <CheckCircle2 className="h-4 w-4 text-emerald-400" />
-                        ) : pr.checkRunStatus === "failure" ? (
-                          <XCircle className="h-4 w-4 text-red-400" />
-                        ) : (
-                          <Loader2 className="h-4 w-4 text-blue-400 animate-spin" />
-                        )}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2 flex-wrap mb-0.5">
-                          <a
-                            href={pr.htmlUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-sm font-semibold text-slate-100 hover:text-blue-400 transition-colors flex items-center gap-1"
-                          >
-                            <span>{pr.title}</span>
-                            <ExternalLink className="h-3 w-3 opacity-50" />
-                          </a>
-                          <StatusBadge status={pr.checkRunStatus} />
-                        </div>
-                        <p className="text-xs text-slate-500 font-mono">
-                          #{pr.number} · {pr.branch} → {pr.baseBranch} · by @{pr.author} · {new Date(pr.createdAt).toLocaleDateString()}
-                        </p>
-                      </div>
-                    </div>
+              {pullRequests.length}
+            </span>
+          </button>
 
-                    <div className="flex items-center gap-3 shrink-0 self-end sm:self-center">
-                      <div className="text-right">
-                        {pr.criticalFindings > 0 && (
-                          <p className="text-xs text-red-400 font-semibold">{pr.criticalFindings} critical</p>
-                        )}
-                        {pr.highFindings > 0 && (
-                          <p className="text-xs text-orange-400 font-semibold">{pr.highFindings} high</p>
-                        )}
-                        {pr.totalFindings === 0 && (
-                          <p className="text-xs text-emerald-400">Safe to Merge</p>
-                        )}
-                      </div>
-                      <a
-                        href={pr.htmlUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="px-3 py-1.5 rounded-lg border border-white/[0.08] text-xs text-slate-300 hover:bg-white/[0.04] transition-colors"
-                      >
-                        View on GitHub
-                      </a>
-                    </div>
+          {/* Section 2: Security Findings */}
+          <button
+            onClick={() => setActiveTab("findings")}
+            className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all ${
+              activeTab === "findings"
+                ? "bg-blue-600 text-white shadow-md shadow-blue-600/30"
+                : "text-slate-400 hover:bg-white/[0.04] hover:text-slate-200"
+            }`}
+          >
+            <div className="flex items-center gap-2.5 min-w-0">
+              <ShieldAlert className="h-4 w-4 shrink-0" />
+              <span className="truncate">Security Findings</span>
+            </div>
+            {criticalFindings.length > 0 ? (
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-500/20 text-red-400 border border-red-500/30">
+                {criticalFindings.length} crit
+              </span>
+            ) : (
+              <span
+                className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                  activeTab === "findings" ? "bg-white/20 text-white" : "bg-white/[0.06] text-slate-400"
+                }`}
+              >
+                {openFindings.length}
+              </span>
+            )}
+          </button>
+
+          {/* Section 3: Integration & Config */}
+          <button
+            onClick={() => setActiveTab("info")}
+            className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all ${
+              activeTab === "info"
+                ? "bg-blue-600 text-white shadow-md shadow-blue-600/30"
+                : "text-slate-400 hover:bg-white/[0.04] hover:text-slate-200"
+            }`}
+          >
+            <div className="flex items-center gap-2.5 min-w-0">
+              <FileCode className="h-4 w-4 shrink-0" />
+              <span className="truncate">Integration & Config</span>
+            </div>
+          </button>
+        </aside>
+
+        {/* ─── RIGHT MAIN CONTENT AREA ─────────────────────────────────── */}
+        <div className="flex-1 min-w-0 w-full space-y-4">
+          {/* ─── SECTION 1: Pull Requests for this Repo ─────────────────────── */}
+          {activeTab === "prs" && (
+            <Card className="border-white/[0.08] bg-[#0d1117]">
+              <CardHeader className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-3 border-b border-white/[0.04]">
+                <div>
+                  <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                    <GitPullRequest className="h-4 w-4 text-blue-400" />
+                    <span>Pull Requests for {repo.name} ({pullRequests.length})</span>
+                  </CardTitle>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Live secret detection, commit history & Check Run results across all branches.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button
+                    onClick={() => setSortOrder(sortOrder === "asc" ? "desc" : "asc")}
+                    className="flex items-center gap-1.5 rounded-xl border border-white/[0.08] bg-white/[0.04] px-2.5 py-1.5 text-xs text-slate-300 hover:text-white hover:bg-white/[0.08] transition-all"
+                    title="Toggle PR numerical order"
+                  >
+                    <ArrowUpDown className="h-3.5 w-3.5 text-blue-400" />
+                    <span>Order: {sortOrder === "asc" ? "#1 → #N" : "#N → #1"}</span>
+                  </button>
+                </div>
+              </CardHeader>
+
+              <CardContent className="pt-2">
+                {pullRequests.length === 0 ? (
+                  <div className="py-12 text-center text-slate-500 flex flex-col items-center">
+                    <GitPullRequest className="h-8 w-8 mb-2 text-slate-600" />
+                    <p className="text-sm font-medium text-slate-300">No pull requests on {repo.name}</p>
+                    <p className="text-xs text-slate-500 mt-1 max-w-md">
+                      When a contributor opens or updates a Pull Request on this repository, Secura automatically scans the changed files for exposed secrets.
+                    </p>
                   </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
+                ) : (
+                  <div className="divide-y divide-white/[0.04]">
+                    {orderedPullRequests.map((pr) => (
+                      <PullRequestRow
+                        key={pr.id}
+                        pr={pr}
+                        onScan={handleScanPR}
+                        isScanning={Boolean(scanningMap[pr.id])}
+                        onRefreshCommits={(p) => loadCommitsForPR(p.repositoryId, p.number, p.id)}
+                        isCommitsLoading={Boolean(loadingCommits[pr.id])}
+                        showRepoName={false}
+                      />
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
 
-      {/* ─── TAB 2: Findings for this Repo ───────────────────────────────────── */}
-      {activeTab === "findings" && (
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-semibold">
-              Security Findings in {repo.fullName} ({openFindings.length} open)
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {openFindings.length === 0 ? (
-              <div className="py-12 text-center text-slate-500 flex flex-col items-center">
-                <ShieldCheck className="h-10 w-10 mb-2 text-emerald-400" />
-                <p className="text-sm font-semibold text-slate-200">Zero Open Vulnerabilities</p>
-                <p className="text-xs text-slate-500 mt-1">
-                  All scanned pull requests for {repo.name} are clean. No credentials or policy violations detected.
-                </p>
-              </div>
-            ) : (
-              <div className="divide-y divide-white/[0.04]">
-                {openFindings.map((finding) => (
-                  <Link
-                    key={finding.id}
-                    href={`/findings/${finding.id}`}
-                    className="flex items-start gap-3 py-3.5 hover:bg-white/[0.02] px-2 rounded-lg transition-colors group"
-                  >
-                    <SeverityBadge severity={finding.severity} />
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2 mb-0.5">
-                        <span className="text-sm font-semibold text-slate-200 group-hover:text-blue-400 transition-colors">
-                          {finding.type}
+          {/* ─── SECTION 2: Findings for this Repo ──────────────────────────── */}
+          {activeTab === "findings" && (
+            <Card className="border-white/[0.08] bg-[#0d1117]">
+              <CardHeader className="pb-3 border-b border-white/[0.04] flex items-center justify-between">
+                <div>
+                  <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                    <ShieldAlert className="h-4 w-4 text-orange-400" />
+                    <span>Security Findings in {repo.fullName} ({openFindings.length} open)</span>
+                  </CardTitle>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Catalog of detected vulnerabilities across all scans for this repository.
+                  </p>
+                </div>
+                <Link
+                  href={`/findings?repo=${encodeURIComponent(repo.fullName)}`}
+                  className="text-xs text-blue-400 hover:underline flex items-center gap-1"
+                >
+                  <span>Open Full Findings Table</span>
+                  <ExternalLink className="h-3 w-3" />
+                </Link>
+              </CardHeader>
+              <CardContent className="pt-2">
+                {openFindings.length === 0 ? (
+                  <div className="py-12 text-center text-slate-500 flex flex-col items-center">
+                    <ShieldCheck className="h-10 w-10 mb-2 text-emerald-400" />
+                    <p className="text-sm font-semibold text-slate-200">Zero Open Vulnerabilities</p>
+                    <p className="text-xs text-slate-500 mt-1">
+                      All scanned code and pull requests for {repo.name} are clean. No exposed credentials detected.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="divide-y divide-white/[0.04]">
+                    {openFindings.map((finding) => (
+                      <Link
+                        key={finding.id}
+                        href={`/findings/${finding.id}`}
+                        className="flex items-start gap-3 py-3.5 hover:bg-white/[0.02] px-2 rounded-lg transition-colors group"
+                      >
+                        <SeverityBadge severity={finding.severity} />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 mb-0.5">
+                            <span className="text-sm font-semibold text-slate-200 group-hover:text-blue-400 transition-colors">
+                              {finding.type}
+                            </span>
+                            <StatusBadge status={finding.status} />
+                          </div>
+                          <p className="text-xs text-slate-400 font-mono">
+                            {finding.filePath}:{finding.lineNumber}
+                          </p>
+                          {finding.recommendation && (
+                            <p className="text-xs text-slate-500 truncate mt-0.5">
+                              {finding.recommendation}
+                            </p>
+                          )}
+                        </div>
+                        <span className="text-xs text-slate-500 self-center">
+                          {new Date(finding.firstDetected).toLocaleDateString()}
                         </span>
-                        <StatusBadge status={finding.status} />
-                      </div>
-                      <p className="text-xs text-slate-400 font-mono">
-                        {finding.filePath}:{finding.lineNumber}
-                      </p>
-                      {finding.recommendation && (
-                        <p className="text-xs text-slate-500 truncate mt-0.5">
-                          {finding.recommendation}
-                        </p>
-                      )}
+                      </Link>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* ─── SECTION 3: Integration & Config Info ───────────────────────── */}
+          {activeTab === "info" && (
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Card className="border-white/[0.08] bg-[#0d1117]">
+                <CardHeader>
+                  <CardTitle className="text-sm">Repository Metadata</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <dl className="space-y-3 text-xs">
+                    <div>
+                      <dt className="text-slate-500 mb-0.5">Full Name</dt>
+                      <dd className="text-slate-300 font-mono">{repo.fullName}</dd>
                     </div>
-                    <span className="text-xs text-slate-500 self-center">
-                      {new Date(finding.firstDetected).toLocaleDateString()}
-                    </span>
-                  </Link>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
+                    <div>
+                      <dt className="text-slate-500 mb-0.5">GitHub Repo ID</dt>
+                      <dd className="text-slate-300 font-mono">{repo.githubRepoId || "—"}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-slate-500 mb-0.5">Default Branch</dt>
+                      <dd className="text-slate-300 font-mono">{repo.defaultBranch}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-slate-500 mb-0.5">Visibility</dt>
+                      <dd className="text-slate-300">{repo.isPrivate ? "Private" : "Public"}</dd>
+                    </div>
+                  </dl>
+                </CardContent>
+              </Card>
 
-      {/* ─── TAB 3: Integration & Config Info ────────────────────────────────── */}
-      {activeTab === "info" && (
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-sm">Repository Metadata</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <dl className="space-y-3 text-xs">
-                <div>
-                  <dt className="text-slate-500 mb-0.5">Full Name</dt>
-                  <dd className="text-slate-300 font-mono">{repo.fullName}</dd>
-                </div>
-                <div>
-                  <dt className="text-slate-500 mb-0.5">GitHub Repo ID</dt>
-                  <dd className="text-slate-300 font-mono">{repo.githubRepoId || "—"}</dd>
-                </div>
-                <div>
-                  <dt className="text-slate-500 mb-0.5">Default Branch</dt>
-                  <dd className="text-slate-300 font-mono">{repo.defaultBranch}</dd>
-                </div>
-                <div>
-                  <dt className="text-slate-500 mb-0.5">Visibility</dt>
-                  <dd className="text-slate-300">{repo.isPrivate ? "Private" : "Public"}</dd>
-                </div>
-              </dl>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-sm">GitHub Security Gate</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3 text-xs text-slate-400">
-              <p>
-                The <strong>Secura GitHub App</strong> intercepts every Pull Request opened against <code className="text-slate-300">{repo.fullName}</code>.
-              </p>
-              <ul className="list-disc pl-4 space-y-1 text-slate-400">
-                <li>Inspects changed diffs for secrets, API tokens, and private keys.</li>
-                <li>Creates a GitHub Check Run: <code className="text-slate-300">Secura Security Gate</code>.</li>
-                <li>Posts remediation comments with exact line numbers on Pull Requests.</li>
-                <li>Blocks unsafe PR merges into <code className="text-slate-300">{repo.defaultBranch}</code>.</li>
-              </ul>
-            </CardContent>
-          </Card>
+              <Card className="border-white/[0.08] bg-[#0d1117]">
+                <CardHeader>
+                  <CardTitle className="text-sm">GitHub Security Gate</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3 text-xs text-slate-400">
+                  <p>
+                    The <strong>Secura GitHub App</strong> intercepts every Pull Request opened against <code className="text-slate-300">{repo.fullName}</code>.
+                  </p>
+                  <ul className="list-disc pl-4 space-y-1 text-slate-400">
+                    <li>Inspects changed diffs for secrets, API tokens, and private keys.</li>
+                    <li>Tracks all commit updates on pull requests.</li>
+                    <li>Creates a GitHub Check Run: <code className="text-slate-300">Secura Security Gate</code>.</li>
+                    <li>Posts remediation comments with exact line numbers on Pull Requests.</li>
+                    <li>Blocks unsafe PR merges into <code className="text-slate-300">{repo.defaultBranch}</code>.</li>
+                  </ul>
+                </CardContent>
+              </Card>
+            </div>
+          )}
         </div>
-      )}
+      </div>
     </div>
   );
 }
-

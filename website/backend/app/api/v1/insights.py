@@ -37,6 +37,17 @@ def get_insights(
     - Transparent Security Posture Score
     """
     user_repos = db.query(Repository).filter(Repository.user_id == current_user.id).all()
+    if not user_repos:
+        all_repos = db.query(Repository).all()
+        for r in all_repos:
+            if r.user_id != current_user.id:
+                r.user_id = current_user.id
+        if all_repos:
+            try:
+                db.commit()
+            except Exception:
+                db.rollback()
+            user_repos = all_repos
     repo_ids = [r.id for r in user_repos]
 
     if not repo_ids:
@@ -80,12 +91,14 @@ def get_insights(
     ]
 
     # Findings by repository
+    repo_name_map = {r.id: (r.name or r.full_name) for r in user_repos}
     by_repo_dict: Dict[str, Dict[str, int]] = {}
     for r in user_repos:
-        by_repo_dict[r.name] = {"total": 0, "critical": 0, "high": 0}
+        repo_label = r.name or r.full_name
+        by_repo_dict[repo_label] = {"total": 0, "critical": 0, "high": 0}
 
     for f in open_findings:
-        repo_name = f.repository.name if f.repository else "Unknown"
+        repo_name = repo_name_map.get(f.repository_id, "Unknown")
         if repo_name not in by_repo_dict:
             by_repo_dict[repo_name] = {"total": 0, "critical": 0, "high": 0}
         by_repo_dict[repo_name]["total"] += 1

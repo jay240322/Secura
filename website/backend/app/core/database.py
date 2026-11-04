@@ -1,6 +1,6 @@
 import logging
 import os
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 from app.core.config import settings, BASE_DIR
@@ -38,15 +38,33 @@ def get_engine():
                 f"⚠️ PostgreSQL connection failed ({exc}). "
                 f"Falling back to local SQLite at {sqlite_url}"
             )
-            return create_engine(
+            eng = create_engine(
                 sqlite_url,
                 connect_args={"check_same_thread": False, "timeout": 30.0},
             )
+            @event.listens_for(eng, "connect")
+            def set_sqlite_pragma(dbapi_connection, connection_record):
+                cursor = dbapi_connection.cursor()
+                try:
+                    cursor.execute("PRAGMA journal_mode=WAL")
+                    cursor.execute("PRAGMA busy_timeout=10000")
+                finally:
+                    cursor.close()
+            return eng
     else:
-        return create_engine(
+        eng = create_engine(
             db_url,
             connect_args={"check_same_thread": False, "timeout": 30.0},
         )
+        @event.listens_for(eng, "connect")
+        def set_sqlite_pragma_direct(dbapi_connection, connection_record):
+            cursor = dbapi_connection.cursor()
+            try:
+                cursor.execute("PRAGMA journal_mode=WAL")
+                cursor.execute("PRAGMA busy_timeout=10000")
+            finally:
+                cursor.close()
+        return eng
 
 
 def ensure_db_schema(target_engine):
@@ -59,6 +77,10 @@ def ensure_db_schema(target_engine):
             ("pr_author", "VARCHAR(100)"),
             ("pr_html_url", "VARCHAR(512)"),
             ("base_branch", "VARCHAR(100)"),
+            ("pr_state", "VARCHAR(32) DEFAULT 'open'"),
+            ("pr_merged_at", "DATETIME"),
+            ("pr_closed_at", "DATETIME"),
+            ("pr_commits_json", "TEXT"),
         ]
         with target_engine.connect() as conn:
             for col_name, col_type in new_columns:
@@ -67,6 +89,11 @@ def ensure_db_schema(target_engine):
                     conn.commit()
                 except Exception:
                     pass
+            try:
+                conn.execute(text("ALTER TABLE users ADD COLUMN github_access_token VARCHAR(512)"))
+                conn.commit()
+            except Exception:
+                pass
     except Exception as exc:
         logger.warning("Database schema check warning: %s", exc)
 
