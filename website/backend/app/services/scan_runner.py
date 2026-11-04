@@ -24,6 +24,55 @@ from secura.policy import evaluate_policy, load_policy
 logger = logging.getLogger("secura.scan_runner")
 
 
+def persist_scan_findings(
+    db: Session,
+    scan_id: str,
+    repository_id: str,
+    findings_data: List[Dict[str, Any]],
+    default_recommendation: Optional[str] = None,
+) -> None:
+    """Save findings records to DB with fingerprint deduplication and historical tracking."""
+    now = datetime.datetime.now(datetime.timezone.utc)
+    for item in findings_data:
+        f_type = item.get("type", "Unknown")
+        rule_id = map_type_to_rule_id(f_type)
+        f_path = str(item.get("file", ""))
+        line_no = int(item.get("line", 1))
+        sev = str(item.get("severity", "MEDIUM")).upper()
+
+        fingerprint = compute_finding_fingerprint(repository_id, rule_id, f_path, line_no)
+
+        existing_finding = (
+            db.query(Finding)
+            .filter(
+                Finding.repository_id == repository_id,
+                Finding.fingerprint == fingerprint,
+            )
+            .first()
+        )
+        first_seen = existing_finding.first_detected if existing_finding else now
+
+        rec = item.get("recommendation") or default_recommendation
+        finding_record = Finding(
+            scan_id=scan_id,
+            repository_id=repository_id,
+            rule_id=rule_id,
+            finding_type=f_type,
+            severity=sev,
+            file_path=f_path,
+            line_number=line_no,
+            fingerprint=fingerprint,
+            status="open",
+            risk=item.get("risk"),
+            recommendation=rec,
+            first_detected=first_seen,
+            last_detected=now,
+        )
+        db.add(finding_record)
+
+    db.commit()
+
+
 def execute_repository_scan(
     repository_id: str,
     commit_sha: str = "HEAD",
@@ -80,46 +129,7 @@ def execute_repository_scan(
         scan.completed_at = datetime.datetime.now(datetime.timezone.utc)
 
         # Save findings
-        for item in findings_data:
-            f_type = item.get("type", "Unknown")
-            rule_id = map_type_to_rule_id(f_type)
-            f_path = str(item.get("file", ""))
-            line_no = int(item.get("line", 1))
-            sev = str(item.get("severity", "MEDIUM")).upper()
-
-            fingerprint = compute_finding_fingerprint(repository_id, rule_id, f_path, line_no)
-
-            # Check if this finding was already detected before
-            existing_finding = (
-                db.query(Finding)
-                .filter(
-                    Finding.repository_id == repository_id,
-                    Finding.fingerprint == fingerprint,
-                )
-                .first()
-            )
-
-            now = datetime.datetime.now(datetime.timezone.utc)
-            first_seen = existing_finding.first_detected if existing_finding else now
-
-            finding_record = Finding(
-                scan_id=scan.id,
-                repository_id=repository_id,
-                rule_id=rule_id,
-                finding_type=f_type,
-                severity=sev,
-                file_path=f_path,
-                line_number=line_no,
-                fingerprint=fingerprint,
-                status="open",
-                risk=item.get("risk"),
-                recommendation=item.get("recommendation"),
-                first_detected=first_seen,
-                last_detected=now,
-            )
-            db.add(finding_record)
-
-        db.commit()
+        persist_scan_findings(db, scan.id, repository_id, findings_data)
         logger.info(
             "Scan %s for repo %s completed in %ss with %s findings",
             scan.id,
@@ -231,7 +241,7 @@ def execute_pr_scan(
                             "message": pr_title or f"Commit {short_sha} for PR #{pull_number}",
                             "author": pr_author or repo.owner,
                             "author_avatar": None,
-                            "date": datetime.datetime.utcnow().isoformat(),
+                            "date": datetime.datetime.now(datetime.timezone.utc).isoformat(),
                             "html_url": pr_html_url or f"https://github.com/{repo.full_name}/commit/{commit_sha}",
                         }
                     ]
@@ -307,45 +317,13 @@ def execute_pr_scan(
         scan.completed_at = datetime.datetime.now(datetime.timezone.utc)
 
         # 4. Save findings to database
-        for item in findings_data:
-            f_type = item.get("type", "Unknown")
-            rule_id = map_type_to_rule_id(f_type)
-            f_path = str(item.get("file", ""))
-            line_no = int(item.get("line", 1))
-            sev = str(item.get("severity", "MEDIUM")).upper()
-
-            fingerprint = compute_finding_fingerprint(repository_id, rule_id, f_path, line_no)
-
-            existing_finding = (
-                db.query(Finding)
-                .filter(
-                    Finding.repository_id == repository_id,
-                    Finding.fingerprint == fingerprint,
-                )
-                .first()
-            )
-
-            now = datetime.datetime.now(datetime.timezone.utc)
-            first_seen = existing_finding.first_detected if existing_finding else now
-
-            finding_record = Finding(
-                scan_id=scan.id,
-                repository_id=repository_id,
-                rule_id=rule_id,
-                finding_type=f_type,
-                severity=sev,
-                file_path=f_path,
-                line_number=line_no,
-                fingerprint=fingerprint,
-                status="open",
-                risk=item.get("risk"),
-                recommendation=item.get("recommendation") or "Remove credential or secret from pull request.",
-                first_detected=first_seen,
-                last_detected=now,
-            )
-            db.add(finding_record)
-
-        db.commit()
+        persist_scan_findings(
+            db,
+            scan.id,
+            repository_id,
+            findings_data,
+            default_recommendation="Remove credential or secret from pull request.",
+        )
         logger.info(
             "PR #%s scan for repo %s finished in %ss with %s findings",
             pull_number,
@@ -516,43 +494,13 @@ def record_pr_scan_results(
         db.query(Finding).filter(Finding.scan_id == scan.id).delete()
 
         # Save findings
-        for item in findings_data:
-            f_type = item.get("type", "Unknown")
-            rule_id = map_type_to_rule_id(f_type)
-            f_path = str(item.get("file", ""))
-            line_no = int(item.get("line", 1))
-            sev = str(item.get("severity", "MEDIUM")).upper()
-
-            fingerprint = compute_finding_fingerprint(repo.id, rule_id, f_path, line_no)
-
-            existing_finding = (
-                db.query(Finding)
-                .filter(
-                    Finding.repository_id == repo.id,
-                    Finding.fingerprint == fingerprint,
-                )
-                .first()
-            )
-
-            now = datetime.datetime.now(datetime.timezone.utc)
-            first_seen = existing_finding.first_detected if existing_finding else now
-
-            finding_record = Finding(
-                scan_id=scan.id,
-                repository_id=repo.id,
-                rule_id=rule_id,
-                finding_type=f_type,
-                severity=sev,
-                file_path=f_path,
-                line_number=line_no,
-                fingerprint=fingerprint,
-                status="open",
-                risk=item.get("risk"),
-                recommendation=item.get("recommendation") or "Remove credential or secret from pull request.",
-                first_detected=first_seen,
-                last_detected=now,
-            )
-            db.add(finding_record)
+        persist_scan_findings(
+            db,
+            scan.id,
+            repo.id,
+            findings_data,
+            default_recommendation="Remove credential or secret from pull request.",
+        )
 
         # Update repository stats
         repo.last_scanned_at = datetime.datetime.now(datetime.timezone.utc)

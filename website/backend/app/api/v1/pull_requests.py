@@ -28,6 +28,40 @@ def _parse_github_iso_datetime(dt_str: Optional[str]) -> Optional[datetime.datet
         return None
 
 
+def get_user_repository_or_404(db: Session, repository_id: str, user_id: str) -> Repository:
+    repo = (
+        db.query(Repository)
+        .filter(Repository.id == repository_id, Repository.user_id == user_id)
+        .first()
+    )
+    if not repo:
+        raise HTTPException(status_code=404, detail="Repository not found")
+    return repo
+
+
+def get_latest_pr_scan(db: Session, repository_id: str, pull_number: int) -> Optional[Scan]:
+    return (
+        db.query(Scan)
+        .filter(Scan.repository_id == repository_id, Scan.pull_number == pull_number)
+        .order_by(Scan.created_at.desc())
+        .first()
+    )
+
+
+def serialize_pr_finding(f: Finding) -> Dict[str, Any]:
+    return {
+        "id": f.id,
+        "rule_id": f.rule_id,
+        "finding_type": f.finding_type,
+        "severity": f.severity,
+        "file_path": f.file_path,
+        "line_number": f.line_number,
+        "status": f.status,
+        "risk": f.risk,
+        "recommendation": f.recommendation,
+    }
+
+
 def fast_sync_repository_prs(db: Session, repo: Repository, background_tasks: Optional[BackgroundTasks] = None) -> int:
     """
     Rapidly fetch and synchronize all PRs for a repository in a single GitHub API call.
@@ -241,19 +275,7 @@ def list_pull_requests(
         pr_state = s.pr_state or ("merged" if s.pr_merged_at else ("closed" if s.pr_closed_at else "open"))
 
         # Serialized findings for this PR
-        serialized_findings = []
-        for f in s.findings:
-            serialized_findings.append({
-                "id": f.id,
-                "rule_id": f.rule_id,
-                "finding_type": f.finding_type,
-                "severity": f.severity,
-                "file_path": f.file_path,
-                "line_number": f.line_number,
-                "status": f.status,
-                "risk": f.risk,
-                "recommendation": f.recommendation,
-            })
+        serialized_findings = [serialize_pr_finding(f) for f in s.findings]
 
         # Commits belonging to this PR
         pr_commits = []
@@ -345,20 +367,8 @@ def get_pr_commits(
     current_user: User = Depends(get_current_user),
 ):
     """Fetch all commits associated with a specific pull request."""
-    repo = (
-        db.query(Repository)
-        .filter(Repository.id == repository_id, Repository.user_id == current_user.id)
-        .first()
-    )
-    if not repo:
-        raise HTTPException(status_code=404, detail="Repository not found")
-
-    scan = (
-        db.query(Scan)
-        .filter(Scan.repository_id == repo.id, Scan.pull_number == pull_number)
-        .order_by(Scan.created_at.desc())
-        .first()
-    )
+    repo = get_user_repository_or_404(db, repository_id, current_user.id)
+    scan = get_latest_pr_scan(db, repo.id, pull_number)
 
     if scan and scan.pr_commits_json:
         try:
@@ -416,23 +426,9 @@ def trigger_pull_request_scan(
     """
     Manually trigger or test a security scan for a specific Pull Request.
     """
-    repo = (
-        db.query(Repository)
-        .filter(Repository.id == repository_id, Repository.user_id == current_user.id)
-        .first()
-    )
-    if not repo:
-        raise HTTPException(status_code=404, detail="Repository not found")
-
+    repo = get_user_repository_or_404(db, repository_id, current_user.id)
     inst_id = repo.installation.github_installation_id if repo.installation else None
-
-    # Check if there is an existing scan to inherit accurate branch names
-    existing = (
-        db.query(Scan)
-        .filter(Scan.repository_id == repo.id, Scan.pull_number == pull_number)
-        .order_by(Scan.created_at.desc())
-        .first()
-    )
+    existing = get_latest_pr_scan(db, repo.id, pull_number)
 
     pr_branch = branch or (existing.branch if existing else f"feature/pr-{pull_number}")
     pr_base = base_branch or (existing.base_branch if existing else (repo.default_branch or "main"))
@@ -474,20 +470,8 @@ def get_pull_request_detail(
     """
     Get detailed information, security score, and detected secrets for a specific Pull Request.
     """
-    repo = (
-        db.query(Repository)
-        .filter(Repository.id == repository_id, Repository.user_id == current_user.id)
-        .first()
-    )
-    if not repo:
-        raise HTTPException(status_code=404, detail="Repository not found")
-
-    scan = (
-        db.query(Scan)
-        .filter(Scan.repository_id == repo.id, Scan.pull_number == pull_number)
-        .order_by(Scan.created_at.desc())
-        .first()
-    )
+    repo = get_user_repository_or_404(db, repository_id, current_user.id)
+    scan = get_latest_pr_scan(db, repo.id, pull_number)
     if not scan:
         raise HTTPException(status_code=404, detail=f"No scan record found for PR #{pull_number}")
 
@@ -501,20 +485,7 @@ def get_pull_request_detail(
 
     pr_state = scan.pr_state or ("merged" if scan.pr_merged_at else ("closed" if scan.pr_closed_at else "open"))
 
-    serialized_findings = [
-        {
-            "id": f.id,
-            "rule_id": f.rule_id,
-            "finding_type": f.finding_type,
-            "severity": f.severity,
-            "file_path": f.file_path,
-            "line_number": f.line_number,
-            "status": f.status,
-            "risk": f.risk,
-            "recommendation": f.recommendation,
-        }
-        for f in scan.findings
-    ]
+    serialized_findings = [serialize_pr_finding(f) for f in scan.findings]
 
     pr_commits = []
     if scan.pr_commits_json:
