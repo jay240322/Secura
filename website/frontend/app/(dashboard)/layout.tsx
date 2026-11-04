@@ -10,11 +10,11 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
       <Suspense fallback={<div className="w-60 bg-[#0d1117] h-screen shrink-0 border-r border-white/[0.06]" />}>
         <Sidebar />
       </Suspense>
-      <div className="flex flex-1 flex-col overflow-hidden">
+      <div className="flex flex-1 flex-col overflow-hidden min-w-0">
         <Suspense fallback={<div className="h-16 bg-[#0d1117] border-b border-white/[0.06]" />}>
           <TopNav />
         </Suspense>
-        <main className="flex-1 overflow-y-auto px-6 py-6">{children}</main>
+        <main className="flex-1 overflow-y-auto px-6 py-6 min-w-0">{children}</main>
       </div>
     </div>
   );

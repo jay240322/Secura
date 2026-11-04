@@ -11,7 +11,15 @@ const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
   // Finding statuses
   open: {
     label: "Open",
-    className: "bg-red-500/15 text-red-400 ring-1 ring-red-500/30",
+    className: "bg-emerald-500/15 text-emerald-400 ring-1 ring-emerald-500/30",
+  },
+  merged: {
+    label: "Merged",
+    className: "bg-purple-500/15 text-purple-400 ring-1 ring-purple-500/30",
+  },
+  closed: {
+    label: "Closed",
+    className: "bg-slate-500/15 text-slate-400 ring-1 ring-slate-500/30",
   },
   resolved: {
     label: "Resolved",

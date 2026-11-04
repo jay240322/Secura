@@ -71,6 +71,8 @@ function mapBackendRepository(r: Record<string, unknown>): Repository {
     highFindings: Number(r.high_findings ?? r.highFindings ?? 0),
     isMonitored: Boolean(r.is_monitored ?? r.isMonitored ?? true),
     htmlUrl: String(r.html_url || r.htmlUrl || `https://github.com/${r.full_name || r.name}`),
+    githubInstallationId: r.github_installation_id ? Number(r.github_installation_id) : undefined,
+    githubAppUrl: r.github_app_url ? String(r.github_app_url) : "https://github.com/apps/secura-security-scanner",
   };
 }
 
@@ -96,6 +98,8 @@ function mapBackendScan(s: Record<string, unknown>): Scan {
 }
 
 function mapBackendPullRequest(p: Record<string, unknown>): PullRequest {
+  const findingsRaw = Array.isArray(p.findings) ? p.findings : [];
+  const commitsRaw = Array.isArray(p.commits) ? p.commits : [];
   return {
     id: String(p.id ?? ""),
     number: Number(p.number || 1),
@@ -106,13 +110,37 @@ function mapBackendPullRequest(p: Record<string, unknown>): PullRequest {
     baseBranch: String(p.base_branch || p.baseBranch || "main"),
     commitSha: String(p.commit_sha || p.commitSha || "HEAD"),
     author: String(p.author || "developer"),
+    state: (p.state as "open" | "merged" | "closed") || (p.merged_at ? "merged" : (p.closed_at ? "closed" : "open")),
+    mergedAt: p.merged_at ? String(p.merged_at) : (p.mergedAt ? String(p.mergedAt) : null),
+    closedAt: p.closed_at ? String(p.closed_at) : (p.closedAt ? String(p.closedAt) : null),
     scanStatus: (p.scan_status as "pending" | "running" | "completed" | "failed") || (p.scanStatus as "pending" | "running" | "completed" | "failed") || "completed",
     checkRunStatus: (p.check_run_status as "success" | "failure" | "in_progress" | "neutral") || (p.checkRunStatus as "success" | "failure" | "in_progress" | "neutral") || "success",
     totalFindings: Number(p.total_findings ?? p.totalFindings ?? 0),
     criticalFindings: Number(p.critical_findings ?? p.criticalFindings ?? 0),
     highFindings: Number(p.high_findings ?? p.highFindings ?? 0),
+    score: p.score !== undefined && p.score !== null ? Number(p.score) : 100,
     createdAt: String(p.created_at || p.createdAt || new Date().toISOString()),
     htmlUrl: String(p.html_url || p.htmlUrl || "https://github.com"),
+    findings: findingsRaw.map((f: any) => ({
+      id: String(f.id || ""),
+      ruleId: String(f.rule_id || f.ruleId || ""),
+      findingType: String(f.finding_type || f.findingType || "Secret"),
+      severity: (String(f.severity || "MEDIUM").toUpperCase()) as any,
+      filePath: String(f.file_path || f.filePath || ""),
+      lineNumber: Number(f.line_number || f.lineNumber || 1),
+      status: f.status ? String(f.status) : "open",
+      risk: f.risk ? String(f.risk) : undefined,
+      recommendation: f.recommendation ? String(f.recommendation) : undefined,
+    })),
+    commits: commitsRaw.map((c: any) => ({
+      sha: String(c.sha || "HEAD"),
+      fullSha: c.full_sha ? String(c.full_sha) : (c.sha ? String(c.sha) : undefined),
+      message: String(c.message || "Commit update"),
+      author: String(c.author || "developer"),
+      authorAvatar: c.author_avatar ? String(c.author_avatar) : null,
+      date: c.date ? String(c.date) : null,
+      htmlUrl: c.html_url ? String(c.html_url) : undefined,
+    })),
   };
 }
 
@@ -436,11 +464,13 @@ class ApiClient {
   }
 
   // ─── Pull Requests ────────────────────────────────────────────────────────
-  async getPullRequests(repositoryId?: string): Promise<{ pullRequests: PullRequest[]; isLive: boolean }> {
+  async getPullRequests(repositoryId?: string, state?: string): Promise<{ pullRequests: PullRequest[]; isLive: boolean }> {
     try {
-      const url = repositoryId
-        ? `${API_BASE}/pull-requests?repository_id=${encodeURIComponent(repositoryId)}`
-        : `${API_BASE}/pull-requests`;
+      const params = new URLSearchParams();
+      if (repositoryId) params.set("repository_id", repositoryId);
+      if (state && state !== "all") params.set("state", state);
+      const qs = params.toString();
+      const url = `${API_BASE}/pull-requests${qs ? `?${qs}` : ""}`;
       const res = await this.fetchWithTimeout(url);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
@@ -453,9 +483,12 @@ class ApiClient {
     }
   }
 
-  async syncPullRequests(): Promise<{ pullRequests: PullRequest[]; success: boolean }> {
+  async syncPullRequests(repositoryId?: string): Promise<{ pullRequests: PullRequest[]; success: boolean }> {
     try {
-      const res = await this.fetchWithTimeout(`${API_BASE}/pull-requests/sync`, { method: "POST" });
+      const url = repositoryId
+        ? `${API_BASE}/pull-requests/sync?repository_id=${encodeURIComponent(repositoryId)}`
+        : `${API_BASE}/pull-requests/sync`;
+      const res = await this.fetchWithTimeout(url, { method: "POST" });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       return {
@@ -467,11 +500,41 @@ class ApiClient {
     }
   }
 
-  async scanPullRequest(repositoryId: string, pullNumber: number): Promise<{ success: boolean; message?: string }> {
+  async getPullRequestCommits(repositoryId: string, pullNumber: number): Promise<PRCommit[]> {
     try {
-      const res = await this.fetchWithTimeout(`${API_BASE}/pull-requests/${repositoryId}/${pullNumber}/scan`, {
-        method: "POST",
-      });
+      const res = await this.fetchWithTimeout(`${API_BASE}/pull-requests/${repositoryId}/${pullNumber}/commits`);
+      if (!res.ok) return [];
+      const data = await res.json();
+      if (!Array.isArray(data)) return [];
+      return data.map((c: any) => ({
+        sha: String(c.sha || "HEAD"),
+        fullSha: c.full_sha ? String(c.full_sha) : undefined,
+        message: String(c.message || "Commit update"),
+        author: String(c.author || "developer"),
+        authorAvatar: c.author_avatar ? String(c.author_avatar) : null,
+        date: c.date ? String(c.date) : null,
+        htmlUrl: c.html_url ? String(c.html_url) : undefined,
+      }));
+    } catch {
+      return [];
+    }
+  }
+
+  async scanPullRequest(
+    repositoryId: string,
+    pullNumber: number,
+    branch?: string,
+    baseBranch?: string,
+  ): Promise<{ success: boolean; message?: string }> {
+    try {
+      const params = new URLSearchParams();
+      if (branch) params.set("branch", branch);
+      if (baseBranch) params.set("base_branch", baseBranch);
+      const qs = params.toString();
+      const res = await this.fetchWithTimeout(
+        `${API_BASE}/pull-requests/${repositoryId}/${pullNumber}/scan${qs ? `?${qs}` : ""}`,
+        { method: "POST" }
+      );
       const data = await res.json().catch(() => ({}));
       return { success: res.ok, message: data.message };
     } catch {

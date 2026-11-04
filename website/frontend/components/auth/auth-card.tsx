@@ -33,6 +33,8 @@ interface AuthCardProps {
   initialMode?: "login" | "signup";
 }
 
+const GITHUB_APP_INSTALL_URL = "https://github.com/apps/secura-security-scanner";
+
 export function AuthCard({ initialMode = "login" }: AuthCardProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -58,6 +60,56 @@ export function AuthCard({ initialMode = "login" }: AuthCardProps) {
   const [customGithubHandle, setCustomGithubHandle] = useState("");
   const [githubFetchLoading, setGithubFetchLoading] = useState(false);
 
+  // Post-auth redirect:
+  // - If logging in (isLogin = true): DO NOT redirect to GitHub App; stay on website and navigate to dashboard/redirectUrl.
+  // - If not logging in (new signup / isLogin = false): open the GitHub App in another tab so user can grant repositories,
+  //   while navigating the current tab to the Secura repositories page!
+  const handlePostAuthSuccess = (msg: string, isLogin: boolean = true) => {
+    const pendingInstId =
+      typeof window !== "undefined"
+        ? sessionStorage.getItem("secura_pending_installation_id")
+        : null;
+
+    if (pendingInstId) {
+      if (typeof window !== "undefined") {
+        sessionStorage.removeItem("secura_pending_installation_id");
+      }
+      setSuccessMessage(`${msg} Connecting your GitHub App installation...`);
+      void api.syncRepositories().finally(() => {
+        setTimeout(
+          () =>
+            router.push(
+              `/repositories?installed=true&installation_id=${pendingInstId}`
+            ),
+          700
+        );
+      });
+      return;
+    }
+
+    if (isLogin) {
+      // User logged in: do NOT redirect to GitHub App; go directly to dashboard
+      setSuccessMessage(`${msg} Redirecting to your dashboard...`);
+      setTimeout(() => {
+        router.push(redirectUrl || "/dashboard");
+      }, 700);
+      return;
+    }
+
+    // New registration / signup (not login):
+    // Open the GitHub App in another tab for selecting repositories,
+    // while the current tab smoothly loads the Secura repositories page.
+    setSuccessMessage(`${msg} Opening Secura GitHub App in a new tab to select repositories...`);
+    try {
+      window.open(GITHUB_APP_INSTALL_URL, "_blank", "noopener,noreferrer");
+    } catch {
+      // ignore popup blocker if any
+    }
+    setTimeout(() => {
+      router.push("/repositories?setup_action=signup");
+    }, 800);
+  };
+
   // Automatically handle GitHub OAuth code callback if redirected back from GitHub
   useEffect(() => {
     const code = searchParams.get("code");
@@ -69,10 +121,10 @@ export function AuthCard({ initialMode = "login" }: AuthCardProps) {
         .then((res) => {
           setLoading(false);
           if (res.success && res.user) {
-            setSuccessMessage(
-              `Authenticated as @${res.user.githubUsername || res.user.name} via GitHub! Redirecting to command center...`
+            handlePostAuthSuccess(
+              `Authenticated as @${res.user.githubUsername || res.user.name} via GitHub!`,
+              mode === "login"
             );
-            setTimeout(() => router.push(redirectUrl), 700);
           } else {
             setErrorMessage(res.error || "GitHub authentication failed.");
           }
@@ -82,7 +134,7 @@ export function AuthCard({ initialMode = "login" }: AuthCardProps) {
           setErrorMessage("Network error during GitHub authentication.");
         });
     }
-  }, [searchParams, redirectUrl, router]);
+  }, [searchParams, redirectUrl, router, mode]);
 
   // Password requirements validation
   const hasMinLength = password.length >= 8;
@@ -142,8 +194,7 @@ export function AuthCard({ initialMode = "login" }: AuthCardProps) {
 
         const res = await api.login(email, password);
         if (res.success) {
-          setSuccessMessage("Welcome back! Redirecting to command center...");
-          setTimeout(() => router.push(redirectUrl), 600);
+          handlePostAuthSuccess("Welcome back!", true);
         } else {
           setErrorMessage(res.error || "Invalid email or password.");
         }
@@ -156,8 +207,7 @@ export function AuthCard({ initialMode = "login" }: AuthCardProps) {
 
         const res = await api.register(email, password, name);
         if (res.success) {
-          setSuccessMessage("Account created successfully! Redirecting...");
-          setTimeout(() => router.push(redirectUrl), 600);
+          handlePostAuthSuccess("Account created successfully!", false);
         } else {
           setErrorMessage(res.error || "Registration failed.");
         }
@@ -206,10 +256,10 @@ export function AuthCard({ initialMode = "login" }: AuthCardProps) {
       );
 
       if (res.success) {
-        setSuccessMessage(
-          `Connected as ${firebaseUser.githubUsername ? `@${firebaseUser.githubUsername}` : userName}! Launching dashboard...`
+        handlePostAuthSuccess(
+          `Connected as ${firebaseUser.githubUsername ? `@${firebaseUser.githubUsername}` : userName}!`,
+          mode === "login"
         );
-        setTimeout(() => router.push(redirectUrl), 600);
       } else {
         setErrorMessage(res.error || `Authentication succeeded with Firebase, but dashboard sync failed.`);
       }
@@ -290,8 +340,7 @@ export function AuthCard({ initialMode = "login" }: AuthCardProps) {
 
       if (res.success) {
         setShowGithubUsernameModal(false);
-        setSuccessMessage(`Connected GitHub account @${ghProfile.login}! Redirecting...`);
-        setTimeout(() => router.push(redirectUrl), 600);
+        handlePostAuthSuccess(`Connected GitHub account @${ghProfile.login}!`, mode === "login");
       } else {
         setErrorMessage(res.error || "Failed to link GitHub account.");
       }
@@ -415,9 +464,31 @@ export function AuthCard({ initialMode = "login" }: AuthCardProps) {
         )}
 
         {successMessage && (
-          <div className="mb-4 flex items-center gap-2.5 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 text-xs text-emerald-300">
-            <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-400" />
-            <span className="flex-1">{successMessage}</span>
+          <div className="mb-4 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3.5 text-xs text-emerald-300 animate-in fade-in">
+            <div className="flex items-start gap-2.5">
+              <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-400 mt-0.5" />
+              <div className="flex-1 space-y-2">
+                <p className="font-semibold">{successMessage}</p>
+                <div className="flex items-center gap-2 pt-0.5">
+                  <a
+                    href={GITHUB_APP_INSTALL_URL}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-2.5 py-1 text-[11px] font-semibold text-white shadow hover:bg-emerald-500 transition-colors"
+                  >
+                    <span>Go to GitHub App (new tab)</span>
+                    <ExternalLink className="h-3 w-3" />
+                  </a>
+                  <button
+                    type="button"
+                    onClick={() => router.push(redirectUrl || "/dashboard")}
+                    className="text-[11px] text-slate-400 hover:text-slate-200 underline underline-offset-2 transition-colors"
+                  >
+                    Skip to Command Center
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
         )}
 

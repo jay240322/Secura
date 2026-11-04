@@ -37,6 +37,7 @@ def to_finding_response(finding: Finding, repo_name: Optional[str] = None) -> Fi
 @router.get("", response_model=List[FindingResponse])
 def list_findings(
     repository_id: Optional[str] = None,
+    scan_id: Optional[str] = None,
     severity: Optional[str] = None,
     status: Optional[str] = None,
     search: Optional[str] = None,
@@ -54,6 +55,8 @@ def list_findings(
 
     if repository_id:
         query = query.filter(Finding.repository_id == repository_id)
+    if scan_id:
+        query = query.filter(Finding.scan_id == scan_id)
     if severity:
         query = query.filter(Finding.severity == severity.upper())
     if status:
@@ -67,6 +70,13 @@ def list_findings(
         )
 
     findings = query.order_by(Finding.created_at.desc()).offset(skip).limit(limit).all()
+    if not findings and not repository_id and not scan_id:
+        fallback_q = db.query(Finding)
+        if severity:
+            fallback_q = fallback_q.filter(Finding.severity == severity.upper())
+        if status:
+            fallback_q = fallback_q.filter(Finding.status == status.lower())
+        findings = fallback_q.order_by(Finding.created_at.desc()).offset(skip).limit(limit).all()
     return [to_finding_response(f) for f in findings]
 
 

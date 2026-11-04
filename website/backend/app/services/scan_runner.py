@@ -1,4 +1,5 @@
 import datetime
+import json
 import logging
 import time
 from typing import Any, Dict, List, Optional
@@ -162,10 +163,13 @@ def execute_pr_scan(
     pr_author: Optional[str] = None,
     pr_html_url: Optional[str] = None,
     installation_id: Optional[int] = None,
+    pr_state: Optional[str] = "open",
+    pr_merged_at: Optional[datetime.datetime] = None,
+    pr_closed_at: Optional[datetime.datetime] = None,
 ):
     """
     Dedicated background worker for scanning Pull Requests:
-    1. Fetches only files changed in this PR from GitHub App API.
+    1. Fetches only files changed in this PR from GitHub App API (or public GitHub API).
     2. Deep scans files for credentials, tokens, secrets, and SAST rules.
     3. Evaluates security policy & score.
     4. Posts/updates the GitHub Pull Request security comment.
@@ -184,6 +188,9 @@ def execute_pr_scan(
         pr_title=pr_title or f"Pull Request #{pull_number}",
         pr_author=pr_author,
         pr_html_url=pr_html_url,
+        pr_state=pr_state or "open",
+        pr_merged_at=pr_merged_at,
+        pr_closed_at=pr_closed_at,
         scan_status="running",
         score=100,
     )
@@ -210,37 +217,65 @@ def execute_pr_scan(
         inst_id = installation_id or (repo.installation.github_installation_id if repo.installation else None)
         owner, repo_name = repo.full_name.split("/", 1) if "/" in repo.full_name else (repo.owner, repo.name)
 
+        # Store PR commits if not already recorded
+        if not scan.pr_commits_json:
+            try:
+                from app.services.github_service import get_pull_request_commits
+                raw_commits = get_pull_request_commits(inst_id, owner, repo_name, pull_number)
+                if not raw_commits:
+                    short_sha = commit_sha[:7] if len(commit_sha) >= 7 else commit_sha
+                    raw_commits = [
+                        {
+                            "sha": short_sha,
+                            "full_sha": commit_sha,
+                            "message": pr_title or f"Commit {short_sha} for PR #{pull_number}",
+                            "author": pr_author or repo.owner,
+                            "author_avatar": None,
+                            "date": datetime.datetime.utcnow().isoformat(),
+                            "html_url": pr_html_url or f"https://github.com/{repo.full_name}/commit/{commit_sha}",
+                        }
+                    ]
+                scan.pr_commits_json = json.dumps(raw_commits)
+                db.commit()
+            except Exception:
+                pass
+
         findings_data: List[Dict[str, Any]] = []
 
         # 1. Fetch files changed in the PR from GitHub
+        token = None
         if inst_id:
             try:
                 token = create_installation_token(inst_id)
-                pr_files = get_pull_request_files(token, owner, repo_name, pull_number)
-                logger.info("PR #%s changed files count: %s", pull_number, len(pr_files))
+            except Exception as token_err:
+                logger.warning("Could not obtain installation token for %s: %s", inst_id, token_err)
 
-                for f in pr_files:
-                    filename = f.get("filename")
-                    if not filename:
-                        continue
+        try:
+            pr_files = get_pull_request_files(token, owner, repo_name, pull_number)
+            logger.info("PR #%s changed files count: %s", pull_number, len(pr_files))
 
-                    # Filter scannable files
-                    if not is_scannable_file(filename):
-                        continue
+            for f in pr_files:
+                filename = f.get("filename")
+                if not filename:
+                    continue
 
-                    # Fetch file content at head_sha
-                    try:
-                        content = get_repository_file_content(token, owner, repo_name, filename, commit_sha)
-                        if content:
-                            sec_findings = scan_secrets_content(content, file_path=filename)
-                            findings_data.extend(sec_findings)
+                # Filter scannable files
+                if not is_scannable_file(filename):
+                    continue
 
-                            sast_findings = scan_sast_content(content, file_path=filename)
-                            findings_data.extend(sast_findings)
-                    except Exception as content_err:
-                        logger.warning("Could not fetch PR file content for %s: %s", filename, content_err)
-            except Exception as gh_err:
-                logger.warning("GitHub API PR fetch failed: %s. Falling back to local diff scan.", gh_err)
+                # Fetch file content at head_sha
+                try:
+                    content = get_repository_file_content(token, owner, repo_name, filename, commit_sha)
+                    if content:
+                        sec_findings = scan_secrets_content(content, file_path=filename)
+                        findings_data.extend(sec_findings)
+
+                        sast_findings = scan_sast_content(content, file_path=filename)
+                        findings_data.extend(sast_findings)
+                except Exception as content_err:
+                    logger.warning("Could not fetch PR file content for %s: %s", filename, content_err)
+        except Exception as gh_err:
+            logger.warning("GitHub API PR fetch failed: %s. Falling back to local diff scan.", gh_err)
 
         # 2. Fallback to local scan if no remote files were found (e.g. offline dev testing)
         if not findings_data:
@@ -367,6 +402,9 @@ def record_pr_scan_results(
     findings: Optional[List[Dict[str, Any]]] = None,
     check_run_id: Optional[int] = None,
     installation_id: Optional[int] = None,
+    pr_state: Optional[str] = "open",
+    pr_merged_at: Optional[datetime.datetime] = None,
+    pr_closed_at: Optional[datetime.datetime] = None,
 ) -> Optional[str]:
     """
     Persist PR scan results from GitHub App webhook into the Secura database.
@@ -376,13 +414,13 @@ def record_pr_scan_results(
     try:
         repo = db.query(Repository).filter(Repository.full_name == repository_name).first()
         if not repo:
-            from app.models.installation import Installation
+            from app.models.installation import GitHubInstallation
             from app.models.user import User
             inst = None
             if installation_id:
-                inst = db.query(Installation).filter(Installation.github_installation_id == installation_id).first()
+                inst = db.query(GitHubInstallation).filter(GitHubInstallation.github_installation_id == installation_id).first()
             if not inst:
-                inst = db.query(Installation).first()
+                inst = db.query(GitHubInstallation).first()
 
             user = None
             if inst:
@@ -435,6 +473,9 @@ def record_pr_scan_results(
                 pr_title=pr_title or f"Pull Request #{pull_number}",
                 pr_author=pr_author or repo.owner,
                 pr_html_url=pr_html_url or f"https://github.com/{repository_name}/pull/{pull_number}",
+                pr_state=pr_state or "open",
+                pr_merged_at=pr_merged_at,
+                pr_closed_at=pr_closed_at,
             )
             db.add(scan)
             db.commit()
@@ -448,6 +489,12 @@ def record_pr_scan_results(
                 scan.pr_author = pr_author
             if pr_html_url:
                 scan.pr_html_url = pr_html_url
+            if pr_state:
+                scan.pr_state = pr_state
+            if pr_merged_at:
+                scan.pr_merged_at = pr_merged_at
+            if pr_closed_at:
+                scan.pr_closed_at = pr_closed_at
 
         has_violations = not eval_result.get("passed", True) or len(findings_data) > 0 and (
             counts.get("CRITICAL", 0) > 0 or counts.get("HIGH", 0) > 0

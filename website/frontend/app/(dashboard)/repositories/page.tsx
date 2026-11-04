@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { api } from "@/lib/api-client";
 import type { Repository, AvailableRepository, User } from "@/types";
@@ -239,21 +240,8 @@ function RepoCard({
           </Link>
         </div>
 
-        {/* Secondary Row: Toggle Status & External Links */}
-        <div className="flex items-center justify-between text-xs pt-1">
-          <button
-            onClick={() => void onToggleMonitoring(repo.id, repo.isMonitored)}
-            className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-medium transition-all ${
-              repo.isMonitored
-                ? "text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10"
-                : "text-slate-400 hover:text-slate-200 hover:bg-white/[0.05]"
-            }`}
-            title={repo.isMonitored ? "Click to Pause Monitoring" : "Click to Enable Monitoring"}
-          >
-            <Power className="h-3 w-3" />
-            <span>{repo.isMonitored ? "Monitoring On" : "Enable Gate"}</span>
-          </button>
-
+        {/* Secondary Row: External Links & Actions */}
+        <div className="flex items-center justify-end text-xs pt-1">
           <div className="flex items-center gap-1">
             <a
               href={repo.htmlUrl}
@@ -279,7 +267,9 @@ function RepoCard({
   );
 }
 
-export default function RepositoriesPage() {
+function RepositoriesContent() {
+  const searchParams = useSearchParams();
+  const [installedBanner, setInstalledBanner] = useState(false);
   const [repos, setRepos] = useState<Repository[]>([]);
   const [isLive, setIsLive] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -390,16 +380,31 @@ export default function RepositoriesPage() {
     }
   };
 
+  const githubConfigureUrl = useMemo(() => {
+    const withAppUrl = repos.find((r) => r.githubAppUrl && r.githubAppUrl.includes("installations/"));
+    if (withAppUrl) return withAppUrl.githubAppUrl;
+    return "https://github.com/apps/secura-security-scanner";
+  }, [repos]);
+
   useEffect(() => {
     let mounted = true;
+    const isInstalled = searchParams.get("installed") === "true";
+    const instId = searchParams.get("installation_id");
+    const setupAction = searchParams.get("setup_action");
+
+    if (isInstalled || instId || setupAction) {
+      setInstalledBanner(true);
+    }
+
     async function loadRepos(isInitial = false) {
       try {
         const user = api.getStoredUser();
         if (user) setCurrentUser(user);
 
-        // On initial page mount, automatically sync from GitHub App so newly allowed repositories appear right away
-        if (isInitial) {
+        // Always sync directly from GitHub App on initial load or tab focus so newly added repos appear immediately
+        if (isInitial || isInstalled || instId || setupAction) {
           const syncRes = await api.syncRepositories();
+          void api.syncPullRequests();
           if (mounted && syncRes.success && syncRes.repositories.length > 0) {
             setRepos(syncRes.repositories);
             setIsLive(true);
@@ -418,14 +423,21 @@ export default function RepositoriesPage() {
     }
     void loadRepos(true);
 
-    // Auto-poll every 6 seconds to keep repository metrics live
+    // Auto-poll every 5 seconds to keep repository status updated
     const interval = setInterval(() => {
       void loadRepos(false);
-    }, 6000);
+    }, 5000);
+
+    // When returning to this browser tab (e.g. after adding repos on GitHub), auto-sync instantly!
+    const onWindowFocus = () => {
+      void loadRepos(true);
+    };
+    window.addEventListener("focus", onWindowFocus);
 
     return () => {
       mounted = false;
       clearInterval(interval);
+      window.removeEventListener("focus", onWindowFocus);
     };
   }, []);
 
@@ -433,12 +445,21 @@ export default function RepositoriesPage() {
   const [syncFeedback, setSyncFeedback] = useState<string | null>(null);
 
   const handleRefresh = async () => {
+    setSyncLoading(true);
     try {
-      const res = await api.getRepositories();
-      setRepos(res.repositories);
-      setIsLive(res.isLive);
+      const syncRes = await api.syncRepositories();
+      if (syncRes.success && syncRes.repositories.length > 0) {
+        setRepos(syncRes.repositories);
+        setIsLive(true);
+      } else {
+        const res = await api.getRepositories();
+        setRepos(res.repositories);
+        setIsLive(res.isLive);
+      }
     } catch (e) {
       console.error("Failed to refresh repos:", e);
+    } finally {
+      setSyncLoading(false);
     }
   };
 
@@ -502,9 +523,12 @@ export default function RepositoriesPage() {
       });
 
       if (res.success && res.repository) {
-        setRepos((prev) => [res.repository!, ...prev]);
+        setRepos((prev) => [res.repository!, ...prev.filter((r) => r.fullName !== res.repository!.fullName)]);
         setNewRepoFullName("");
-        setShowAddForm(false);
+        setShowAddModal(false);
+        setShowManualForm(false);
+        setSyncFeedback(`Added "${res.repository.fullName}" to Secura! Linked with GitHub App.`);
+        setTimeout(() => setSyncFeedback(null), 5000);
       } else {
         setAddFeedback(res.error || "Failed to add repository.");
       }
@@ -532,6 +556,31 @@ export default function RepositoriesPage() {
 
   return (
     <div className="max-w-screen-xl mx-auto space-y-6">
+      {/* ─── GitHub App Connection Confirmation Alert ────────────────────── */}
+      {installedBanner && (
+        <div className="flex items-center justify-between rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-xs text-emerald-300 shadow-xl shadow-emerald-950/20 animate-in fade-in">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-500/20 border border-emerald-500/30 text-emerald-400">
+              <CheckCircle2 className="h-5 w-5" />
+            </div>
+            <div>
+              <p className="font-bold text-sm text-emerald-200">
+                GitHub App Installation Complete!
+              </p>
+              <p className="text-slate-300 mt-0.5">
+                Secura is linked to your GitHub account and has synced all granted repositories. Live pull request scanning & secret protection are active.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => setInstalledBanner(false)}
+            className="text-slate-400 hover:text-white transition-colors"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+
       {/* ─── Official GitHub App Integration Banner ──────────────────────── */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-2xl border border-blue-500/30 bg-gradient-to-r from-blue-900/25 via-blue-950/30 to-[#0d1117] p-5 shadow-xl shadow-blue-950/20">
         <div className="flex items-center gap-3.5">
@@ -578,7 +627,7 @@ export default function RepositoriesPage() {
             <span>Sync Repositories</span>
           </button>
           <a
-            href="https://github.com/apps/secura-security-scanner"
+            href={githubConfigureUrl}
             target="_blank"
             rel="noopener noreferrer"
             className="flex shrink-0 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-xs font-semibold text-white shadow-lg shadow-blue-600/30 hover:bg-blue-500 transition-all"
@@ -728,7 +777,7 @@ export default function RepositoriesPage() {
                     Ensure the Secura GitHub App is installed on your GitHub account with access to your repositories.
                   </p>
                   <a
-                    href="https://github.com/apps/secura-security-scanner"
+                    href={githubConfigureUrl}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2 text-xs font-semibold text-white shadow-md shadow-blue-600/30 hover:bg-blue-500 transition-all mt-4"
@@ -994,7 +1043,7 @@ export default function RepositoriesPage() {
                 <span>Sync Allowed Repositories from GitHub</span>
               </button>
               <a
-                href="https://github.com/apps/secura-security-scanner"
+                href={githubConfigureUrl}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2 text-xs font-semibold text-white shadow-md shadow-blue-600/30 hover:bg-blue-500 transition-all"
@@ -1018,5 +1067,20 @@ export default function RepositoriesPage() {
         )}
       </div>
     </div>
+  );
+}
+
+export default function RepositoriesPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex flex-col items-center justify-center py-20 text-slate-500 gap-2">
+          <Loader2 className="h-6 w-6 animate-spin text-blue-400" />
+          <span className="text-xs">Loading repositories...</span>
+        </div>
+      }
+    >
+      <RepositoriesContent />
+    </Suspense>
   );
 }

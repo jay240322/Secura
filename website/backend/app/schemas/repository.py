@@ -33,6 +33,8 @@ class RepositoryUpdate(BaseModel):
 class RepositoryResponse(RepositoryBase):
     id: str
     installation_id: Optional[str] = None
+    github_installation_id: Optional[int] = None
+    github_app_url: Optional[str] = None
     github_repo_id: Optional[int] = None
     open_findings_count: int = 0
     critical_findings_count: int = 0

@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { SeverityBadge } from "@/components/ui/severity-badge";
 import { StatusBadge } from "@/components/ui/status-badge";
@@ -22,6 +23,7 @@ import {
   TrendingDown,
   TrendingUp,
   ExternalLink,
+  X,
 } from "lucide-react";
 import {
   AreaChart,
@@ -165,7 +167,10 @@ function ChartTooltip({
 }
 
 // ─── Dashboard page ───────────────────────────────────────────────────────
-export default function DashboardPage() {
+function DashboardContent() {
+  const searchParams = useSearchParams();
+  const [isMounted, setIsMounted] = useState(false);
+  const [installedBanner, setInstalledBanner] = useState(false);
   const [isLive, setIsLive] = useState(false);
   const [summary, setSummary] = useState<DashboardSummary>(DEFAULT_SUMMARY);
   const [findingsOverTime, setFindingsOverTime] = useState<FindingOverTime[]>([]);
@@ -175,39 +180,64 @@ export default function DashboardPage() {
   const [repos, setRepos] = useState<Repository[]>([]);
 
   useEffect(() => {
+    setIsMounted(true);
     let mounted = true;
-    async function loadData() {
-      try {
-        const insightsData = await api.getInsights();
-        let reposData = await api.getRepositories();
-        if (reposData.repositories.length === 0) {
-          const syncRes = await api.syncRepositories();
-          if (syncRes.success && syncRes.repositories.length > 0) {
-            reposData = { repositories: syncRes.repositories, isLive: true };
-          }
-        }
-        const findingsData = await api.getFindings({ status: "open" });
-        const scansData = await api.getScans();
+    let inFlight = false;
+    const isInstalled = searchParams.get("installed") === "true";
+    const instId = searchParams.get("installation_id");
+    const setupAction = searchParams.get("setup_action");
 
-        if (mounted) {
-          setIsLive(insightsData.isLive);
-          setSummary(insightsData.summary);
-          setFindingsOverTime(insightsData.findingsOverTime);
-          setFindingsBySeverity(insightsData.findingsBySeverity);
-          setRepos(reposData.repositories);
-          setRecentFindings(findingsData.findings.slice(0, 5));
-          setRecentScans(scansData.scans.slice(0, 4));
+    if (isInstalled || instId || setupAction) {
+      setInstalledBanner(true);
+      void api.syncRepositories().then(() => {
+        if (mounted) void loadData();
+      });
+      void api.syncPullRequests();
+    }
+
+    async function loadData() {
+      if (inFlight) return;
+      inFlight = true;
+      try {
+        const [insightsRes, reposRes, findingsRes, scansRes] = await Promise.allSettled([
+          api.getInsights(),
+          api.getRepositories(),
+          api.getFindings({ status: "open" }),
+          api.getScans(),
+        ]);
+
+        if (!mounted) return;
+
+        if (insightsRes.status === "fulfilled") {
+          setIsLive(insightsRes.value.isLive);
+          setSummary(insightsRes.value.summary);
+          setFindingsOverTime(insightsRes.value.findingsOverTime);
+          setFindingsBySeverity(insightsRes.value.findingsBySeverity);
+        }
+
+        if (reposRes.status === "fulfilled") {
+          setRepos(reposRes.value.repositories);
+        }
+
+        if (findingsRes.status === "fulfilled") {
+          setRecentFindings(findingsRes.value.findings.slice(0, 5));
+        }
+
+        if (scansRes.status === "fulfilled") {
+          setRecentScans(scansRes.value.scans.slice(0, 4));
         }
       } catch (e) {
         console.error("Dashboard data load error:", e);
+      } finally {
+        inFlight = false;
       }
     }
     void loadData();
 
-    // Auto-poll every 6 seconds to keep live metrics and recent PR scans updated
+    // Auto-poll every 10 seconds to keep live metrics and recent PR scans updated smoothly
     const interval = setInterval(() => {
       void loadData();
-    }, 6000);
+    }, 10000);
 
     return () => {
       mounted = false;
@@ -221,6 +251,29 @@ export default function DashboardPage() {
 
   return (
     <div className="max-w-screen-2xl mx-auto space-y-6">
+      {/* GitHub App Connection Alert */}
+      {installedBanner && (
+        <div className="flex items-center justify-between rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-xs text-emerald-300 shadow-xl shadow-emerald-950/20 animate-in fade-in">
+          <div className="flex items-center gap-3">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-500/20 border border-emerald-500/30 text-emerald-400">
+              <CheckCircle2 className="h-5 w-5" />
+            </div>
+            <div>
+              <p className="font-bold text-sm text-emerald-200">GitHub App Linked!</p>
+              <p className="text-slate-300 mt-0.5">
+                Successfully synced your selected repositories. Pull requests will now be automatically scanned for secret leaks.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => setInstalledBanner(false)}
+            className="text-slate-400 hover:text-white transition-colors"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+
       {/* Official GitHub App Integration Card */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-xl border border-blue-500/25 bg-gradient-to-r from-blue-900/20 via-blue-950/25 to-[#0d1117] p-4 text-xs shadow-lg shadow-blue-950/20">
         <div className="flex items-center gap-3">
@@ -306,7 +359,7 @@ export default function DashboardPage() {
             <span className="text-xs text-slate-500">Trend & Resolution</span>
           </CardHeader>
           <CardContent>
-            {findingsOverTime.length === 0 ? (
+            {!isMounted || findingsOverTime.length === 0 ? (
               <div className="flex h-[200px] flex-col items-center justify-center text-xs text-slate-500">
                 <CheckCircle2 className="h-6 w-6 text-emerald-500/80 mb-2" />
                 <span>No historical findings recorded</span>
@@ -371,7 +424,7 @@ export default function DashboardPage() {
             <CardTitle>By severity</CardTitle>
           </CardHeader>
           <CardContent>
-            {findingsBySeverity.length === 0 ? (
+            {!isMounted || findingsBySeverity.length === 0 ? (
               <div className="flex h-[200px] flex-col items-center justify-center text-xs text-slate-500">
                 <CheckCircle2 className="h-6 w-6 text-emerald-500/80 mb-2" />
                 <span>No active findings by severity</span>
@@ -569,5 +622,20 @@ export default function DashboardPage() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+export default function DashboardPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex flex-col items-center justify-center py-20 text-slate-500 gap-2">
+          <Shield className="h-6 w-6 text-blue-400 animate-pulse" />
+          <span className="text-xs">Loading command center...</span>
+        </div>
+      }
+    >
+      <DashboardContent />
+    </Suspense>
   );
 }

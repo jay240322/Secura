@@ -14,6 +14,7 @@ class User(Base):
     avatar_url = Column(String(512), nullable=True)
     github_id = Column(String(64), unique=True, index=True, nullable=True)
     github_username = Column(String(255), nullable=True)
+    github_access_token = Column(String(512), nullable=True)
     password_hash = Column(String(255), nullable=True)
     provider = Column(String(32), default="local", nullable=False)
     is_active = Column(Boolean, default=True)

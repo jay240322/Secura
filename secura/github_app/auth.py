@@ -1,4 +1,5 @@
 
+import datetime
 import logging
 import os
 from pathlib import Path
@@ -13,11 +14,37 @@ logger = logging.getLogger("secura.github_app.auth")
 GITHUB_API_URL = "https://api.github.com"
 
 
+def log_debug(msg: str):
+    try:
+        debug_file = Path("/home/jay/projects/Secura/sync_debug.log")
+        if not debug_file.parent.exists():
+            repo_root = Path(__file__).resolve().parent.parent.parent
+            debug_file = repo_root / "sync_debug.log"
+        with open(debug_file, "a", encoding="utf-8") as f:
+            f.write(f"[{datetime.datetime.now().isoformat()}] {msg}\n")
+    except Exception:
+        pass
+
+
 def create_app_jwt() -> str:
     """Create a short-lived JWT for GitHub App authentication."""
 
     app_id = os.environ.get("GITHUB_APP_ID")
     private_key_path = os.environ.get("GITHUB_PRIVATE_KEY_PATH")
+
+    if not app_id:
+        try:
+            from app.core.config import settings
+            app_id = settings.GITHUB_APP_ID
+        except Exception:
+            pass
+
+    if not private_key_path:
+        try:
+            from app.core.config import settings
+            private_key_path = settings.GITHUB_PRIVATE_KEY_PATH
+        except Exception:
+            pass
 
     if not app_id:
         raise RuntimeError("GITHUB_APP_ID is not configured")
@@ -33,6 +60,7 @@ def create_app_jwt() -> str:
             repo_root / private_key_path,
             repo_root / ".secrets" / Path(private_key_path).name,
             Path.cwd() / private_key_path,
+            Path.cwd() / ".secrets" / Path(private_key_path).name,
             Path("/home/jay/projects/Secura/.secrets/github-app-private-key.pem"),
             Path(r"\\wsl.localhost\Ubuntu\home\jay\projects\Secura\.secrets\github-app-private-key.pem"),
         ]
@@ -52,22 +80,24 @@ def create_app_jwt() -> str:
 
     now = int(time.time())
 
-    try:
-        iss_val: int | str = int(app_id)
-    except (ValueError, TypeError):
-        iss_val = app_id
+    # PyJWT strictly requires 'iss' (Issuer) to be a string.
+    iss_val = str(app_id).strip()
 
+    # GitHub requires JWT exp to be strictly <= 10 minutes (600s) from iat.
+    # We set iat to 60s in past for clock drift and exp to 500s (~8.3 min), strictly within the 600s limit.
     payload = {
         "iat": now - 60,
-        "exp": now + 9 * 60,
+        "exp": now + 500,
         "iss": iss_val,
     }
 
-    return jwt.encode(
+    log_debug(f"Creating App JWT: iss={iss_val}, key_file={key_file_path}")
+    token = jwt.encode(
         payload,
         private_key,
         algorithm="RS256",
     )
+    return token
 
 
 def create_installation_token(installation_id: int) -> str:
@@ -80,15 +110,19 @@ def create_installation_token(installation_id: int) -> str:
         f"{installation_id}/access_tokens"
     )
 
+    log_debug(f"POST {url} to exchange App JWT for installation access token...")
     response = requests.post(
         url,
         headers={
             "Authorization": f"Bearer {app_jwt}",
             "Accept": "application/vnd.github+json",
             "X-GitHub-Api-Version": "2022-11-28",
+            "User-Agent": "Secura-Security-Scanner",
         },
         timeout=15,
     )
+
+    log_debug(f"POST {url} response: status={response.status_code}, body={response.text[:300]}")
 
     if not response.ok:
         logger.error(
@@ -112,7 +146,7 @@ def create_installation_token(installation_id: int) -> str:
 
 
 def get_pull_request_files(
-    installation_token: str,
+    installation_token: str | None,
     owner: str,
     repo: str,
     pull_number: int,
@@ -124,17 +158,21 @@ def get_pull_request_files(
         f"pulls/{pull_number}/files"
     )
 
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        "User-Agent": "Secura-Security-Scanner",
+    }
+    if installation_token:
+        headers["Authorization"] = f"Bearer {installation_token}"
+
     files = []
     page = 1
 
     while True:
         response = requests.get(
             url,
-            headers={
-                "Authorization": f"Bearer {installation_token}",
-                "Accept": "application/vnd.github+json",
-                "X-GitHub-Api-Version": "2022-11-28",
-            },
+            headers=headers,
             params={
                 "per_page": 100,
                 "page": page,
@@ -159,7 +197,7 @@ def get_pull_request_files(
     return files
 
 def get_repository_file_content(
-    installation_token: str,
+    installation_token: str | None,
     owner: str,
     repo: str,
     path: str,
@@ -171,13 +209,17 @@ def get_repository_file_content(
         f"{GITHUB_API_URL}/repos/{owner}/{repo}/contents/{path}"
     )
 
+    headers = {
+        "Accept": "application/vnd.github.raw+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        "User-Agent": "Secura-Security-Scanner",
+    }
+    if installation_token:
+        headers["Authorization"] = f"Bearer {installation_token}"
+
     response = requests.get(
         url,
-        headers={
-            "Authorization": f"Bearer {installation_token}",
-            "Accept": "application/vnd.github.raw+json",
-            "X-GitHub-Api-Version": "2022-11-28",
-        },
+        headers=headers,
         params={"ref": ref},
         timeout=15,
     )
