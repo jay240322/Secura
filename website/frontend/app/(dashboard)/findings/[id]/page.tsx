@@ -4,6 +4,7 @@ import { useEffect, useState, Suspense } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { SeverityBadge } from "@/components/ui/severity-badge";
 import { StatusBadge } from "@/components/ui/status-badge";
+import { Loader } from "@/components/ui/loader";
 import { api } from "@/lib/api-client";
 import type { Finding } from "@/types";
 import {
@@ -22,7 +23,7 @@ export const dynamic = "force-dynamic";
 
 export default function FindingDetailPage() {
   return (
-    <Suspense fallback={<div className="p-8 text-slate-500">Loading finding details...</div>}>
+    <Suspense fallback={<div className="py-24 flex justify-center"><Loader size="md" /></div>}>
       <FindingDetailContent />
     </Suspense>
   );
@@ -70,16 +71,20 @@ function FindingDetailContent() {
   };
 
   if (isLoading) {
-    return <div className="p-8 text-slate-500">Loading finding details...</div>;
+    return (
+      <div className="py-24 flex justify-center">
+        <Loader size="md" />
+      </div>
+    );
   }
 
   if (!finding) {
     return (
       <div className="max-w-2xl mx-auto py-12 text-center space-y-4">
-        <p className="text-sm text-slate-400">Finding not found or has been removed.</p>
+        <p className="text-sm text-slate-600">Finding not found or has been removed.</p>
         <Link
           href="/findings"
-          className="inline-flex items-center gap-1.5 text-xs text-blue-400 hover:text-blue-300"
+          className="inline-flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-700"
         >
           <ArrowLeft className="h-3.5 w-3.5" /> Back to findings
         </Link>
@@ -92,7 +97,7 @@ function FindingDetailContent() {
       {/* Back nav */}
       <Link
         href="/findings"
-        className="inline-flex items-center gap-1.5 text-sm text-slate-400 hover:text-slate-200 transition-colors"
+        className="inline-flex items-center gap-1.5 text-sm text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-100 transition-colors"
       >
         <ArrowLeft className="h-4 w-4" />
         Back to findings
@@ -105,18 +110,18 @@ function FindingDetailContent() {
             <div className="flex items-center gap-2.5 flex-wrap mb-2">
               <SeverityBadge severity={finding.severity} />
               <StatusBadge status={finding.status} />
-              <span className="text-xs text-slate-500 font-mono">
+              <span className="text-xs text-slate-600 dark:text-zinc-400 font-mono bg-slate-100 dark:bg-zinc-800 px-2 py-0.5 rounded border border-slate-200 dark:border-zinc-700">
                 {finding.ruleId}
               </span>
             </div>
-            <h1 className="text-xl font-bold text-slate-100">{finding.type}</h1>
-            <div className="mt-2 flex items-center gap-2 text-xs text-slate-400">
-              <MapPin className="h-3.5 w-3.5 shrink-0" />
-              <span className="font-mono text-slate-300">
+            <h1 className="text-xl font-bold text-slate-900 dark:text-zinc-100">{finding.type}</h1>
+            <div className="mt-2 flex items-center gap-2 text-xs text-slate-500 dark:text-zinc-400">
+              <MapPin className="h-3.5 w-3.5 shrink-0 text-slate-400 dark:text-zinc-500" />
+              <span className="font-mono text-slate-700 dark:text-zinc-300 font-semibold">
                 {finding.filePath}:{finding.lineNumber}
               </span>
               <span>·</span>
-              <span>{finding.repository}</span>
+              <span className="text-slate-600 dark:text-zinc-400">{finding.repository}</span>
             </div>
           </div>
         </div>
@@ -127,28 +132,28 @@ function FindingDetailContent() {
         <div className="space-y-5 lg:col-span-2">
           {/* Location & redacted code */}
           <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Code className="h-4 w-4 text-blue-400" />
+            <CardHeader className="border-b border-slate-100 dark:border-zinc-800/80 pb-3">
+              <CardTitle className="flex items-center gap-2 text-slate-900 dark:text-zinc-100 font-semibold">
+                <Code className="h-4 w-4 text-blue-600 dark:text-blue-500" />
                 Detected location
               </CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="rounded-lg border border-white/[0.06] bg-[#080b0f] p-4 font-mono text-xs text-slate-400">
-                <div className="flex items-center gap-2 text-slate-500 mb-2">
+            <CardContent className="pt-3">
+              <div className="rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-50/80 dark:bg-zinc-900/60 p-4 font-mono text-xs text-slate-700 dark:text-zinc-300 shadow-xs">
+                <div className="flex items-center gap-2 text-slate-500 dark:text-zinc-400 mb-2">
                   <FileText className="h-3.5 w-3.5" />
                   <span>{finding.filePath}</span>
                 </div>
-                <div className="flex items-center gap-4 bg-red-950/20 -mx-4 px-4 py-1.5 border-l-2 border-red-500 text-slate-200">
-                  <span className="text-slate-600 select-none w-6 text-right">
+                <div className="flex items-center gap-4 bg-rose-50 dark:bg-rose-950/40 -mx-4 px-4 py-1.5 border-l-2 border-rose-500 text-slate-900 dark:text-zinc-100">
+                  <span className="text-slate-400 dark:text-zinc-500 select-none w-6 text-right">
                     {finding.lineNumber}
                   </span>
-                  <span className="text-red-300">
+                  <span className="text-rose-700 dark:text-rose-400 font-semibold">
                     [REDACTED SECRET DETECTED ON LINE {finding.lineNumber}]
                   </span>
                 </div>
               </div>
-              <p className="mt-2 text-[11px] text-slate-600">
+              <p className="mt-2 text-[11px] text-slate-500 dark:text-zinc-400">
                 🔒 Detected credential values are redacted to prevent further exposure.
               </p>
             </CardContent>
@@ -157,14 +162,14 @@ function FindingDetailContent() {
           {/* Risk explanation */}
           {finding.risk && (
             <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <ShieldAlert className="h-4 w-4 text-orange-400" />
+              <CardHeader className="border-b border-slate-100 dark:border-zinc-800/80 pb-3">
+                <CardTitle className="flex items-center gap-2 text-slate-900 dark:text-zinc-100 font-semibold">
+                  <ShieldAlert className="h-4 w-4 text-amber-600 dark:text-amber-500" />
                   Security risk
                 </CardTitle>
               </CardHeader>
-              <CardContent>
-                <p className="text-sm text-slate-300 leading-relaxed">
+              <CardContent className="pt-3">
+                <p className="text-sm text-slate-700 dark:text-zinc-300 leading-relaxed">
                   {finding.risk}
                 </p>
               </CardContent>
@@ -174,25 +179,25 @@ function FindingDetailContent() {
           {/* Remediation */}
           {finding.recommendation && (
             <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+              <CardHeader className="border-b border-slate-100 dark:border-zinc-800/80 pb-3">
+                <CardTitle className="flex items-center gap-2 text-slate-900 dark:text-zinc-100 font-semibold">
+                  <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-500" />
                   Remediation guidance
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-3">
-                <p className="text-sm text-slate-300 leading-relaxed">
+              <CardContent className="pt-3 space-y-3">
+                <p className="text-sm text-slate-700 dark:text-zinc-300 leading-relaxed">
                   {finding.recommendation}
                 </p>
 
                 {/* Safe example */}
-                <div className="rounded-lg border border-white/[0.06] bg-[#080b0f] overflow-hidden">
-                  <div className="flex items-center gap-2 border-b border-white/[0.06] px-4 py-2">
-                    <span className="text-xs text-emerald-400">
+                <div className="rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-50/80 dark:bg-zinc-900/60 overflow-hidden shadow-xs">
+                  <div className="flex items-center gap-2 border-b border-slate-200 dark:border-zinc-800 px-4 py-2 bg-slate-100/60 dark:bg-zinc-800/60">
+                    <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-400">
                       ✓ Safe example
                     </span>
                   </div>
-                  <pre className="text-xs font-mono p-4 text-slate-300">
+                  <pre className="text-xs font-mono p-4 text-slate-800 dark:text-zinc-200 overflow-x-auto">
                     {getSafeExample(finding.type)}
                   </pre>
                 </div>
@@ -203,11 +208,11 @@ function FindingDetailContent() {
           {/* Ignored reason */}
           {finding.status === "ignored" && finding.ignoreReason && (
             <Card>
-              <CardHeader>
-                <CardTitle>Ignore reason</CardTitle>
+              <CardHeader className="border-b border-slate-100 dark:border-zinc-800/80 pb-3">
+                <CardTitle className="text-slate-900 dark:text-zinc-100 font-semibold">Ignore reason</CardTitle>
               </CardHeader>
-              <CardContent>
-                <p className="text-sm text-slate-400">{finding.ignoreReason}</p>
+              <CardContent className="pt-3">
+                <p className="text-sm text-slate-600 dark:text-zinc-400">{finding.ignoreReason}</p>
               </CardContent>
             </Card>
           )}
@@ -217,17 +222,17 @@ function FindingDetailContent() {
         <div className="space-y-4">
           {/* Actions */}
           <Card>
-            <CardHeader>
-              <CardTitle>Actions</CardTitle>
+            <CardHeader className="border-b border-slate-100 dark:border-zinc-800/80 pb-3">
+              <CardTitle className="text-slate-900 dark:text-zinc-100 font-semibold">Actions</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-2">
+            <CardContent className="pt-3 space-y-2">
               {finding.status === "open" && (
                 <>
                   <button
                     onClick={() => {
                       void handleStatusChange("resolved");
                     }}
-                    className="flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-600/20 border border-emerald-600/30 px-3 py-2 text-sm text-emerald-400 hover:bg-emerald-600/30 transition-colors"
+                    className="flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 px-3 py-2 text-sm font-semibold text-emerald-700 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 transition-colors shadow-xs"
                   >
                     <CheckCircle2 className="h-4 w-4" />
                     Mark as resolved
@@ -236,7 +241,7 @@ function FindingDetailContent() {
                     onClick={() => {
                       void handleStatusChange("ignored");
                     }}
-                    className="flex w-full items-center justify-center gap-2 rounded-lg border border-white/[0.08] px-3 py-2 text-sm text-slate-400 hover:bg-white/[0.04] transition-colors"
+                    className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 py-2 text-sm font-medium text-slate-700 dark:text-zinc-300 hover:bg-slate-50 dark:hover:bg-zinc-800 hover:text-slate-900 dark:hover:text-zinc-100 transition-colors shadow-xs"
                   >
                     Ignore with reason
                   </button>
@@ -247,7 +252,7 @@ function FindingDetailContent() {
                   onClick={() => {
                     void handleStatusChange("open");
                   }}
-                  className="flex w-full items-center justify-center gap-2 rounded-lg border border-white/[0.08] px-3 py-2 text-sm text-slate-400 hover:bg-white/[0.04] transition-colors"
+                  className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 py-2 text-sm font-medium text-slate-700 dark:text-zinc-300 hover:bg-slate-50 dark:hover:bg-zinc-800 hover:text-slate-900 dark:hover:text-zinc-100 transition-colors shadow-xs"
                 >
                   <AlertTriangle className="h-4 w-4" />
                   Reopen finding
@@ -258,34 +263,34 @@ function FindingDetailContent() {
 
           {/* Metadata */}
           <Card>
-            <CardHeader>
-              <CardTitle>Details</CardTitle>
+            <CardHeader className="border-b border-slate-100 dark:border-zinc-800/80 pb-3">
+              <CardTitle className="text-slate-900 dark:text-zinc-100 font-semibold">Details</CardTitle>
             </CardHeader>
-            <CardContent>
+            <CardContent className="pt-3">
               <dl className="space-y-3 text-xs">
                 <div>
-                  <dt className="text-slate-500 mb-0.5">First detected</dt>
-                  <dd className="text-slate-300">
+                  <dt className="text-slate-500 dark:text-zinc-400 mb-0.5">First detected</dt>
+                  <dd className="text-slate-800 dark:text-zinc-200 font-medium">
                     {new Date(finding.firstDetected).toLocaleString()}
                   </dd>
                 </div>
                 <div>
-                  <dt className="text-slate-500 mb-0.5">Last seen</dt>
-                  <dd className="text-slate-300">
+                  <dt className="text-slate-500 dark:text-zinc-400 mb-0.5">Last seen</dt>
+                  <dd className="text-slate-800 dark:text-zinc-200 font-medium">
                     {new Date(finding.lastDetected).toLocaleString()}
                   </dd>
                 </div>
                 <div>
-                  <dt className="text-slate-500 mb-0.5">Repository</dt>
-                  <dd className="text-slate-300">{finding.repository}</dd>
+                  <dt className="text-slate-500 dark:text-zinc-400 mb-0.5">Repository</dt>
+                  <dd className="text-slate-800 dark:text-zinc-200 font-medium">{finding.repository}</dd>
                 </div>
                 <div>
-                  <dt className="text-slate-500 mb-0.5">Scan ID</dt>
-                  <dd className="text-slate-300 font-mono">{finding.scanId || "—"}</dd>
+                  <dt className="text-slate-500 dark:text-zinc-400 mb-0.5">Scan ID</dt>
+                  <dd className="text-slate-800 dark:text-zinc-200 font-mono font-medium">{finding.scanId || "—"}</dd>
                 </div>
                 <div>
-                  <dt className="text-slate-500 mb-0.5">Rule ID</dt>
-                  <dd className="text-slate-300 font-mono">{finding.ruleId}</dd>
+                  <dt className="text-slate-500 dark:text-zinc-400 mb-0.5">Rule ID</dt>
+                  <dd className="text-slate-800 dark:text-zinc-200 font-mono font-medium">{finding.ruleId}</dd>
                 </div>
               </dl>
             </CardContent>

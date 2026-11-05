@@ -14,6 +14,7 @@ import {
   ShieldAlert,
   ShieldCheck,
   XCircle,
+  X,
   AlertTriangle,
   ChevronDown,
   Filter,
@@ -22,6 +23,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { PullRequestRow } from "@/components/pull-requests/pull-request-row";
+import Loader from "@/components/ui/loader";
 
 export default function PullRequestsPage() {
   const [pullRequests, setPullRequests] = useState<PullRequest[]>([]);
@@ -75,7 +77,7 @@ export default function PullRequestsPage() {
           setPullRequests(res.pullRequests);
         }
       })
-      .catch(() => {});
+      .catch(() => { });
 
     // Live auto-polling every 5 seconds for newly scanned PRs
     const interval = setInterval(() => {
@@ -88,7 +90,7 @@ export default function PullRequestsPage() {
             setPullRequests(res.pullRequests);
           }
         })
-        .catch(() => {});
+        .catch(() => { });
     }, 5000);
 
     return () => {
@@ -187,67 +189,43 @@ export default function PullRequestsPage() {
   return (
     <div className="max-w-screen-xl mx-auto space-y-5">
       {/* Page Header */}
+      {/* Page Header */}
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2.5 flex-wrap">
-            <h1 className="text-xl font-bold tracking-tight text-slate-100 flex items-center gap-2">
-              <GitPullRequest className="h-5 w-5 text-blue-400" />
-              <span>Pull Request Security Command Center</span>
-            </h1>
-            <div className="flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-0.5 text-[11px] font-medium text-emerald-400">
-              <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-              </span>
-              <span>Live GitHub Checks & Secrets Detection</span>
-            </div>
-          </div>
-          <p className="text-xs text-slate-400 mt-1 max-w-2xl">
-            Inspect all pull requests (open, merged, and closed) across your repositories. Secura detects exposed secrets and SAST vulnerabilities in PR diffs and blocks dangerous merges.
-          </p>
+          <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-zinc-100 flex items-center gap-2">
+            <GitPullRequest className="h-5 w-5 text-blue-600 dark:text-blue-500" />
+            <span>Pull Request Security Command Center</span>
+          </h1>
         </div>
 
-        {/* Repository Selector & Sync Action */}
+        {/* Repository Selector */}
         <div className="flex items-center gap-2.5 flex-wrap w-full md:w-auto">
           {/* Repository Dropdown */}
           <div className="relative flex items-center">
-            <Filter className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
+            <Filter className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 dark:text-zinc-500 pointer-events-none" />
             <select
               value={selectedRepoId}
               onChange={(e) => setSelectedRepoId(e.target.value)}
-              className="appearance-none rounded-xl border border-white/[0.1] bg-slate-900 pl-8 pr-8 py-2 text-xs font-semibold text-slate-200 hover:border-blue-500 focus:outline-none focus:border-blue-500 transition-colors cursor-pointer"
+              suppressHydrationWarning
+              className="appearance-none rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 pl-8 pr-8 py-2 text-xs font-medium text-slate-800 dark:text-zinc-200 hover:border-slate-300 dark:hover:border-zinc-700 focus:outline-none focus:border-blue-500 transition-colors cursor-pointer shadow-xs"
             >
-              <option value="all">All Monitored Repositories ({repos.length})</option>
+              <option value="all">All Monitored Repos ({repos.length})</option>
               {repos.map((r) => (
                 <option key={r.id} value={r.id}>
                   {r.fullName || r.name}
                 </option>
               ))}
             </select>
-            <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
+            <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 dark:text-zinc-500 pointer-events-none" />
           </div>
-
-          {/* Sync Button */}
-          <button
-            onClick={handleSyncPRs}
-            disabled={syncLoading}
-            className="flex items-center gap-1.5 rounded-xl bg-blue-600 px-3.5 py-2 text-xs font-semibold text-white hover:bg-blue-500 transition-all shadow-md shadow-blue-600/30 disabled:opacity-50"
-          >
-            {syncLoading ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <RefreshCcw className="h-3.5 w-3.5" />
-            )}
-            <span>Sync GitHub PRs</span>
-          </button>
         </div>
       </div>
 
       {/* Feedback banner */}
       {feedback && (
-        <div className="rounded-xl border border-blue-500/30 bg-blue-500/10 p-3 text-xs text-blue-300 flex items-center justify-between animate-fadeIn">
+        <div className="rounded-xl border border-blue-200 bg-blue-50 p-3 text-xs text-blue-800 flex items-center justify-between shadow-xs animate-fadeIn">
           <span>{feedback}</span>
-          <button onClick={() => setFeedback(null)} className="text-blue-400 hover:text-white">
+          <button onClick={() => setFeedback(null)} className="text-blue-600 hover:text-blue-800">
             <X className="h-3.5 w-3.5" />
           </button>
         </div>
@@ -255,38 +233,38 @@ export default function PullRequestsPage() {
 
       {/* Summary KPI Cards */}
       <div className="grid gap-4 sm:grid-cols-3">
-        <Card className="border-red-500/20 bg-slate-900/50">
-          <div className="flex items-center gap-3">
-            <div className="rounded-lg bg-red-500/10 p-2 text-red-400">
-              <ShieldAlert className="h-6 w-6" />
+        <Card className="border-rose-200/80 dark:border-rose-900/40 bg-rose-50/40 dark:bg-rose-950/20">
+          <div className="flex items-center gap-3.5">
+            <div className="rounded-xl bg-rose-100 dark:bg-rose-900/40 p-2.5 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800/60">
+              <ShieldAlert className="h-5 w-5" />
             </div>
             <div>
-              <p className="text-2xl font-bold text-slate-100">{failed.length}</p>
-              <p className="text-xs text-slate-400">Failing Gate (Secrets Detected)</p>
+              <p className="text-2xl font-bold tracking-tight text-slate-900 dark:text-zinc-100">{failed.length}</p>
+              <p className="text-xs text-slate-500 dark:text-zinc-400 font-medium">Blocked Gate (Findings)</p>
             </div>
           </div>
         </Card>
 
-        <Card className="border-emerald-500/20 bg-slate-900/50">
-          <div className="flex items-center gap-3">
-            <div className="rounded-lg bg-emerald-500/10 p-2 text-emerald-400">
-              <ShieldCheck className="h-6 w-6" />
+        <Card className="border-emerald-200/80 dark:border-emerald-900/40 bg-emerald-50/40 dark:bg-emerald-950/20">
+          <div className="flex items-center gap-3.5">
+            <div className="rounded-xl bg-emerald-100 dark:bg-emerald-900/40 p-2.5 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/60">
+              <ShieldCheck className="h-5 w-5" />
             </div>
             <div>
-              <p className="text-2xl font-bold text-slate-100">{passed.length}</p>
-              <p className="text-xs text-slate-400">Passed Gate (Safe to Merge)</p>
+              <p className="text-2xl font-bold tracking-tight text-slate-900 dark:text-zinc-100">{passed.length}</p>
+              <p className="text-xs text-slate-500 dark:text-zinc-400 font-medium">Passed Gate (Safe to Merge)</p>
             </div>
           </div>
         </Card>
 
-        <Card className="border-purple-500/20 bg-slate-900/50">
-          <div className="flex items-center gap-3">
-            <div className="rounded-lg bg-purple-500/10 p-2 text-purple-400">
-              <GitMerge className="h-6 w-6" />
+        <Card className="border-violet-200/80 dark:border-violet-900/40 bg-violet-50/40 dark:bg-violet-950/20">
+          <div className="flex items-center gap-3.5">
+            <div className="rounded-xl bg-violet-100 dark:bg-violet-900/40 p-2.5 text-violet-600 dark:text-violet-400 border border-violet-200 dark:border-violet-800/60">
+              <GitMerge className="h-5 w-5" />
             </div>
             <div>
-              <p className="text-2xl font-bold text-slate-100">{mergedCount}</p>
-              <p className="text-xs text-slate-400">Merged PRs Monitored</p>
+              <p className="text-2xl font-bold tracking-tight text-slate-900 dark:text-zinc-100">{mergedCount}</p>
+              <p className="text-xs text-slate-500 dark:text-zinc-400 font-medium">Merged Pull Requests</p>
             </div>
           </div>
         </Card>
@@ -294,36 +272,39 @@ export default function PullRequestsPage() {
 
       {/* Filter Tabs & Search Header */}
       <Card>
-        <CardHeader className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-3 border-b border-white/[0.04]">
+        <CardHeader className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-zinc-800/80">
           {/* State Tabs */}
-          <div className="flex items-center gap-1.5 p-1 rounded-xl bg-black/40 border border-white/[0.06] text-xs font-semibold">
+          <div className="flex items-center gap-1 p-1 rounded-xl bg-[#EDE9E6] dark:bg-zinc-900 border border-[#EDE9E6] dark:border-zinc-800 text-xs font-medium">
             <button
               onClick={() => setSelectedState("all")}
+              suppressHydrationWarning
               className={`px-3 py-1.5 rounded-lg transition-all ${
                 selectedState === "all"
-                  ? "bg-blue-600 text-white shadow-sm"
-                  : "text-slate-400 hover:text-slate-200"
+                  ? "bg-white text-[#281C59] dark:bg-zinc-800 dark:text-zinc-100 shadow-xs font-semibold"
+                  : "text-slate-600 dark:text-zinc-400 hover:text-[#281C59] dark:hover:text-zinc-100"
               }`}
             >
               All ({pullRequests.length})
             </button>
             <button
               onClick={() => setSelectedState("open")}
+              suppressHydrationWarning
               className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 ${
                 selectedState === "open"
-                  ? "bg-emerald-600 text-white shadow-sm"
-                  : "text-slate-400 hover:text-slate-200"
+                  ? "bg-white dark:bg-zinc-800 text-emerald-700 dark:text-emerald-400 shadow-xs ring-1 ring-emerald-200 dark:ring-emerald-800 font-semibold"
+                  : "text-slate-600 dark:text-zinc-400 hover:text-[#281C59] dark:hover:text-zinc-100"
               }`}
             >
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
               <span>Open ({openCount})</span>
             </button>
             <button
               onClick={() => setSelectedState("merged")}
+              suppressHydrationWarning
               className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 ${
                 selectedState === "merged"
-                  ? "bg-purple-600 text-white shadow-sm"
-                  : "text-slate-400 hover:text-slate-200"
+                  ? "bg-white dark:bg-zinc-800 text-violet-700 dark:text-violet-400 shadow-xs ring-1 ring-violet-200 dark:ring-violet-800 font-semibold"
+                  : "text-slate-600 dark:text-zinc-400 hover:text-[#281C59] dark:hover:text-zinc-100"
               }`}
             >
               <GitMerge className="h-3 w-3" />
@@ -331,10 +312,11 @@ export default function PullRequestsPage() {
             </button>
             <button
               onClick={() => setSelectedState("closed")}
+              suppressHydrationWarning
               className={`px-3 py-1.5 rounded-lg transition-all ${
                 selectedState === "closed"
-                  ? "bg-slate-700 text-white shadow-sm"
-                  : "text-slate-400 hover:text-slate-200"
+                  ? "bg-white dark:bg-zinc-800 text-slate-900 dark:text-zinc-100 shadow-xs ring-1 ring-slate-200 dark:ring-zinc-700 font-semibold"
+                  : "text-slate-600 dark:text-zinc-400 hover:text-[#281C59] dark:hover:text-zinc-100"
               }`}
             >
               Closed ({closedCount})
@@ -345,22 +327,24 @@ export default function PullRequestsPage() {
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
             <button
               onClick={() => setSortOrder(sortOrder === "asc" ? "desc" : "asc")}
-              className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl border border-white/[0.08] bg-black/40 text-xs font-semibold text-slate-300 hover:text-white transition-colors shrink-0"
+              suppressHydrationWarning
+              className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-xs font-medium text-slate-700 dark:text-zinc-300 hover:text-[#281C59] hover:bg-[#EDE9E6] shadow-xs transition-colors shrink-0"
               title="Toggle Pull Request numerical order"
             >
-              <ArrowUpDown className="h-3.5 w-3.5 text-blue-400" />
+              <ArrowUpDown className="h-3.5 w-3.5 text-[#281C59] dark:text-blue-500" />
               <span>Order: {sortOrder === "asc" ? "#1 → #N" : "#N → #1"}</span>
             </button>
 
             {/* Search Box */}
             <div className="relative w-full sm:w-72">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-500" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 dark:text-zinc-500" />
               <input
                 type="text"
                 placeholder="Filter by title, repo, branch, PR#..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full rounded-xl border border-white/[0.08] bg-white/[0.03] pl-9 pr-3 py-1.5 text-xs text-white placeholder:text-slate-500 focus:border-blue-500 focus:outline-none transition-colors"
+                suppressHydrationWarning
+                className="w-full rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 pl-9 pr-3 py-1.5 text-xs text-slate-900 dark:text-zinc-100 placeholder:text-slate-400 dark:placeholder:text-zinc-500 focus:border-[#281C59] focus:outline-none transition-colors shadow-xs"
               />
             </div>
           </div>
@@ -368,34 +352,24 @@ export default function PullRequestsPage() {
 
         <CardContent className="pt-3">
           {loading ? (
-            <div className="py-16 text-center text-xs text-slate-500 flex flex-col items-center gap-2">
-              <Loader2 className="h-6 w-6 animate-spin text-blue-400" />
+            <div className="py-20 text-center text-xs text-slate-500 dark:text-zinc-400 flex flex-col items-center gap-3">
+              <Loader />
               <span>Fetching all repository pull requests and security scans...</span>
             </div>
           ) : filteredPRs.length === 0 ? (
-            <div className="flex flex-col items-center py-16 text-center text-slate-500">
-              <GitPullRequest className="h-10 w-10 mb-3 text-slate-600" />
-              <p className="text-sm font-semibold text-slate-300">
+            <div className="flex flex-col items-center py-16 text-center text-slate-500 dark:text-zinc-400">
+              <GitPullRequest className="h-10 w-10 mb-3 text-slate-400 dark:text-zinc-600" />
+              <p className="text-sm font-semibold text-slate-800 dark:text-zinc-200">
                 {searchQuery || selectedRepoId !== "all" || selectedState !== "all"
                   ? "No pull requests match the current filters"
                   : "No pull requests found for the selected repository"}
               </p>
-              <p className="text-xs text-slate-500 mt-1 max-w-md">
-                Secura automatically detects pull requests from GitHub. Click &quot;Sync GitHub PRs&quot; to fetch open, merged, and closed PRs and scan their diffs for exposed secrets.
+              <p className="text-xs text-slate-500 dark:text-zinc-400 mt-1 max-w-md">
+                Secura automatically detects pull requests and scans diffs for secrets and SAST vulnerabilities in real time.
               </p>
-              <div className="flex items-center gap-3 mt-4">
-                <button
-                  onClick={handleSyncPRs}
-                  disabled={syncLoading}
-                  className="flex items-center gap-1.5 rounded-xl border border-blue-500/30 bg-blue-500/10 px-4 py-2 text-xs font-semibold text-blue-400 hover:bg-blue-500/20 transition-all disabled:opacity-50"
-                >
-                  <RefreshCcw className="h-3.5 w-3.5" />
-                  <span>Sync All PRs from GitHub</span>
-                </button>
-              </div>
             </div>
           ) : (
-            <div>
+            <div className="space-y-3">
               {filteredPRs.map((pr) => (
                 <PullRequestRow
                   key={pr.id}

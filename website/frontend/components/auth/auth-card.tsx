@@ -354,34 +354,34 @@ export function AuthCard({ initialMode = "login" }: AuthCardProps) {
 
   return (
     <div className="w-full max-w-md mx-auto" suppressHydrationWarning>
-      {/* Background card with cyber-glow styling */}
-      <div className="relative rounded-2xl border border-white/[0.08] bg-[#0d1117]/95 backdrop-blur-2xl p-7 sm:p-8 shadow-2xl shadow-blue-950/40" suppressHydrationWarning>
-        <div className="absolute -top-14 left-1/2 -translate-x-1/2 h-32 w-52 bg-blue-500/20 blur-3xl pointer-events-none rounded-full" />
-
+      {/* Background card with clean minimal light styling */}
+      <div className="relative rounded-2xl border border-slate-200/80 bg-white/95 backdrop-blur-xl p-7 sm:p-8 shadow-2xl shadow-slate-900/10 dark:border-zinc-800/80 dark:bg-zinc-950/95 dark:shadow-none" suppressHydrationWarning>
         {/* Brand Header */}
-        <div className="text-center mb-5">
-          <Link href="/" className="inline-flex items-center gap-2.5 group mb-2.5">
-            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-tr from-blue-700 to-blue-500 shadow-lg shadow-blue-600/30 group-hover:scale-105 transition-all">
-              <Shield className="h-5 w-5 text-white" />
-            </div>
-            <span className="text-2xl font-extrabold tracking-tight text-white">
+        <div className="text-center mb-6">
+          <Link href="/" className="inline-flex items-center gap-2.5 group mb-3">
+            <img
+              src="/logo.png"
+              alt="Secura"
+              className="h-11 w-11 rounded-2xl object-cover shadow-md shadow-[#281C59]/15 group-hover:scale-105 transition-all"
+            />
+            <span className="text-2xl font-bold tracking-tight text-[#281C59] dark:text-zinc-100">
               Secura
             </span>
           </Link>
-          <h2 className="text-base font-semibold text-slate-100">
-            {mode === "login" ? "Sign in to Security Gate" : "Create Security Account"}
+          <h2 className="text-base font-semibold tracking-tight text-slate-900 dark:text-zinc-100">
+            {mode === "login" ? "Sign in to Secura" : "Create your account"}
           </h2>
-          <p className="text-xs text-slate-400 mt-0.5">
+          <p className="text-xs text-slate-500 dark:text-zinc-400 mt-1">
             Automated secret leak detection & DevSecOps merge gates
           </p>
         </div>
 
         {/* ─── Official GitHub App CTA Banner ─────────────────────────────── */}
-        <div className="mb-5 rounded-xl border border-blue-500/30 bg-gradient-to-r from-blue-600/15 via-blue-500/10 to-indigo-600/15 p-3 text-xs">
+        <div className="mb-5 rounded-xl border border-slate-200 bg-slate-50/80 p-3 text-xs hover:border-slate-300 dark:border-zinc-800 dark:bg-zinc-900/60 dark:hover:border-zinc-700 transition-colors">
           <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2 min-w-0">
-              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-blue-600/30 text-blue-400">
-                <svg className="h-3.5 w-3.5 fill-current" viewBox="0 0 24 24">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-white border border-slate-200 text-slate-700 dark:bg-zinc-800 dark:border-zinc-700 dark:text-zinc-200 shadow-2xs">
+                <svg className="h-4 w-4 fill-current" viewBox="0 0 24 24">
                   <path
                     fillRule="evenodd"
                     clipRule="evenodd"
@@ -390,15 +390,15 @@ export function AuthCard({ initialMode = "login" }: AuthCardProps) {
                 </svg>
               </span>
               <div className="truncate">
-                <span className="font-semibold text-slate-200">Secura GitHub App</span>
-                <p className="text-[10px] text-slate-400">Install to auto-scan your repositories</p>
+                <span className="font-medium text-slate-800 dark:text-zinc-200">Secura GitHub App</span>
+                <p className="text-[10px] text-slate-500 dark:text-zinc-400">Install to auto-scan your repositories</p>
               </div>
             </div>
             <a
               href="https://github.com/apps/secura-security-scanner"
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-blue-600 px-2.5 py-1 text-[11px] font-semibold text-white shadow-md shadow-blue-600/30 hover:bg-blue-500 transition-colors"
+              className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-blue-600 px-2.5 py-1 text-[11px] font-medium text-white shadow-sm hover:bg-blue-500 transition-colors"
             >
               <span>Install</span>
               <ExternalLink className="h-3 w-3" />
@@ -407,7 +407,7 @@ export function AuthCard({ initialMode = "login" }: AuthCardProps) {
         </div>
 
         {/* Tab switch */}
-        <div className="grid grid-cols-2 p-1 mb-5 rounded-xl bg-white/[0.04] border border-white/[0.06]" suppressHydrationWarning>
+        <div className="grid grid-cols-2 p-1 mb-5 rounded-xl bg-slate-100 dark:bg-zinc-900 border border-slate-200/80 dark:border-zinc-800" suppressHydrationWarning>
           <button
             type="button"
             suppressHydrationWarning
@@ -415,10 +415,10 @@ export function AuthCard({ initialMode = "login" }: AuthCardProps) {
               setMode("login");
               setErrorMessage(null);
             }}
-            className={`py-2 text-xs font-semibold rounded-lg transition-all ${
+            className={`py-1.5 text-xs font-semibold rounded-lg transition-all ${
               mode === "login"
-                ? "bg-blue-600 text-white shadow-md shadow-blue-600/40"
-                : "text-slate-400 hover:text-slate-200"
+                ? "bg-white dark:bg-zinc-800 text-slate-900 dark:text-zinc-100 shadow-sm"
+                : "text-slate-500 dark:text-zinc-400 hover:text-slate-800 dark:hover:text-zinc-200"
             }`}
           >
             Sign In
@@ -430,10 +430,10 @@ export function AuthCard({ initialMode = "login" }: AuthCardProps) {
               setMode("signup");
               setErrorMessage(null);
             }}
-            className={`py-2 text-xs font-semibold rounded-lg transition-all ${
+            className={`py-1.5 text-xs font-semibold rounded-lg transition-all ${
               mode === "signup"
-                ? "bg-blue-600 text-white shadow-md shadow-blue-600/40"
-                : "text-slate-400 hover:text-slate-200"
+                ? "bg-white dark:bg-zinc-800 text-slate-900 dark:text-zinc-100 shadow-sm"
+                : "text-slate-500 dark:text-zinc-400 hover:text-slate-800 dark:hover:text-zinc-200"
             }`}
           >
             Create Account
@@ -442,9 +442,9 @@ export function AuthCard({ initialMode = "login" }: AuthCardProps) {
 
         {/* Notifications */}
         {errorMessage && (
-          <div className="mb-4 rounded-xl border border-red-500/30 bg-red-500/10 p-3.5 text-xs text-red-300 animate-in fade-in">
+          <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 dark:border-rose-900/50 dark:bg-rose-950/40 p-3.5 text-xs text-rose-800 dark:text-rose-300 animate-in fade-in">
             <div className="flex items-start gap-2.5">
-              <AlertCircle className="h-4 w-4 shrink-0 text-red-400 mt-0.5" />
+              <AlertCircle className="h-4 w-4 shrink-0 text-rose-600 dark:text-rose-400 mt-0.5" />
               <div className="flex-1 space-y-2">
                 <p>{errorMessage}</p>
                 {errorMessage.includes("Continue with Google") && (
@@ -452,7 +452,7 @@ export function AuthCard({ initialMode = "login" }: AuthCardProps) {
                     type="button"
                     suppressHydrationWarning
                     onClick={() => handleOAuth("google")}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs shadow-md shadow-blue-600/30 transition-all"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-medium text-xs shadow transition-all"
                   >
                     <span>Sign In with Google Now</span>
                     <ArrowRight className="h-3 w-3" />
@@ -464,17 +464,17 @@ export function AuthCard({ initialMode = "login" }: AuthCardProps) {
         )}
 
         {successMessage && (
-          <div className="mb-4 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3.5 text-xs text-emerald-300 animate-in fade-in">
+          <div className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 dark:border-emerald-900/50 dark:bg-emerald-950/40 p-3.5 text-xs text-emerald-800 dark:text-emerald-300 animate-in fade-in">
             <div className="flex items-start gap-2.5">
-              <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-400 mt-0.5" />
+              <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400 mt-0.5" />
               <div className="flex-1 space-y-2">
-                <p className="font-semibold">{successMessage}</p>
+                <p className="font-medium">{successMessage}</p>
                 <div className="flex items-center gap-2 pt-0.5">
                   <a
                     href={GITHUB_APP_INSTALL_URL}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-2.5 py-1 text-[11px] font-semibold text-white shadow hover:bg-emerald-500 transition-colors"
+                    className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-2.5 py-1 text-[11px] font-medium text-white shadow hover:bg-emerald-500 transition-colors"
                   >
                     <span>Go to GitHub App (new tab)</span>
                     <ExternalLink className="h-3 w-3" />
@@ -482,7 +482,7 @@ export function AuthCard({ initialMode = "login" }: AuthCardProps) {
                   <button
                     type="button"
                     onClick={() => router.push(redirectUrl || "/dashboard")}
-                    className="text-[11px] text-slate-400 hover:text-slate-200 underline underline-offset-2 transition-colors"
+                    className="text-[11px] text-slate-500 dark:text-zinc-400 hover:text-slate-800 dark:hover:text-zinc-200 underline underline-offset-2 transition-colors"
                   >
                     Skip to Command Center
                   </button>
@@ -493,19 +493,19 @@ export function AuthCard({ initialMode = "login" }: AuthCardProps) {
         )}
 
         {/* ─── Social Login Buttons ────────────────────────────────────────── */}
-        <div className="space-y-2.5 mb-5" suppressHydrationWarning>
+        <div className="space-y-2 mb-5" suppressHydrationWarning>
           {/* GitHub Button */}
           <button
             type="button"
             suppressHydrationWarning
             disabled={socialLoading !== null || loading}
             onClick={() => handleOAuth("github")}
-            className="w-full flex items-center justify-center gap-3 px-4 py-2.5 rounded-xl border border-white/[0.12] bg-[#161b22] text-slate-100 font-semibold text-xs hover:bg-[#21262d] hover:border-white/[0.25] hover:shadow-lg hover:shadow-white/[0.04] transition-all disabled:opacity-50"
+            className="w-full flex items-center justify-center gap-2.5 px-4 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-slate-700 dark:text-zinc-200 font-medium text-xs hover:bg-slate-50 dark:hover:bg-zinc-800 hover:border-slate-300 dark:hover:border-zinc-700 transition-all shadow-2xs disabled:opacity-50"
           >
             {socialLoading === "github" ? (
-              <Loader2 className="h-4 w-4 animate-spin text-slate-300" />
+              <Loader2 className="h-4 w-4 animate-spin text-slate-500 dark:text-zinc-400" />
             ) : (
-              <svg className="h-4 w-4 fill-current" viewBox="0 0 24 24">
+              <svg className="h-4 w-4 fill-current text-slate-900 dark:text-zinc-100" viewBox="0 0 24 24">
                 <path
                   fillRule="evenodd"
                   clipRule="evenodd"
@@ -524,10 +524,10 @@ export function AuthCard({ initialMode = "login" }: AuthCardProps) {
             suppressHydrationWarning
             disabled={socialLoading !== null || loading}
             onClick={() => handleOAuth("google")}
-            className="w-full flex items-center justify-center gap-3 px-4 py-2.5 rounded-xl border border-white/[0.12] bg-[#161b22] text-slate-100 font-semibold text-xs hover:bg-[#21262d] hover:border-white/[0.25] hover:shadow-lg hover:shadow-white/[0.04] transition-all disabled:opacity-50"
+            className="w-full flex items-center justify-center gap-2.5 px-4 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-slate-700 dark:text-zinc-200 font-medium text-xs hover:bg-slate-50 dark:hover:bg-zinc-800 hover:border-slate-300 dark:hover:border-zinc-700 transition-all shadow-2xs disabled:opacity-50"
           >
             {socialLoading === "google" ? (
-              <Loader2 className="h-4 w-4 animate-spin text-slate-300" />
+              <Loader2 className="h-4 w-4 animate-spin text-slate-500 dark:text-zinc-400" />
             ) : (
               <svg className="h-4 w-4" viewBox="0 0 24 24">
                 <path
@@ -559,47 +559,47 @@ export function AuthCard({ initialMode = "login" }: AuthCardProps) {
           <button
             type="button"
             onClick={() => setShowGithubUsernameModal(!showGithubUsernameModal)}
-            className="text-[11px] text-slate-400 hover:text-blue-400 inline-flex items-center gap-1 transition-colors"
+            className="text-[11px] text-slate-500 dark:text-zinc-400 hover:text-blue-600 dark:hover:text-blue-400 inline-flex items-center gap-1.5 transition-colors"
           >
-            <svg className="h-3 w-3 fill-current" viewBox="0 0 24 24">
+            <svg className="h-3 w-3 fill-current text-slate-600 dark:text-zinc-400" viewBox="0 0 24 24">
               <path
                 fillRule="evenodd"
                 clipRule="evenodd"
                 d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"
               />
             </svg>
-            <span>Connect using GitHub username directly</span>
+            <span>Connect with GitHub username directly</span>
           </button>
         </div>
 
-        {/* Direct GitHub username modal / expander */}
+        {/* Direct GitHub username modal */}
         {showGithubUsernameModal && (
-          <form onSubmit={handleFetchGitHubAccount} className="mb-5 p-3.5 rounded-xl border border-blue-500/25 bg-blue-500/[0.05] space-y-2.5">
+          <form onSubmit={handleFetchGitHubAccount} className="mb-5 p-3.5 rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 space-y-2.5">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-slate-200">Fetch GitHub Account</span>
+              <span className="text-xs font-semibold text-slate-800 dark:text-zinc-200">Fetch GitHub Account</span>
               <button
                 type="button"
                 onClick={() => setShowGithubUsernameModal(false)}
-                className="text-[10px] text-slate-400 hover:text-slate-200"
+                className="text-[10px] text-slate-400 hover:text-slate-600 dark:hover:text-zinc-200"
               >
                 ✕
               </button>
             </div>
             <div className="relative">
-              <span className="absolute left-3 top-2.5 text-xs text-slate-500">@</span>
+              <span className="absolute left-3 top-2.5 text-xs text-slate-400">@</span>
               <input
                 type="text"
                 required
                 value={customGithubHandle}
                 onChange={(e) => setCustomGithubHandle(e.target.value)}
                 placeholder="your-github-username"
-                className="w-full rounded-lg border border-white/[0.1] bg-white/[0.04] pl-7 pr-3 py-1.5 text-xs text-white placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
+                className="w-full rounded-lg border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 pl-7 pr-3 py-1.5 text-xs text-slate-900 dark:text-zinc-100 placeholder:text-slate-400 dark:placeholder:text-zinc-500 focus:border-blue-600 focus:outline-none"
               />
             </div>
             <button
               type="submit"
               disabled={githubFetchLoading}
-              className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-medium text-xs transition-colors"
+              className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-medium text-xs transition-colors shadow-sm"
             >
               {githubFetchLoading ? (
                 <Loader2 className="h-3 w-3 animate-spin" />
@@ -612,22 +612,22 @@ export function AuthCard({ initialMode = "login" }: AuthCardProps) {
 
         {/* Divider */}
         <div className="relative flex items-center justify-center mb-5">
-          <div className="border-t border-white/[0.08] w-full" />
-          <span className="bg-[#0d1117] px-3 text-[10px] uppercase tracking-wider font-semibold text-slate-500">
+          <div className="border-t border-slate-200 dark:border-zinc-800 w-full" />
+          <span className="bg-white dark:bg-zinc-950 px-3 text-[10px] uppercase tracking-wider font-semibold text-slate-400 dark:text-zinc-500">
             or continue with email
           </span>
-          <div className="border-t border-white/[0.08] w-full" />
+          <div className="border-t border-slate-200 dark:border-zinc-800 w-full" />
         </div>
 
         {/* Email/Password Form */}
         <form onSubmit={handleSubmit} className="space-y-4" suppressHydrationWarning>
           {mode === "signup" && (
             <div>
-              <label htmlFor="full-name-input" className="block text-xs font-medium text-slate-300 mb-1.5">
+              <label htmlFor="full-name-input" className="block text-xs font-medium text-slate-700 dark:text-zinc-300 mb-1.5">
                 Full Name
               </label>
               <div className="relative">
-                <User className="absolute left-3 top-2.5 h-4 w-4 text-slate-500" />
+                <User className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
                 <input
                   id="full-name-input"
                   type="text"
@@ -636,18 +636,18 @@ export function AuthCard({ initialMode = "login" }: AuthCardProps) {
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   placeholder="Alex Rivera"
-                  className="w-full rounded-xl border border-white/[0.1] bg-white/[0.03] pl-9 pr-3 py-2.5 text-xs text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 focus:outline-none transition-all"
+                  className="w-full rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-50/60 dark:bg-zinc-900/60 pl-9 pr-3 py-2 text-xs text-slate-900 dark:text-zinc-100 placeholder:text-slate-400 dark:placeholder:text-zinc-500 focus:bg-white dark:focus:bg-zinc-900 focus:border-blue-600 focus:ring-1 focus:ring-blue-600/20 focus:outline-none transition-all"
                 />
               </div>
             </div>
           )}
 
           <div>
-            <label htmlFor="work-email-input" className="block text-xs font-medium text-slate-300 mb-1.5">
+            <label htmlFor="work-email-input" className="block text-xs font-medium text-slate-700 dark:text-zinc-300 mb-1.5">
               Work Email
             </label>
             <div className="relative">
-              <Mail className="absolute left-3 top-2.5 h-4 w-4 text-slate-500" />
+              <Mail className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
               <input
                 id="work-email-input"
                 type="email"
@@ -656,14 +656,14 @@ export function AuthCard({ initialMode = "login" }: AuthCardProps) {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="developer@company.com"
-                className="w-full rounded-xl border border-white/[0.1] bg-white/[0.03] pl-9 pr-3 py-2.5 text-xs text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 focus:outline-none transition-all"
+                className="w-full rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-50/60 dark:bg-zinc-900/60 pl-9 pr-3 py-2 text-xs text-slate-900 dark:text-zinc-100 placeholder:text-slate-400 dark:placeholder:text-zinc-500 focus:bg-white dark:focus:bg-zinc-900 focus:border-blue-600 focus:ring-1 focus:ring-blue-600/20 focus:outline-none transition-all"
               />
             </div>
           </div>
 
           <div>
             <div className="flex items-center justify-between mb-1.5">
-              <label htmlFor="auth-password-input" className="text-xs font-medium text-slate-300">
+              <label htmlFor="auth-password-input" className="text-xs font-medium text-slate-700 dark:text-zinc-300">
                 Password
               </label>
               {mode === "login" && (
@@ -671,14 +671,14 @@ export function AuthCard({ initialMode = "login" }: AuthCardProps) {
                   type="button"
                   suppressHydrationWarning
                   onClick={() => alert("A password reset link has been dispatched to your email address.")}
-                  className="text-[11px] text-blue-400 hover:text-blue-300 transition-colors"
+                  className="text-[11px] text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 font-medium transition-colors"
                 >
                   Forgot password?
                 </button>
               )}
             </div>
             <div className="relative">
-              <Lock className="absolute left-3 top-2.5 h-4 w-4 text-slate-500" />
+              <Lock className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
               <input
                 id="auth-password-input"
                 type={showPassword ? "text" : "password"}
@@ -687,13 +687,13 @@ export function AuthCard({ initialMode = "login" }: AuthCardProps) {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••••••"
-                className="w-full rounded-xl border border-white/[0.1] bg-white/[0.03] pl-9 pr-10 py-2.5 text-xs text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 focus:outline-none transition-all"
+                className="w-full rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-50/60 dark:bg-zinc-900/60 pl-9 pr-10 py-2 text-xs text-slate-900 dark:text-zinc-100 placeholder:text-slate-400 dark:placeholder:text-zinc-500 focus:bg-white dark:focus:bg-zinc-900 focus:border-blue-600 focus:ring-1 focus:ring-blue-600/20 focus:outline-none transition-all"
               />
               <button
                 type="button"
                 suppressHydrationWarning
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-2.5 text-slate-500 hover:text-slate-300 transition-colors"
+                className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 dark:hover:text-zinc-200 transition-colors"
                 aria-label="Toggle password visibility"
               >
                 {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
@@ -702,7 +702,7 @@ export function AuthCard({ initialMode = "login" }: AuthCardProps) {
 
             {/* Interactive Password Requirements Checklist on Signup */}
             {mode === "signup" && (
-              <div className="mt-2.5 space-y-2 p-3 rounded-xl border border-white/[0.06] bg-white/[0.02]">
+              <div className="mt-2.5 space-y-2 p-3 rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900/60">
                 {/* Visual Bar */}
                 <div className="flex gap-1 h-1">
                   {[0, 1, 2, 3].map((lvl) => (
@@ -711,23 +711,23 @@ export function AuthCard({ initialMode = "login" }: AuthCardProps) {
                       className={`h-full flex-1 rounded-full transition-colors ${
                         passwordScore > lvl
                           ? strengthColors[passwordScore - 1]
-                          : "bg-white/[0.08]"
+                          : "bg-slate-200 dark:bg-zinc-800"
                       }`}
                     />
                   ))}
                 </div>
 
-                <div className="grid grid-cols-2 gap-1 text-[10px] text-slate-400 pt-1">
-                  <span className={`flex items-center gap-1 ${hasMinLength ? "text-emerald-400 font-medium" : ""}`}>
+                <div className="grid grid-cols-2 gap-1 text-[10px] text-slate-500 dark:text-zinc-400 pt-1">
+                  <span className={`flex items-center gap-1 ${hasMinLength ? "text-emerald-600 dark:text-emerald-400 font-medium" : ""}`}>
                     {hasMinLength ? <Check className="h-3 w-3" /> : "•"} 8+ characters
                   </span>
-                  <span className={`flex items-center gap-1 ${hasUpperCase ? "text-emerald-400 font-medium" : ""}`}>
+                  <span className={`flex items-center gap-1 ${hasUpperCase ? "text-emerald-600 dark:text-emerald-400 font-medium" : ""}`}>
                     {hasUpperCase ? <Check className="h-3 w-3" /> : "•"} Uppercase letter
                   </span>
-                  <span className={`flex items-center gap-1 ${hasNumber ? "text-emerald-400 font-medium" : ""}`}>
+                  <span className={`flex items-center gap-1 ${hasNumber ? "text-emerald-600 dark:text-emerald-400 font-medium" : ""}`}>
                     {hasNumber ? <Check className="h-3 w-3" /> : "•"} Number (0-9)
                   </span>
-                  <span className={`flex items-center gap-1 ${hasSymbol ? "text-emerald-400 font-medium" : ""}`}>
+                  <span className={`flex items-center gap-1 ${hasSymbol ? "text-emerald-600 dark:text-emerald-400 font-medium" : ""}`}>
                     {hasSymbol ? <Check className="h-3 w-3" /> : "•"} Special symbol
                   </span>
                 </div>
@@ -737,11 +737,11 @@ export function AuthCard({ initialMode = "login" }: AuthCardProps) {
 
           {mode === "signup" && (
             <div>
-              <label htmlFor="confirm-password-input" className="block text-xs font-medium text-slate-300 mb-1.5">
+              <label htmlFor="confirm-password-input" className="block text-xs font-medium text-slate-700 dark:text-zinc-300 mb-1.5">
                 Confirm Password
               </label>
               <div className="relative">
-                <Lock className="absolute left-3 top-2.5 h-4 w-4 text-slate-500" />
+                <Lock className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
                 <input
                   id="confirm-password-input"
                   type={showPassword ? "text" : "password"}
@@ -750,7 +750,7 @@ export function AuthCard({ initialMode = "login" }: AuthCardProps) {
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   placeholder="••••••••••••"
-                  className="w-full rounded-xl border border-white/[0.1] bg-white/[0.03] pl-9 pr-3 py-2.5 text-xs text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 focus:outline-none transition-all"
+                  className="w-full rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-50/60 dark:bg-zinc-900/60 pl-9 pr-3 py-2 text-xs text-slate-900 dark:text-zinc-100 placeholder:text-slate-400 dark:placeholder:text-zinc-500 focus:bg-white dark:focus:bg-zinc-900 focus:border-blue-600 focus:ring-1 focus:ring-blue-600/20 focus:outline-none transition-all"
                 />
               </div>
             </div>
@@ -765,9 +765,9 @@ export function AuthCard({ initialMode = "login" }: AuthCardProps) {
                 suppressHydrationWarning
                 checked={rememberMe}
                 onChange={(e) => setRememberMe(e.target.checked)}
-                className="h-3.5 w-3.5 rounded border-white/[0.2] bg-white/[0.04] text-blue-600 focus:ring-0"
+                className="h-3.5 w-3.5 rounded border-slate-300 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 text-blue-600 focus:ring-0"
               />
-              <label htmlFor="remember" className="text-xs text-slate-400">
+              <label htmlFor="remember" className="text-xs text-slate-600 dark:text-zinc-300 cursor-pointer">
                 Remember this device for 30 days
               </label>
             </div>
@@ -780,9 +780,9 @@ export function AuthCard({ initialMode = "login" }: AuthCardProps) {
                 suppressHydrationWarning
                 checked={agreedTerms}
                 onChange={(e) => setAgreedTerms(e.target.checked)}
-                className="mt-0.5 h-3.5 w-3.5 rounded border-white/[0.2] bg-white/[0.04] text-blue-600 focus:ring-0"
+                className="mt-0.5 h-3.5 w-3.5 rounded border-slate-300 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 text-blue-600 focus:ring-0"
               />
-              <label htmlFor="terms" className="text-[11px] text-slate-400 leading-tight">
+              <label htmlFor="terms" className="text-[11px] text-slate-600 dark:text-zinc-300 leading-tight cursor-pointer">
                 I agree to the Secura Security Gate Terms of Service and automated code inspection policies.
               </label>
             </div>
@@ -793,7 +793,7 @@ export function AuthCard({ initialMode = "login" }: AuthCardProps) {
             type="submit"
             suppressHydrationWarning
             disabled={loading || socialLoading !== null}
-            className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-gradient-to-r from-blue-600 via-blue-500 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-semibold text-xs shadow-lg shadow-blue-600/30 transition-all disabled:opacity-50 mt-1"
+            className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-medium text-xs shadow-md shadow-blue-600/25 transition-all disabled:opacity-50 mt-1"
           >
             {loading ? (
               <Loader2 className="h-4 w-4 animate-spin text-white" />
@@ -808,10 +808,9 @@ export function AuthCard({ initialMode = "login" }: AuthCardProps) {
           </button>
         </form>
 
-
         {/* Footer Security Badge */}
-        <div className="mt-3.5 text-center">
-          <span className="inline-flex items-center gap-1 text-[10px] text-slate-500">
+        <div className="mt-4 text-center">
+          <span className="inline-flex items-center gap-1.5 text-[11px] text-slate-500 dark:text-zinc-400">
             <span>🔒</span> End-to-end encrypted session • Zero secret retention
           </span>
         </div>

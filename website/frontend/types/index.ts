@@ -39,6 +39,7 @@ export interface Repository {
   highFindings: number;
   isMonitored: boolean;
   htmlUrl: string;
+  githubRepoId?: number;
   githubInstallationId?: number;
   githubAppUrl?: string;
 }

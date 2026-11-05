@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Bell, Search, User, LogOut, Settings as SettingsIcon, ShieldCheck } from "lucide-react";
+import { Bell, Search, User, LogOut, Settings as SettingsIcon, Sun, Moon } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import { api } from "@/lib/api-client";
 import { User as UserType } from "@/types";
+import { useTheme } from "@/components/theme-provider";
 
 const PAGE_TITLES: Record<string, string> = {
   "/dashboard": "Overview",
@@ -27,13 +28,46 @@ function getTitle(pathname: string): string {
 export function TopNav() {
   const pathname = usePathname();
   const router = useRouter();
-  const title = getTitle(pathname);
+  const { theme, toggleTheme } = useTheme();
 
+  const isRepoDetail = pathname.startsWith("/repositories/") && pathname !== "/repositories";
+  const repoId = isRepoDetail ? pathname.split("/repositories/")[1]?.split("/")[0]?.split("?")[0] : null;
+
+  const [repoName, setRepoName] = useState<string | null>(null);
   const [currentUser, setCurrentUser] = useState<UserType | null>(null);
   const [dropdownOpen, setDropdownOpen] = useState(false);
 
   useEffect(() => {
-    // Load current user from stored session or backend
+    if (isRepoDetail && repoId) {
+      const decoded = decodeURIComponent(repoId);
+      let initialGuess = decoded;
+      if (initialGuess.startsWith("repo-")) {
+        const parts = initialGuess.split("-");
+        if (parts.length > 2) {
+          initialGuess = parts.slice(2).join("-");
+        } else {
+          initialGuess = "Repository";
+        }
+      }
+      setRepoName(initialGuess);
+
+      void api.getRepositoryById(repoId).then((r) => {
+        if (r) {
+          const cleanName = r.name || (r.fullName ? r.fullName.split("/").pop() : null);
+          if (cleanName) {
+            setRepoName(cleanName);
+          }
+        }
+      });
+    } else {
+      setRepoName(null);
+    }
+  }, [pathname, isRepoDetail, repoId]);
+
+  const baseTitle = getTitle(pathname);
+  const title = isRepoDetail && repoName ? repoName : baseTitle;
+
+  useEffect(() => {
     const stored = api.getStoredUser();
     if (stored) {
       setCurrentUser(stored);
@@ -47,9 +81,7 @@ export function TopNav() {
           setCurrentUser(null);
         }
       })
-      .catch(() => {
-        // Silently ignore auth refresh error
-      });
+      .catch(() => {});
   }, [pathname]);
 
   const handleSignOut = () => {
@@ -60,65 +92,84 @@ export function TopNav() {
   };
 
   return (
-    <header className="flex h-16 items-center border-b border-white/[0.06] bg-[#0d1117] px-6 shrink-0 relative z-30">
-      {/* Page title */}
-      <h1 className="text-sm font-semibold text-slate-100 mr-auto">{title}</h1>
+    <header className="flex h-16 items-center border-b border-slate-200/80 dark:border-zinc-800/80 bg-white/80 dark:bg-black/80 backdrop-blur-md px-6 shrink-0 relative z-30 select-none transition-colors duration-200">
+      {/* Page Title */}
+      <div className="flex items-center gap-2 mr-auto">
+        <h1 className="text-sm font-semibold tracking-tight text-[#281C59] dark:text-white">{title}</h1>
+      </div>
 
-      {/* Search */}
-      <div className="flex items-center gap-1 rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 py-1.5 text-sm text-slate-400 w-56 mr-4">
-        <Search className="h-3.5 w-3.5 mr-1" />
-        <span className="text-xs">Search findings…</span>
-        <kbd className="ml-auto hidden rounded bg-white/[0.08] px-1.5 text-[10px] text-slate-500 sm:inline">
+      {/* Quick Search */}
+      <div className="hidden sm:flex items-center gap-2 rounded-xl border border-slate-200 dark:border-zinc-800 bg-[#EDE9E6]/60 dark:bg-zinc-900/60 px-3 py-1.5 text-xs text-slate-600 dark:text-zinc-400 w-56 mr-3 hover:border-slate-300 dark:hover:border-zinc-700 transition-colors cursor-pointer">
+        <Search className="h-3.5 w-3.5 text-slate-400 dark:text-zinc-500" />
+        <span className="text-slate-400 dark:text-zinc-500">Quick search…</span>
+        <kbd className="ml-auto rounded-md bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 px-1.5 py-0.5 text-[10px] font-mono text-slate-500 dark:text-zinc-400 shadow-2xs">
           ⌘K
         </kbd>
       </div>
 
+      {/* Theme Toggle Button (Light vs Pure Darkness) */}
+      <button
+        onClick={toggleTheme}
+        suppressHydrationWarning
+        className="flex h-8 w-8 items-center justify-center rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 text-slate-700 dark:text-zinc-300 hover:bg-[#EDE9E6] dark:hover:bg-zinc-900 transition-colors mr-2 shadow-2xs"
+        aria-label="Toggle theme"
+        title={theme === "dark" ? "Switch to Minimal Light theme" : "Switch to Pure Darkness theme"}
+      >
+        {theme === "dark" ? (
+          <Sun className="h-4 w-4 text-amber-400 transition-transform rotate-0 scale-100" />
+        ) : (
+          <Moon className="h-4 w-4 text-[#281C59] transition-transform rotate-0 scale-100" />
+        )}
+      </button>
+
       {/* Notifications */}
       <button
-        className="relative flex h-8 w-8 items-center justify-center rounded-lg border border-white/[0.06] text-slate-400 hover:bg-white/[0.04] hover:text-slate-200 transition-colors mr-3"
+        suppressHydrationWarning
+        className="relative flex h-8 w-8 items-center justify-center rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 text-slate-600 dark:text-zinc-400 hover:bg-[#EDE9E6] dark:hover:bg-zinc-900 hover:text-[#281C59] dark:hover:text-white transition-colors mr-3 shadow-2xs"
         aria-label="Notifications"
       >
         <Bell className="h-4 w-4" />
-        <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-blue-500" />
+        <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-[#281C59]" />
       </button>
 
-      {/* Auth state / User Profile */}
+      {/* User Profile / Auth State */}
       {currentUser ? (
         <div className="relative">
           <button
             onClick={() => setDropdownOpen(!dropdownOpen)}
-            className="flex items-center gap-2 rounded-lg border border-white/[0.08] bg-white/[0.03] px-2.5 py-1.5 text-xs text-slate-200 hover:bg-white/[0.06] hover:border-white/[0.15] transition-all"
+            suppressHydrationWarning
+            className="flex items-center gap-2 rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 px-2.5 py-1.5 text-xs text-slate-700 dark:text-zinc-300 hover:bg-[#EDE9E6]/60 dark:hover:bg-zinc-900 hover:border-slate-300 dark:hover:border-zinc-700 transition-all shadow-2xs"
             aria-label="Profile dropdown"
           >
             {currentUser.avatarUrl ? (
               <img
                 src={currentUser.avatarUrl}
                 alt={currentUser.name || "User"}
-                className="h-5 w-5 rounded-full object-cover"
+                className="h-5 w-5 rounded-full object-cover ring-1 ring-slate-200 dark:ring-zinc-700"
               />
             ) : (
-              <div className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-600/30 text-blue-400 font-semibold text-[10px]">
+              <div className="flex h-5 w-5 items-center justify-center rounded-full bg-[#EDE9E6] text-[#281C59] dark:bg-blue-950 dark:text-blue-300 font-semibold text-[10px]">
                 {(currentUser.name || currentUser.email || "U").charAt(0).toUpperCase()}
               </div>
             )}
-            <span className="max-w-[120px] truncate font-medium">
+            <span className="max-w-[120px] truncate font-medium text-slate-800 dark:text-zinc-200">
               {currentUser.name || currentUser.email}
             </span>
           </button>
 
           {/* Profile Dropdown */}
           {dropdownOpen && (
-            <div className="absolute right-0 mt-2 w-56 rounded-xl border border-white/[0.08] bg-[#0d1117] p-2 shadow-2xl shadow-black/80 backdrop-blur-xl">
-              <div className="px-2.5 py-2 border-b border-white/[0.06] mb-1">
-                <div className="text-xs font-semibold text-slate-100 truncate">
+            <div className="absolute right-0 mt-2 w-56 rounded-2xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-2 shadow-xl shadow-slate-900/10 dark:shadow-black/60 animate-in fade-in zoom-in-95 duration-100">
+              <div className="px-3 py-2 border-b border-slate-100 dark:border-zinc-800 mb-1">
+                <div className="text-xs font-semibold text-slate-900 dark:text-white truncate">
                   {currentUser.name || "Secura Developer"}
                 </div>
-                <div className="text-[11px] text-slate-400 truncate">
+                <div className="text-[11px] text-slate-500 dark:text-zinc-400 truncate">
                   {currentUser.email}
                 </div>
                 {currentUser.githubUsername && (
-                  <div className="mt-1 flex items-center gap-1.5 text-[11px] text-slate-300">
-                    <svg className="h-3 w-3 fill-current text-slate-400" viewBox="0 0 24 24">
+                  <div className="mt-1 flex items-center gap-1.5 text-[11px] text-slate-600 dark:text-zinc-400">
+                    <svg className="h-3 w-3 fill-current text-slate-500 dark:text-zinc-400" viewBox="0 0 24 24">
                       <path
                         fillRule="evenodd"
                         clipRule="evenodd"
@@ -129,31 +180,27 @@ export function TopNav() {
                       href={`https://github.com/${currentUser.githubUsername}`}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-blue-400 hover:underline"
+                      className="text-blue-600 dark:text-blue-400 hover:underline"
                     >
                       @{currentUser.githubUsername}
                     </a>
                   </div>
-                )}
-                {currentUser.provider && (
-                  <span className="inline-block mt-1 text-[9px] uppercase tracking-wider font-semibold px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-400 border border-blue-500/20">
-                    {currentUser.provider} account
-                  </span>
                 )}
               </div>
 
               <Link
                 href="/settings"
                 onClick={() => setDropdownOpen(false)}
-                className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-slate-300 hover:bg-white/[0.04] hover:text-white transition-colors"
+                className="flex items-center gap-2 rounded-xl px-2.5 py-1.5 text-xs text-slate-700 dark:text-zinc-300 hover:bg-slate-100 dark:hover:bg-zinc-900 hover:text-slate-900 dark:hover:text-white transition-colors"
               >
-                <SettingsIcon className="h-3.5 w-3.5 text-slate-400" />
+                <SettingsIcon className="h-3.5 w-3.5 text-slate-400 dark:text-zinc-400" />
                 <span>Account Settings</span>
               </Link>
 
               <button
                 onClick={handleSignOut}
-                className="w-full flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-red-400 hover:bg-red-500/10 transition-colors mt-1"
+                suppressHydrationWarning
+                className="w-full flex items-center gap-2 rounded-xl px-2.5 py-1.5 text-xs text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors mt-0.5"
               >
                 <LogOut className="h-3.5 w-3.5" />
                 <span>Sign Out</span>
@@ -165,16 +212,15 @@ export function TopNav() {
         <div className="flex items-center gap-2">
           <Link
             href="/login"
-            className="flex items-center gap-1.5 rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-white/[0.06] transition-all"
+            className="rounded-xl px-3 py-1.5 text-xs font-medium text-slate-700 dark:text-zinc-300 hover:bg-slate-100 dark:hover:bg-zinc-900 transition-colors"
           >
-            <User className="h-3.5 w-3.5 text-slate-400" />
-            <span>Sign In</span>
+            Sign In
           </Link>
           <Link
             href="/signup"
-            className="hidden sm:inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white shadow-md shadow-blue-600/30 hover:bg-blue-500 transition-all"
+            className="rounded-xl bg-[#281C59] hover:bg-[#281C59]/90 px-3.5 py-1.5 text-xs font-semibold text-white shadow-xs transition-all"
           >
-            <span>Sign Up</span>
+            Get Started
           </Link>
         </div>
       )}
