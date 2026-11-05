@@ -3,13 +3,13 @@
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { api } from "@/lib/api-client";
+import { useTheme } from "@/components/theme-provider";
 import type { User as UserType } from "@/types";
 import {
   Bell,
   Check,
   CheckCircle2,
   ExternalLink,
-  Github,
   Loader2,
   Moon,
   Palette,
@@ -35,7 +35,7 @@ function GithubIcon({ className = "h-4 w-4" }: { className?: string }) {
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
   return (
-    <h2 className="text-sm font-semibold text-slate-200 mb-3 flex items-center gap-2">
+    <h2 className="text-sm font-semibold text-[#281C59] dark:text-zinc-100 mb-3 flex items-center gap-2">
       {children}
     </h2>
   );
@@ -51,17 +51,17 @@ function Toggle({
   onChange?: (val: boolean) => void;
 }) {
   return (
-    <div className="flex items-center justify-between py-3 border-b border-white/[0.04] last:border-0">
-      <span className="text-xs text-slate-300">{label}</span>
+    <div className="flex items-center justify-between py-3 border-b border-slate-100 dark:border-zinc-800 last:border-0">
+      <span className="text-xs text-slate-700 dark:text-zinc-300 font-medium">{label}</span>
       <button
         type="button"
         onClick={() => onChange?.(!checked)}
         className={`relative w-10 h-5 rounded-full transition-colors ${
-          checked ? "bg-blue-600" : "bg-white/[0.1]"
+          checked ? "bg-[#281C59]" : "bg-slate-200 dark:bg-zinc-800"
         }`}
       >
         <div
-          className={`absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-white transition-transform ${
+          className={`absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-white dark:bg-zinc-200 transition-transform shadow-xs ${
             checked ? "translate-x-5" : ""
           }`}
         />
@@ -71,6 +71,7 @@ function Toggle({
 }
 
 export default function SettingsPage() {
+  const { theme, setTheme } = useTheme();
   const [currentUser, setCurrentUser] = useState<UserType | null>(null);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -159,40 +160,40 @@ export default function SettingsPage() {
   );
 
   return (
-    <div className="max-w-2xl mx-auto space-y-6">
+    <div className="max-w-screen-2xl mx-auto space-y-6 w-full">
       {/* ─── 1. Account Profile ────────────────────────────────────────────── */}
-      <div>
+      <div className="w-full">
         <SectionTitle>
-          <User className="h-4 w-4 text-blue-400" />
+          <User className="h-4 w-4 text-[#281C59] dark:text-zinc-300" />
           <span>Account Profile</span>
         </SectionTitle>
-        <Card>
+        <Card className="w-full">
           <CardContent className="space-y-4 pt-5">
             {/* User Avatar + Provider Badge */}
-            <div className="flex items-center gap-3.5 pb-4 border-b border-white/[0.06]">
+            <div className="flex items-center gap-3.5 pb-4 border-b border-slate-100 dark:border-zinc-800">
               {currentUser?.avatarUrl ? (
                 <img
                   src={currentUser.avatarUrl}
                   alt={currentUser.name}
-                  className="h-12 w-12 rounded-full border border-white/[0.1] object-cover"
+                  className="h-12 w-12 rounded-full border border-slate-200 object-cover"
                 />
               ) : (
-                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-blue-600/20 border border-blue-500/30 text-blue-400 font-bold text-lg">
+                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[#EDE9E6] border border-[#EDE9E6] text-[#281C59] font-bold text-lg">
                   {(name || email || "U").charAt(0).toUpperCase()}
                 </div>
               )}
               <div>
-                <p className="text-sm font-semibold text-slate-100">{name || "User"}</p>
-                <p className="text-xs text-slate-400 font-mono">{email}</p>
+                <p className="text-sm font-semibold text-slate-900 dark:text-zinc-100">{name || "User"}</p>
+                <p className="text-xs text-slate-500 font-mono">{email}</p>
                 <div className="flex items-center gap-2 mt-1">
                   {isGithubConnected && (
-                    <span className="inline-flex items-center gap-1 rounded bg-slate-800 px-2 py-0.5 text-[10px] font-medium text-slate-300 border border-white/[0.08]">
+                    <span className="inline-flex items-center gap-1 rounded-lg bg-[#EDE9E6] dark:bg-zinc-900 px-2 py-0.5 text-[10px] font-medium text-[#281C59] dark:text-zinc-300 border border-[#EDE9E6] dark:border-zinc-800">
                       <GithubIcon className="h-3 w-3" />
                       <span>GitHub Account</span>
                     </span>
                   )}
                   {isGoogleConnected && (
-                    <span className="inline-flex items-center gap-1 rounded bg-blue-500/10 px-2 py-0.5 text-[10px] font-medium text-blue-400 border border-blue-500/20">
+                    <span className="inline-flex items-center gap-1 rounded-lg bg-[#EDE9E6] dark:bg-zinc-900 px-2 py-0.5 text-[10px] font-medium text-[#281C59] dark:text-zinc-300 border border-[#EDE9E6] dark:border-zinc-800">
                       <span>Google Account</span>
                     </span>
                   )}
@@ -203,7 +204,7 @@ export default function SettingsPage() {
             {/* Profile Edit Form */}
             <form onSubmit={handleSaveProfile} className="space-y-4">
               <div>
-                <label htmlFor="settings-name" className="block text-xs text-slate-400 mb-1 font-medium">
+                <label htmlFor="settings-name" className="block text-xs text-slate-600 dark:text-zinc-400 mb-1 font-medium">
                   Display Name
                 </label>
                 <input
@@ -213,15 +214,15 @@ export default function SettingsPage() {
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   placeholder="Your full name or handle"
-                  className="w-full rounded-xl border border-white/[0.08] bg-white/[0.03] px-3.5 py-2 text-xs text-slate-200 outline-none focus:border-blue-500/60"
+                  className="w-full rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3.5 py-2 text-xs text-slate-900 dark:text-zinc-100 outline-none focus:border-[#281C59] focus:ring-1 focus:ring-[#281C59]/20 shadow-xs"
                 />
-                <p className="text-[11px] text-slate-500 mt-1">
+                <p className="text-[11px] text-slate-500 dark:text-zinc-400 mt-1">
                   Initially fetched from your {isGithubConnected ? "GitHub" : isGoogleConnected ? "Google" : "account"} profile. You can change it anytime.
                 </p>
               </div>
 
               <div>
-                <label htmlFor="settings-email" className="block text-xs text-slate-400 mb-1 font-medium">
+                <label htmlFor="settings-email" className="block text-xs text-slate-600 dark:text-zinc-400 mb-1 font-medium">
                   Email Address
                 </label>
                 <input
@@ -229,18 +230,18 @@ export default function SettingsPage() {
                   type="email"
                   disabled
                   value={email}
-                  className="w-full rounded-xl border border-white/[0.06] bg-white/[0.02] px-3.5 py-2 text-xs text-slate-500 outline-none cursor-not-allowed"
+                  className="w-full rounded-xl border border-slate-200/80 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900/50 px-3.5 py-2 text-xs text-slate-500 dark:text-zinc-500 outline-none cursor-not-allowed"
                 />
-                <p className="text-[11px] text-slate-500 mt-1">
+                <p className="text-[11px] text-slate-500 dark:text-zinc-400 mt-1">
                   Email is verified through OAuth authentication.
                 </p>
               </div>
 
               {profileFeedback && (
-                <div className="rounded-xl border border-blue-500/30 bg-blue-500/10 p-2.5 text-xs text-blue-300 flex items-center justify-between">
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50 dark:border-emerald-900/40 dark:bg-emerald-950/20 p-2.5 text-xs text-emerald-800 dark:text-emerald-300 flex items-center justify-between shadow-xs">
                   <span>{profileFeedback}</span>
                   <button type="button" onClick={() => setProfileFeedback(null)}>
-                    <X className="h-3 w-3" />
+                    <X className="h-3 w-3 text-emerald-600 hover:text-emerald-800" />
                   </button>
                 </div>
               )}
@@ -248,7 +249,7 @@ export default function SettingsPage() {
               <button
                 type="submit"
                 disabled={isUpdating}
-                className="flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-xs font-semibold text-white hover:bg-blue-500 transition-all shadow-md shadow-blue-600/30 disabled:opacity-50"
+                className="flex items-center gap-2 rounded-xl bg-[#281C59] px-4 py-2 text-xs font-semibold text-white hover:bg-[#281C59]/90 transition-all shadow-xs disabled:opacity-50"
               >
                 {isUpdating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
                 <span>Save Profile Changes</span>
@@ -259,34 +260,34 @@ export default function SettingsPage() {
       </div>
 
       {/* ─── 2. GitHub Integration & App Status ───────────────────────────── */}
-      <div>
+      <div className="w-full">
         <SectionTitle>
-          <GithubIcon className="h-4 w-4 text-slate-300" />
+          <GithubIcon className="h-4 w-4 text-[#281C59] dark:text-zinc-300" />
           <span>GitHub Integration</span>
         </SectionTitle>
-        <Card>
+        <Card className="w-full">
           <CardContent className="space-y-4 pt-5">
             {/* Integration Status Box */}
-            <div className="flex items-center justify-between rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
+            <div className="flex items-center justify-between rounded-xl border border-slate-200/80 dark:border-zinc-800 bg-slate-50/50 dark:bg-zinc-900/40 p-4">
               <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-800 border border-white/[0.1]">
-                  <GithubIcon className="h-5 w-5 text-white" />
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#EDE9E6] dark:bg-zinc-900 border border-[#EDE9E6] dark:border-zinc-800 text-[#281C59] dark:text-zinc-200">
+                  <GithubIcon className="h-5 w-5" />
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
-                    <p className="text-xs font-semibold text-slate-100">
+                    <p className="text-xs font-semibold text-slate-900 dark:text-zinc-100">
                       {isGithubConnected ? `@${currentUser?.githubUsername || currentUser?.name || "GitHub User"}` : "GitHub Account"}
                     </p>
                     {isGithubConnected ? (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-medium text-emerald-400 border border-emerald-500/25">
-                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-400"></span>
+                      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 text-[10px] font-medium text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/60">
+                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
                         <span>Connected</span>
                       </span>
                     ) : (
                       <span className="text-[10px] text-slate-500">Not connected</span>
                     )}
                   </div>
-                  <p className="text-[11px] text-slate-400 mt-0.5">
+                  <p className="text-[11px] text-slate-500 dark:text-zinc-400 mt-0.5">
                     {isGithubConnected
                       ? "Authenticated via GitHub OAuth for pull request scanning and gate checks."
                       : "Connect your GitHub account to enable automatic Pull Request scanning."}
@@ -299,7 +300,7 @@ export default function SettingsPage() {
                   href={`https://github.com/${currentUser?.githubUsername || ""}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 transition-colors shrink-0"
+                  className="flex items-center gap-1 text-xs font-medium text-[#281C59] dark:text-blue-400 hover:underline transition-colors shrink-0"
                 >
                   <span>Profile</span>
                   <ExternalLink className="h-3 w-3" />
@@ -311,7 +312,7 @@ export default function SettingsPage() {
                     const url = await api.getGitHubOAuthUrl();
                     if (url) window.location.href = url;
                   }}
-                  className="flex items-center gap-1.5 rounded-xl bg-blue-600 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-blue-500 transition-all shadow-sm shrink-0"
+                  className="flex items-center gap-1.5 rounded-xl bg-[#281C59] px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-[#281C59]/90 transition-all shadow-xs shrink-0"
                 >
                   <GithubIcon className="h-3.5 w-3.5" />
                   <span>Connect GitHub</span>
@@ -320,13 +321,13 @@ export default function SettingsPage() {
             </div>
 
             {/* GitHub App Card */}
-            <div className="rounded-xl border border-blue-500/25 bg-blue-500/[0.05] p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="rounded-xl border border-slate-200/80 dark:border-zinc-800 bg-[#EDE9E6]/40 dark:bg-zinc-900/30 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
-                <p className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
-                  <ShieldCheck className="h-4 w-4 text-blue-400" />
+                <p className="text-xs font-semibold text-[#281C59] dark:text-zinc-100 flex items-center gap-1.5">
+                  <ShieldCheck className="h-4 w-4 text-[#281C59] dark:text-blue-400" />
                   <span>Secura Security Scanner App</span>
                 </p>
-                <p className="text-[11px] text-slate-400 mt-0.5">
+                <p className="text-[11px] text-slate-500 dark:text-zinc-400 mt-0.5">
                   Intercepts pull requests, reports secret leakage, and blocks unsafe merges on GitHub.
                 </p>
               </div>
@@ -334,7 +335,7 @@ export default function SettingsPage() {
                 href="https://github.com/apps/secura-security-scanner"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 rounded-lg border border-blue-500/30 bg-blue-500/10 px-3 py-1.5 text-xs font-medium text-blue-400 hover:bg-blue-500/20 transition-all shrink-0"
+                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 py-1.5 text-xs font-medium text-[#281C59] dark:text-zinc-300 hover:bg-[#EDE9E6] dark:hover:bg-zinc-800 transition-all shadow-xs shrink-0"
               >
                 <span>Configure App on GitHub</span>
                 <ExternalLink className="h-3 w-3" />
@@ -347,22 +348,22 @@ export default function SettingsPage() {
       {/* ─── 3. Security Policy (Gate Evaluation) ─────────────────────────── */}
       <div>
         <SectionTitle>
-          <Shield className="h-4 w-4 text-emerald-400" />
+          <Shield className="h-4 w-4 text-emerald-600" />
           <span>Security Policy & Gate Thresholds</span>
         </SectionTitle>
         <Card>
           <CardContent className="space-y-4 pt-5">
-            <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-3.5 text-xs text-slate-300 space-y-1.5">
-              <p className="font-semibold text-slate-200">What does the Security Policy do?</p>
-              <p className="text-slate-400 text-[11px] leading-relaxed">
-                When the GitHub App inspects a Pull Request, Secura tests all detected secrets against this policy. If the PR violates these thresholds, the <strong>Secura Security Gate fails</strong> and the PR merge is blocked on GitHub.
+            <div className="rounded-xl border border-slate-200/80 bg-slate-50/50 p-3.5 text-xs text-slate-700 space-y-1.5">
+              <p className="font-semibold text-slate-900">What does the Security Policy do?</p>
+              <p className="text-slate-600 text-[11px] leading-relaxed">
+                When the GitHub App inspects a Pull Request, Secura tests all detected secrets against this policy. If the PR violates these thresholds, the <strong className="text-slate-800">Secura Security Gate fails</strong> and the PR merge is blocked on GitHub.
               </p>
             </div>
 
             <form onSubmit={handleSavePolicy} className="space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
                 <div>
-                  <label htmlFor="policy-max-critical" className="block text-xs text-slate-400 mb-1 font-medium">
+                  <label htmlFor="policy-max-critical" className="block text-xs text-slate-600 dark:text-zinc-400 mb-1 font-medium">
                     Max Critical Secrets
                   </label>
                   <input
@@ -371,13 +372,13 @@ export default function SettingsPage() {
                     min={0}
                     value={maxCritical}
                     onChange={(e) => setMaxCritical(Number.parseInt(e.target.value, 10) || 0)}
-                    className="w-full rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-xs text-slate-200 outline-none focus:border-blue-500/60"
+                    className="w-full rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 py-2 text-xs text-slate-900 dark:text-zinc-100 outline-none focus:border-blue-500/80 focus:ring-1 focus:ring-blue-500/20 shadow-xs"
                   />
-                  <p className="text-[10px] text-slate-500 mt-1">Default: 0 (block on any AWS key, DB string, or private key)</p>
+                  <p className="text-[10px] text-slate-500 dark:text-zinc-400 mt-1">Default: 0 (block on any AWS key, DB string, or private key)</p>
                 </div>
 
                 <div>
-                  <label htmlFor="policy-max-high" className="block text-xs text-slate-400 mb-1 font-medium">
+                  <label htmlFor="policy-max-high" className="block text-xs text-slate-600 dark:text-zinc-400 mb-1 font-medium">
                     Max High Findings
                   </label>
                   <input
@@ -386,13 +387,13 @@ export default function SettingsPage() {
                     min={0}
                     value={maxHigh}
                     onChange={(e) => setMaxHigh(Number.parseInt(e.target.value, 10) || 0)}
-                    className="w-full rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-xs text-slate-200 outline-none focus:border-blue-500/60"
+                    className="w-full rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 py-2 text-xs text-slate-900 dark:text-zinc-100 outline-none focus:border-blue-500/80 focus:ring-1 focus:ring-blue-500/20 shadow-xs"
                   />
-                  <p className="text-[10px] text-slate-500 mt-1">Default: 0 (block on API tokens & webhooks)</p>
+                  <p className="text-[10px] text-slate-500 dark:text-zinc-400 mt-1">Default: 0 (block on API tokens & webhooks)</p>
                 </div>
 
                 <div>
-                  <label htmlFor="policy-min-score" className="block text-xs text-slate-400 mb-1 font-medium">
+                  <label htmlFor="policy-min-score" className="block text-xs text-slate-600 dark:text-zinc-400 mb-1 font-medium">
                     Min Score (out of 100)
                   </label>
                   <input
@@ -402,24 +403,24 @@ export default function SettingsPage() {
                     max={100}
                     value={minScore}
                     onChange={(e) => setMinScore(Number.parseInt(e.target.value, 10) || 0)}
-                    className="w-full rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-xs text-slate-200 outline-none focus:border-blue-500/60"
+                    className="w-full rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 py-2 text-xs text-slate-900 dark:text-zinc-100 outline-none focus:border-blue-500/80 focus:ring-1 focus:ring-blue-500/20 shadow-xs"
                   />
-                  <p className="text-[10px] text-slate-500 mt-1">Default: 80</p>
+                  <p className="text-[10px] text-slate-500 dark:text-zinc-400 mt-1">Default: 80</p>
                 </div>
               </div>
 
               {policyFeedback && (
-                <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-2.5 text-xs text-emerald-300 flex items-center justify-between">
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-2.5 text-xs text-emerald-800 flex items-center justify-between shadow-xs">
                   <span>{policyFeedback}</span>
                   <button type="button" onClick={() => setPolicyFeedback(null)}>
-                    <X className="h-3 w-3" />
+                    <X className="h-3 w-3 text-emerald-600 hover:text-emerald-900" />
                   </button>
                 </div>
               )}
 
               <button
                 type="submit"
-                className="flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-xs font-semibold text-white hover:bg-blue-500 transition-all shadow-md shadow-blue-600/30"
+                className="flex items-center gap-2 rounded-xl bg-[#281C59] px-4 py-2 text-xs font-semibold text-white hover:bg-[#281C59]/90 transition-all shadow-xs"
               >
                 <Check className="h-3.5 w-3.5" />
                 <span>Save Gate Policy</span>
@@ -430,12 +431,12 @@ export default function SettingsPage() {
       </div>
 
       {/* ─── 4. Notifications ────────────────────────────────────────────── */}
-      <div>
+      <div className="w-full">
         <SectionTitle>
-          <Bell className="h-4 w-4 text-slate-400" />
+          <Bell className="h-4 w-4 text-[#281C59] dark:text-zinc-300" />
           <span>Security Alert Notifications</span>
         </SectionTitle>
-        <Card>
+        <Card className="w-full">
           <CardContent className="pt-2">
             <Toggle
               label="Alert when critical secret is detected on Pull Request"
@@ -457,22 +458,68 @@ export default function SettingsPage() {
       </div>
 
       {/* ─── 5. Theme / Appearance ────────────────────────────────────────── */}
-      <div>
+      <div className="w-full">
         <SectionTitle>
-          <Palette className="h-4 w-4 text-slate-400" />
-          <span>Appearance</span>
+          <Palette className="h-4 w-4 text-[#281C59] dark:text-zinc-300" />
+          <span>Appearance & Theme</span>
         </SectionTitle>
-        <Card>
+        <Card className="w-full">
           <CardContent className="pt-5">
-            <div className="flex gap-3">
-              <div className="flex items-center gap-2 rounded-xl border-2 border-blue-500 bg-[#0d1117] px-5 py-3 text-xs font-medium text-slate-200 shadow-md shadow-blue-600/10">
-                <Moon className="h-4 w-4 text-blue-400" />
-                <span>Cyber Dark (Active)</span>
-              </div>
-              <div className="flex items-center gap-2 rounded-xl border border-white/[0.06] bg-white/[0.02] px-5 py-3 text-xs font-medium text-slate-500 opacity-60 cursor-not-allowed">
-                <Sun className="h-4 w-4" />
-                <span>Light Mode (Coming Soon)</span>
-              </div>
+            <p className="text-xs text-slate-500 dark:text-zinc-400 mb-4">
+              Select your preferred workspace aesthetic. Choose between Minimal Light and Pure Darkness.
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full">
+              {/* Minimal Light Option */}
+              <button
+                type="button"
+                onClick={() => setTheme("light")}
+                className={`flex items-center justify-between p-4 rounded-2xl border text-left transition-all cursor-pointer ${
+                  theme === "light"
+                    ? "border-[#281C59] bg-[#EDE9E6]/50 dark:bg-zinc-900 ring-2 ring-[#281C59]/30 shadow-xs"
+                    : "border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 hover:border-slate-300 dark:hover:border-zinc-700"
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/40 text-amber-600 dark:text-amber-400">
+                    <Sun className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold text-slate-900 dark:text-zinc-100">Minimal Light</p>
+                    <p className="text-[11px] text-slate-500 dark:text-zinc-400">Clean, crisp white minimalist styling</p>
+                  </div>
+                </div>
+                {theme === "light" && (
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#281C59] text-white shadow-xs">
+                    <Check className="h-3 w-3" />
+                  </span>
+                )}
+              </button>
+
+              {/* Pure Darkness Option */}
+              <button
+                type="button"
+                onClick={() => setTheme("dark")}
+                className={`flex items-center justify-between p-4 rounded-2xl border text-left transition-all cursor-pointer ${
+                  theme === "dark"
+                    ? "border-blue-500 bg-zinc-900 ring-2 ring-blue-500/30 shadow-xs"
+                    : "border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 hover:border-slate-300 dark:hover:border-zinc-700"
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-zinc-900 border border-zinc-700 text-zinc-100">
+                    <Moon className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold text-slate-900 dark:text-zinc-100">Pure Darkness</p>
+                    <p className="text-[11px] text-slate-500 dark:text-zinc-400">Pitch black OLED with zinc accents</p>
+                  </div>
+                </div>
+                {theme === "dark" && (
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-600 text-white shadow-xs">
+                    <Check className="h-3 w-3" />
+                  </span>
+                )}
+              </button>
             </div>
           </CardContent>
         </Card>

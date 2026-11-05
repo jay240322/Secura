@@ -4,6 +4,7 @@ import {
   AvailableRepository,
   Scan,
   PullRequest,
+  PRCommit,
   DashboardSummary,
   FindingOverTime,
   FindingBySeverity,
@@ -344,6 +345,8 @@ class ApiClient {
     defaultBranch?: string;
     isPrivate?: boolean;
     isMonitored?: boolean;
+    htmlUrl?: string;
+    githubRepoId?: number;
   }): Promise<{ repository: Repository | null; success: boolean; error?: string }> {
     try {
       const res = await this.fetchWithTimeout(`${API_BASE}/repositories`, {
@@ -354,6 +357,8 @@ class ApiClient {
           default_branch: payload.defaultBranch || "main",
           is_private: payload.isPrivate || false,
           is_monitored: payload.isMonitored ?? true,
+          html_url: payload.htmlUrl,
+          github_repo_id: payload.githubRepoId,
         }),
       });
       if (!res.ok) {

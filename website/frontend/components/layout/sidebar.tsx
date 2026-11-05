@@ -8,7 +8,6 @@ import {
   GitBranch,
   AlertTriangle,
   GitPullRequest,
-  History,
   BarChart3,
   Settings,
   Shield,
@@ -32,7 +31,6 @@ export function Sidebar() {
   const isRepoDetail = pathname.startsWith("/repositories/") && pathname !== "/repositories";
   const [collapsed, setCollapsed] = useState(isRepoDetail);
 
-  // Automatically decrease sidebar width and show only icons when navigating to a repository details page
   useEffect(() => {
     const isDetail = pathname.startsWith("/repositories/") && pathname !== "/repositories";
     setCollapsed(isDetail);
@@ -41,29 +39,43 @@ export function Sidebar() {
   return (
     <aside
       className={cn(
-        "relative flex flex-col h-screen border-r border-white/[0.06] bg-[#0d1117] transition-all duration-200 shrink-0 z-20",
+        "relative flex flex-col h-screen border-r border-slate-200/80 dark:border-zinc-800/80 bg-white dark:bg-zinc-950 backdrop-blur-md transition-all duration-300 shrink-0 z-20 select-none",
         collapsed ? "w-16 min-w-[4rem]" : "w-60 min-w-[15rem]"
       )}
     >
-      {/* Logo */}
+      {/* Brand Header */}
       <div
         className={cn(
-          "flex items-center h-16 px-4 border-b border-white/[0.06] shrink-0",
-          collapsed ? "justify-center" : "gap-2.5"
+          "flex items-center h-16 px-4 border-b border-slate-200/80 dark:border-zinc-800/80 shrink-0",
+          collapsed ? "justify-center" : "justify-between"
         )}
       >
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-600/90 shadow-lg shadow-blue-500/20">
-          <Shield className="h-4 w-4 text-white" />
-        </div>
-        {!collapsed && (
-          <span className="text-sm font-bold tracking-wide text-slate-100">
-            Secura
-          </span>
-        )}
+        <Link href="/dashboard" className="flex items-center gap-2.5 group">
+          <img
+            src="/logo.png"
+            alt="Secura"
+            className="h-8 w-8 shrink-0 rounded-xl object-cover shadow-sm group-hover:scale-105 transition-transform"
+          />
+          {!collapsed && (
+            <div className="flex items-center gap-1.5">
+              <span className="text-sm font-bold tracking-tight text-[#281C59] dark:text-white">
+                Secura
+              </span>
+              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-full bg-[#EDE9E6] text-[#281C59] dark:bg-zinc-900 dark:text-zinc-400 border border-[#EDE9E6] dark:border-zinc-800 font-semibold">
+                v1.0
+              </span>
+            </div>
+          )}
+        </Link>
       </div>
 
-      {/* Navigation */}
-      <nav className="flex-1 overflow-y-auto px-2 py-4 space-y-0.5">
+      {/* Navigation Links */}
+      <nav className="flex-1 overflow-y-auto px-2.5 py-4 space-y-1">
+        {!collapsed && (
+          <div className="px-2 pb-2 text-[10px] font-semibold tracking-wider uppercase text-slate-400 dark:text-zinc-500">
+            Platform
+          </div>
+        )}
         {NAV_ITEMS.map(({ href, label, icon: Icon }) => {
           const isActive =
             pathname === href || pathname.startsWith(href + "/");
@@ -72,18 +84,21 @@ export function Sidebar() {
               key={href}
               href={href}
               className={cn(
-                "group flex items-center rounded-lg px-2.5 py-2 text-sm font-medium transition-colors",
-                collapsed ? "justify-center" : "gap-2.5",
+                "group relative flex items-center rounded-xl px-2.5 py-2 text-xs font-medium transition-all duration-150",
+                collapsed ? "justify-center" : "gap-3",
                 isActive
-                  ? "bg-blue-600/15 text-blue-400"
-                  : "text-slate-400 hover:bg-white/[0.04] hover:text-slate-200"
+                  ? "bg-[#EDE9E6] text-[#281C59] dark:bg-zinc-900 dark:text-zinc-100 font-semibold shadow-xs"
+                  : "text-slate-600 dark:text-zinc-400 hover:bg-[#EDE9E6]/60 dark:hover:bg-zinc-900/80 hover:text-[#281C59] dark:hover:text-zinc-100"
               )}
               title={collapsed ? label : undefined}
             >
+              {isActive && (
+                <span className="absolute left-0 top-1.5 bottom-1.5 w-1 rounded-r-full bg-[#281C59] dark:bg-zinc-300" />
+              )}
               <Icon
                 className={cn(
-                  "h-4 w-4 shrink-0",
-                  isActive ? "text-blue-400" : "text-slate-500 group-hover:text-slate-300"
+                  "h-4 w-4 shrink-0 transition-colors",
+                  isActive ? "text-[#281C59] dark:text-zinc-100" : "text-slate-400 dark:text-zinc-500 group-hover:text-[#281C59] dark:group-hover:text-zinc-300"
                 )}
               />
               {!collapsed && <span>{label}</span>}
@@ -92,19 +107,19 @@ export function Sidebar() {
         })}
       </nav>
 
-      {/* GitHub App Link */}
-      <div className="px-2 pb-2">
+      {/* GitHub App Quick Access */}
+      <div className="px-2.5 pb-2">
         <a
           href="https://github.com/apps/secura-security-scanner"
           target="_blank"
           rel="noopener noreferrer"
           className={cn(
-            "group flex items-center rounded-lg border border-blue-500/25 bg-blue-500/10 px-2.5 py-2 text-xs font-medium text-blue-400 hover:bg-blue-500/20 hover:border-blue-500/40 hover:text-blue-300 transition-all",
-            collapsed ? "justify-center" : "gap-2"
+            "group flex items-center rounded-xl border border-slate-200/80 dark:border-zinc-800 bg-slate-50/80 dark:bg-zinc-900/60 px-2.5 py-2 text-xs font-medium text-slate-700 dark:text-zinc-300 hover:border-slate-300 dark:hover:border-zinc-700 hover:bg-slate-100 dark:hover:bg-zinc-900 transition-all",
+            collapsed ? "justify-center" : "gap-2.5"
           )}
           title="Install Secura GitHub App"
         >
-          <svg className="h-4 w-4 shrink-0 fill-current" viewBox="0 0 24 24">
+          <svg className="h-4 w-4 shrink-0 fill-current text-slate-700 dark:text-zinc-300 group-hover:text-slate-900 dark:group-hover:text-white" viewBox="0 0 24 24">
             <path
               fillRule="evenodd"
               clipRule="evenodd"
@@ -113,22 +128,24 @@ export function Sidebar() {
           </svg>
           {!collapsed && (
             <div className="flex flex-1 items-center justify-between overflow-hidden">
-              <span className="truncate">Install GitHub App</span>
-              <ExternalLink className="h-3 w-3 shrink-0 opacity-70 group-hover:opacity-100" />
+              <span className="truncate">GitHub App</span>
+              <ExternalLink className="h-3 w-3 shrink-0 opacity-60 group-hover:opacity-100" />
             </div>
           )}
         </a>
       </div>
 
-      {/* Collapse toggle */}
-      <div className="px-2 pb-4">
+      {/* Collapse Toggle */}
+      <div className="px-2.5 pb-3">
         <button
           onClick={() => setCollapsed(!collapsed)}
+          suppressHydrationWarning
           className={cn(
-            "flex w-full items-center rounded-lg px-2.5 py-2 text-sm text-slate-500",
-            "hover:bg-white/[0.04] hover:text-slate-300 transition-colors",
+            "flex w-full items-center rounded-xl px-2.5 py-1.5 text-xs text-slate-500 dark:text-zinc-500",
+            "hover:bg-slate-100/70 dark:hover:bg-zinc-900 hover:text-slate-800 dark:hover:text-zinc-200 transition-colors",
             collapsed ? "justify-center" : "gap-2.5"
           )}
+          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
         >
           {collapsed ? (
             <ChevronRight className="h-4 w-4" />
@@ -143,4 +160,3 @@ export function Sidebar() {
     </aside>
   );
 }
-

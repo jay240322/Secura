@@ -1,8 +1,28 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
-  --background: #0a0e14;
-  --foreground: #f1f5f9;
+  --background: #f8fafc;
+  --foreground: #0f172a;
+  --surface: #ffffff;
+  --surface-subtle: #EDE9E6;
+  --border: #e2e8f0;
+  --border-hover: #cbd5e1;
+  --accent: #281C59;
+  --accent-secondary: #3b82f6;
+  color-scheme: light;
+}
+
+.dark {
+  --background: #000000;
+  --foreground: #f4f4f5;
+  --surface: #09090b;
+  --surface-subtle: #121215;
+  --border: rgba(255, 255, 255, 0.1);
+  --border-hover: rgba(255, 255, 255, 0.18);
+  --accent: #3b82f6;
+  color-scheme: dark;
 }
 
 @theme inline {
@@ -12,30 +32,180 @@
   --font-mono: var(--font-geist-mono);
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: var(--font-sans, Arial, Helvetica, sans-serif);
-  -webkit-font-smoothing: antialiased;
+* {
+  border-color: var(--border);
 }
 
-/* Custom scrollbar */
-::-webkit-scrollbar {
-  width: 5px;
-  height: 5px;
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  transition: background-color 0.2s ease, color 0.2s ease;
 }
+
+::selection {
+  background-color: #EDE9E6;
+  color: #281C59;
+}
+
+.dark ::selection {
+  background-color: rgba(59, 130, 246, 0.25);
+  color: #93c5fd;
+}
+
+/* Minimal sleek scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
 ::-webkit-scrollbar-track {
   background: transparent;
 }
+
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 999px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.18);
+  background: rgba(0, 0, 0, 0.12);
+  border-radius: 9999px;
 }
 
-/* Select element dark styling */
-select {
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.22);
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.24);
+}
+
+/* Clean form inputs */
+select,
+input,
+textarea {
+  color-scheme: light;
+}
+
+.dark select,
+.dark input,
+.dark textarea {
   color-scheme: dark;
+}
+
+/* Glass surface helpers */
+.glass-panel {
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(226, 232, 240, 0.8);
+}
+
+.dark .glass-panel {
+  background: rgba(9, 9, 11, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.glass-card {
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(226, 232, 240, 0.7);
+}
+
+.dark .glass-card {
+  background: rgba(9, 9, 11, 0.75);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* ─── Jimu Primary 3-Bar Jumping Loader Animation (From Uiverse.io by Donewenfu) ─── */
+.loader {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.jimu-primary-loading:before,
+.jimu-primary-loading:after {
+  position: absolute;
+  top: 0;
+  content: '';
+}
+
+.jimu-primary-loading:before {
+  left: -19.992px;
+}
+
+.jimu-primary-loading:after {
+  left: 19.992px;
+  -webkit-animation-delay: 0.32s !important;
+  animation-delay: 0.32s !important;
+}
+
+.jimu-primary-loading:before,
+.jimu-primary-loading:after,
+.jimu-primary-loading {
+  background: #076fe5;
+  -webkit-animation: loading-keys-app-loading 0.8s infinite ease-in-out;
+  animation: loading-keys-app-loading 0.8s infinite ease-in-out;
+  width: 13.6px;
+  height: 32px;
+}
+
+.jimu-primary-loading {
+  text-indent: -9999em;
+  margin: auto;
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 13.6px;
+  height: 32px;
+  -webkit-animation-delay: 0.16s !important;
+  animation-delay: 0.16s !important;
+}
+
+@-webkit-keyframes loading-keys-app-loading {
+
+  0%,
+  80%,
+  100% {
+    opacity: .75;
+    box-shadow: 0 0 #076fe5;
+    height: 32px;
+  }
+
+  40% {
+    opacity: 1;
+    box-shadow: 0 -8px #076fe5;
+    height: 40px;
+  }
+}
+
+@keyframes loading-keys-app-loading {
+
+  0%,
+  80%,
+  100% {
+    opacity: .75;
+    box-shadow: 0 0 #076fe5;
+    height: 32px;
+  }
+
+  40% {
+    opacity: 1;
+    box-shadow: 0 -8px #076fe5;
+    height: 40px;
+  }
 }

@@ -17,7 +17,6 @@ import {
 import {
   AlertTriangle,
   CheckCircle2,
-  Database,
   GitBranch,
   Shield,
   TrendingDown,
@@ -38,6 +37,7 @@ import {
   Legend,
 } from "recharts";
 import Link from "next/link";
+import Loader from "@/components/ui/loader";
 
 // ─── Severity colours for charts ──────────────────────────────────────────
 const SEV_COLORS: Record<string, string> = {
@@ -67,30 +67,30 @@ function SummaryCard({
   highlight,
 }: SummaryCardProps) {
   const highlightClass = {
-    critical: "border-red-500/20",
-    high: "border-orange-500/20",
-    success: "border-emerald-500/20",
-    neutral: "border-white/[0.06]",
+    critical: "border-rose-200 dark:border-rose-900/40 bg-rose-50/40 dark:bg-rose-950/20",
+    high: "border-orange-200 dark:border-orange-900/40 bg-orange-50/40 dark:bg-orange-950/20",
+    success: "border-emerald-200 dark:border-emerald-900/40 bg-emerald-50/40 dark:bg-emerald-950/20",
+    neutral: "border-slate-200/80 dark:border-zinc-800/80 bg-white dark:bg-zinc-950",
   }[highlight ?? "neutral"];
 
   return (
     <Card className={highlightClass}>
       <div className="flex items-start justify-between">
         <div>
-          <p className="text-xs text-slate-500 mb-1">{label}</p>
-          <p className="text-2xl font-semibold text-slate-100">{value}</p>
+          <p className="text-[11px] font-medium uppercase tracking-wider text-slate-500 dark:text-zinc-400 mb-1.5">{label}</p>
+          <p className="text-2xl font-bold tracking-tight text-[#281C59] dark:text-zinc-100">{value}</p>
           {trend && trendLabel && (
-            <p className="mt-1 flex items-center gap-1 text-xs text-slate-500">
+            <p className="mt-1.5 flex items-center gap-1 text-[11px] text-slate-500 dark:text-zinc-400">
               {trend === "up" ? (
-                <TrendingUp className="h-3 w-3 text-red-400" />
+                <TrendingUp className="h-3 w-3 text-rose-600 dark:text-rose-400" />
               ) : trend === "down" ? (
-                <TrendingDown className="h-3 w-3 text-emerald-400" />
+                <TrendingDown className="h-3 w-3 text-emerald-600 dark:text-emerald-400" />
               ) : null}
               {trendLabel}
             </p>
           )}
         </div>
-        <div className="rounded-lg bg-white/[0.04] p-2 text-slate-400">
+        <div className="rounded-xl bg-[#EDE9E6] dark:bg-zinc-900 p-2 text-[#281C59] dark:text-zinc-400 border border-[#EDE9E6] dark:border-zinc-800">
           {icon}
         </div>
       </div>
@@ -104,7 +104,7 @@ function ScoreRing({ score }: { score: number }) {
   const circumference = 2 * Math.PI * radius;
   const offset = circumference - (score / 100) * circumference;
   const color =
-    score >= 80 ? "#10b981" : score >= 50 ? "#eab308" : "#ef4444";
+    score >= 80 ? "#10b981" : score >= 50 ? "#f59e0b" : "#f43f5e";
 
   return (
     <div className="relative flex flex-col items-center justify-center">
@@ -114,8 +114,9 @@ function ScoreRing({ score }: { score: number }) {
           cy={50}
           r={radius}
           fill="none"
-          stroke="rgba(255,255,255,0.06)"
-          strokeWidth={8}
+          stroke="currentColor"
+          className="text-slate-100 dark:text-zinc-800"
+          strokeWidth={7}
         />
         <circle
           cx={50}
@@ -123,7 +124,7 @@ function ScoreRing({ score }: { score: number }) {
           r={radius}
           fill="none"
           stroke={color}
-          strokeWidth={8}
+          strokeWidth={7}
           strokeDasharray={circumference}
           strokeDashoffset={offset}
           strokeLinecap="round"
@@ -131,8 +132,8 @@ function ScoreRing({ score }: { score: number }) {
         />
       </svg>
       <div className="absolute flex flex-col items-center">
-        <span className="text-xl font-bold text-slate-100">{score}</span>
-        <span className="text-[10px] text-slate-500">/100</span>
+        <span className="text-xl font-bold tracking-tight text-slate-900 dark:text-zinc-100">{score}</span>
+        <span className="text-[10px] font-mono text-slate-400 dark:text-zinc-500">/100</span>
       </div>
     </div>
   );
@@ -150,16 +151,16 @@ function ChartTooltip({
 }) {
   if (!active || !payload?.length) return null;
   return (
-    <div className="rounded-lg border border-white/[0.08] bg-[#0d1117] px-3 py-2 text-xs shadow-xl">
-      <p className="mb-1.5 font-medium text-slate-300">{label}</p>
+    <div className="rounded-xl border border-slate-200 dark:border-zinc-800 bg-white/95 dark:bg-zinc-900/95 px-3 py-2 text-xs shadow-xl backdrop-blur-xl">
+      <p className="mb-1 font-semibold text-slate-800 dark:text-zinc-200">{label}</p>
       {payload.map((p) => (
         <div key={p.name} className="flex items-center gap-2">
           <span
             className="h-2 w-2 rounded-full"
             style={{ background: p.color }}
           />
-          <span className="text-slate-400 capitalize">{p.name}:</span>
-          <span className="text-slate-200">{p.value}</span>
+          <span className="text-slate-500 dark:text-zinc-400 capitalize">{p.name}:</span>
+          <span className="text-slate-900 dark:text-zinc-100 font-medium">{p.value}</span>
         </div>
       ))}
     </div>
@@ -253,21 +254,21 @@ function DashboardContent() {
     <div className="max-w-screen-2xl mx-auto space-y-6">
       {/* GitHub App Connection Alert */}
       {installedBanner && (
-        <div className="flex items-center justify-between rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-xs text-emerald-300 shadow-xl shadow-emerald-950/20 animate-in fade-in">
+        <div className="flex items-center justify-between rounded-xl border border-emerald-200 bg-emerald-50/80 p-4 text-xs text-emerald-900 shadow-sm animate-in fade-in">
           <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-500/20 border border-emerald-500/30 text-emerald-400">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-100 border border-emerald-200 text-emerald-600">
               <CheckCircle2 className="h-5 w-5" />
             </div>
             <div>
-              <p className="font-bold text-sm text-emerald-200">GitHub App Linked!</p>
-              <p className="text-slate-300 mt-0.5">
+              <p className="font-bold text-sm text-emerald-900">GitHub App Linked!</p>
+              <p className="text-emerald-700 mt-0.5">
                 Successfully synced your selected repositories. Pull requests will now be automatically scanned for secret leaks.
               </p>
             </div>
           </div>
           <button
             onClick={() => setInstalledBanner(false)}
-            className="text-slate-400 hover:text-white transition-colors"
+            className="text-emerald-600 hover:text-emerald-900 transition-colors"
           >
             <X className="h-4 w-4" />
           </button>
@@ -275,9 +276,9 @@ function DashboardContent() {
       )}
 
       {/* Official GitHub App Integration Card */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-xl border border-blue-500/25 bg-gradient-to-r from-blue-900/20 via-blue-950/25 to-[#0d1117] p-4 text-xs shadow-lg shadow-blue-950/20">
-        <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-600/20 border border-blue-500/30 text-blue-400">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-2xl border border-slate-200/80 dark:border-zinc-800/80 bg-[#EDE9E6]/40 dark:bg-zinc-950 backdrop-blur-md p-4 sm:p-5 text-xs shadow-xs transition-all hover:border-slate-300 dark:hover:border-zinc-700">
+        <div className="flex items-center gap-3.5">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#EDE9E6] dark:bg-zinc-900 border border-[#EDE9E6] dark:border-zinc-800 text-[#281C59] dark:text-zinc-200">
             <svg className="h-5 w-5 fill-current" viewBox="0 0 24 24">
               <path
                 fillRule="evenodd"
@@ -288,28 +289,28 @@ function DashboardContent() {
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <span className="font-semibold text-slate-100">Secura Security Scanner GitHub App</span>
-              <span className="rounded-full bg-blue-500/20 border border-blue-400/30 px-2 py-0.5 text-[9px] font-semibold text-blue-300">
-                OFFICIAL APP
+              <span className="font-semibold text-[#281C59] dark:text-zinc-100 tracking-tight">Secura Security Scanner</span>
+              <span className="rounded-full bg-[#EDE9E6] dark:bg-zinc-900 border border-[#EDE9E6] dark:border-zinc-800 px-2 py-0.5 text-[10px] font-medium text-[#281C59] dark:text-zinc-300">
+                GitHub App
               </span>
             </div>
-            <p className="text-slate-400 mt-0.5">
-              Protect pull requests from leaking credentials, API keys, and vulnerable dependencies automatically.
+            <p className="text-slate-500 dark:text-zinc-400 mt-0.5">
+              Automated pull request inspection for exposed credentials, API tokens, and vulnerable code.
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2.5">
           <Link
             href="/repositories"
-            className="flex shrink-0 items-center justify-center gap-1.5 rounded-lg border border-blue-500/30 bg-blue-500/10 px-3.5 py-2 text-xs font-semibold text-blue-300 hover:bg-blue-500/20 transition-all"
+            className="flex shrink-0 items-center justify-center gap-1.5 rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3.5 py-2 text-xs font-medium text-slate-700 dark:text-zinc-300 hover:bg-[#EDE9E6] dark:hover:bg-zinc-800 hover:text-[#281C59] dark:hover:text-zinc-100 shadow-xs transition-all"
           >
-            <span>Manage Repositories</span>
+            <span>Manage Repos</span>
           </Link>
           <a
             href="https://github.com/apps/secura-security-scanner"
             target="_blank"
             rel="noopener noreferrer"
-            className="flex shrink-0 items-center justify-center gap-1.5 rounded-lg bg-blue-600 px-3.5 py-2 text-xs font-semibold text-white shadow-md shadow-blue-600/30 hover:bg-blue-500 transition-all"
+            className="flex shrink-0 items-center justify-center gap-1.5 rounded-xl bg-[#281C59] px-3.5 py-2 text-xs font-semibold text-white shadow-xs hover:bg-[#281C59]/90 transition-all"
           >
             <span>Configure on GitHub</span>
             <ExternalLink className="h-3 w-3" />
@@ -380,12 +381,12 @@ function DashboardContent() {
                   <XAxis
                     dataKey="date"
                     tickLine={false}
-                    stroke="#475569"
+                    stroke="#94a3b8"
                     fontSize={11}
                   />
                   <YAxis
                     tickLine={false}
-                    stroke="#475569"
+                    stroke="#94a3b8"
                     fontSize={11}
                     width={24}
                   />
@@ -452,7 +453,7 @@ function DashboardContent() {
                   <Tooltip content={<ChartTooltip />} />
                   <Legend
                     formatter={(v) => (
-                      <span className="text-xs text-slate-400">{v}</span>
+                      <span className="text-xs text-slate-600 font-medium">{v}</span>
                     )}
                   />
                 </PieChart>
@@ -470,7 +471,7 @@ function DashboardContent() {
             <CardTitle>Recent open findings</CardTitle>
             <Link
               href="/findings"
-              className="text-xs text-blue-400 hover:text-blue-300"
+              className="text-xs font-medium text-blue-600 hover:text-blue-700"
             >
               View all →
             </Link>
@@ -482,17 +483,17 @@ function DashboardContent() {
                 <p className="text-sm">No open findings detected</p>
               </div>
             ) : (
-              <div className="divide-y divide-white/[0.04]">
+              <div className="divide-y divide-slate-100 dark:divide-zinc-800/80">
                 {recentFindings.map((f) => (
                   <Link
                     key={f.id}
                     href={`/findings/${f.id}`}
-                    className="flex items-start gap-3 py-3 hover:bg-white/[0.02] -mx-2 px-2 rounded transition-colors"
+                    className="flex items-start gap-3 py-3 hover:bg-slate-50/80 dark:hover:bg-zinc-900/50 -mx-2 px-2 rounded-lg transition-colors"
                   >
                     <SeverityBadge severity={f.severity} />
                     <div className="min-w-0 flex-1">
-                      <p className="text-sm text-slate-200 truncate">{f.type}</p>
-                      <p className="text-xs text-slate-500 truncate">
+                      <p className="text-sm font-medium text-slate-900 dark:text-zinc-100 truncate">{f.type}</p>
+                      <p className="text-xs text-slate-500 dark:text-zinc-400 truncate">
                         {f.repository} · {f.filePath}:{f.lineNumber}
                       </p>
                     </div>
@@ -509,7 +510,7 @@ function DashboardContent() {
             <CardTitle>Needs attention</CardTitle>
             <Link
               href="/repositories"
-              className="text-xs text-blue-400 hover:text-blue-300"
+              className="text-xs font-medium text-blue-600 hover:text-blue-500"
             >
               All repos →
             </Link>
@@ -520,33 +521,33 @@ function DashboardContent() {
                 <Link
                   key={r.id}
                   href={`/repositories/${r.id}`}
-                  className="block rounded-lg border border-white/[0.05] bg-white/[0.02] p-3 hover:border-white/[0.1] transition-colors"
+                  className="block rounded-xl border border-slate-200/80 dark:border-zinc-800 bg-slate-50/50 dark:bg-zinc-900/50 p-3 hover:bg-slate-50 dark:hover:bg-zinc-900 hover:border-slate-300 dark:hover:border-zinc-700 transition-colors"
                 >
                   <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-sm font-medium text-slate-200 truncate">
+                    <span className="text-sm font-medium text-slate-900 dark:text-zinc-100 truncate">
                       {r.name}
                     </span>
                     <StatusBadge status={r.lastScanStatus} />
                   </div>
                   <div className="flex gap-3 text-xs">
-                    <span className="text-red-400">
+                    <span className="text-rose-600 dark:text-rose-400 font-medium">
                       {r.criticalFindings} critical
                     </span>
-                    <span className="text-orange-400">
+                    <span className="text-amber-600 dark:text-amber-400 font-medium">
                       {r.highFindings} high
                     </span>
                   </div>
                 </Link>
               ))}
               {reposNeedingAttention.length === 0 && (
-                <p className="text-center text-sm text-slate-500 py-4">
+                <p className="text-center text-sm text-slate-500 dark:text-zinc-400 py-4">
                   All repositories are clean ✅
                 </p>
               )}
             </div>
 
             {/* Security score */}
-            <div className="mt-4 border-t border-white/[0.06] pt-4">
+            <div className="mt-4 border-t border-slate-100 dark:border-zinc-800/80 pt-4">
               <p className="text-xs text-slate-500 mb-3">Security score</p>
               <div className="relative flex justify-center">
                 <ScoreRing score={summary.securityScore} />
@@ -565,7 +566,7 @@ function DashboardContent() {
           <CardTitle>Recent Pull Request Checks</CardTitle>
           <Link
             href="/pull-requests"
-            className="text-xs text-blue-400 hover:text-blue-300"
+            className="text-xs font-medium text-blue-600 hover:text-blue-700"
           >
             All Pull Requests →
           </Link>
@@ -577,38 +578,46 @@ function DashboardContent() {
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+              <table className="w-full text-xs">
                 <thead>
-                  <tr className="border-b border-white/[0.06] text-xs text-slate-500">
-                    <th className="pb-3 text-left font-medium">Repository</th>
-                    <th className="pb-3 text-left font-medium">Branch</th>
-                    <th className="pb-3 text-left font-medium">Commit</th>
-                    <th className="pb-3 text-left font-medium">PR Gate Status</th>
-                    <th className="pb-3 text-right font-medium">Findings</th>
-                    <th className="pb-3 text-right font-medium">Security Health</th>
+                  <tr className="border-b border-slate-200/80 dark:border-zinc-800/80 text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-zinc-400">
+                    <th className="pb-3 text-left">Repository</th>
+                    <th className="pb-3 text-left">Branch</th>
+                    <th className="pb-3 text-left">Commit</th>
+                    <th className="pb-3 text-left">PR Gate Status</th>
+                    <th className="pb-3 text-right">Findings</th>
+                    <th className="pb-3 text-right">Security Health</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-white/[0.04]">
+                <tbody className="divide-y divide-slate-100 dark:divide-zinc-800/80">
                   {recentScans.map((scan) => (
-                    <tr key={scan.id} className="hover:bg-white/[0.02]">
-                      <td className="py-3 text-slate-300">
+                    <tr key={scan.id} className="hover:bg-slate-50/70 dark:hover:bg-zinc-900/50 transition-colors">
+                      <td className="py-3 text-slate-900 dark:text-zinc-100 font-medium">
                         {scan.repository.includes("/") ? scan.repository.split("/")[1] : scan.repository}
                       </td>
-                      <td className="py-3 text-slate-400 font-mono text-xs">{scan.branch}</td>
-                      <td className="py-3 text-slate-400 font-mono text-xs">{scan.commitSha}</td>
+                      <td className="py-3">
+                        <span className="font-mono text-slate-700 dark:text-zinc-300 bg-slate-100 dark:bg-zinc-800 px-2 py-0.5 rounded border border-slate-200/80 dark:border-zinc-700">
+                          {scan.branch}
+                        </span>
+                      </td>
+                      <td className="py-3">
+                        <span className="font-mono text-slate-500 dark:text-zinc-400">
+                          {scan.commitSha}
+                        </span>
+                      </td>
                       <td className="py-3">
                         {scan.result && <StatusBadge status={scan.result} />}
                       </td>
-                      <td className="py-3 text-right text-slate-300">{scan.totalFindings}</td>
+                      <td className="py-3 text-right text-slate-700 dark:text-zinc-300 font-medium">{scan.totalFindings}</td>
                       <td className="py-3 text-right">
                         <span
-                          className={
+                          className={`font-semibold font-mono ${
                             (scan.score ?? 0) >= 80
-                              ? "text-emerald-400"
+                              ? "text-emerald-600 dark:text-emerald-400"
                               : (scan.score ?? 0) >= 50
-                              ? "text-yellow-400"
-                              : "text-red-400"
-                          }
+                              ? "text-amber-600 dark:text-amber-400"
+                              : "text-rose-600 dark:text-rose-400"
+                          }`}
                         >
                           {scan.score}/100
                         </span>
@@ -629,8 +638,8 @@ export default function DashboardPage() {
   return (
     <Suspense
       fallback={
-        <div className="flex flex-col items-center justify-center py-20 text-slate-500 gap-2">
-          <Shield className="h-6 w-6 text-blue-400 animate-pulse" />
+        <div className="flex flex-col items-center justify-center py-20 text-slate-500 gap-3">
+          <Loader />
           <span className="text-xs">Loading command center...</span>
         </div>
       }

@@ -6,7 +6,6 @@ import { StatusBadge } from "@/components/ui/status-badge";
 import { api } from "@/lib/api-client";
 import type { Repository, AvailableRepository, User } from "@/types";
 import {
-  Database,
   ExternalLink,
   GitBranch,
   GitPullRequest,
@@ -30,6 +29,7 @@ import {
   ArrowRight,
 } from "lucide-react";
 import Link from "next/link";
+import Loader from "@/components/ui/loader";
 
 function formatRelative(dateStr: string | null): string {
   if (!dateStr) return "Never";
@@ -43,225 +43,101 @@ function formatRelative(dateStr: string | null): string {
 
 function RepoCard({
   repo,
-  onToggleMonitoring,
-  onRemove,
+  onRequestDelete,
 }: {
   repo: Repository;
-  onToggleMonitoring: (id: string, currentStatus: boolean) => Promise<void> | void;
-  onRemove: (id: string) => Promise<void> | void;
+  onRequestDelete: (repo: Repository) => void;
 }) {
-  const isClean = repo.criticalFindings === 0 && repo.highFindings === 0 && repo.openFindings === 0;
-
   return (
     <div
       className={`group relative flex flex-col justify-between rounded-2xl border p-5 transition-all duration-200 ${
         repo.isMonitored
-          ? "border-white/[0.08] bg-gradient-to-b from-[#131b26]/90 to-[#0c1017]/95 shadow-lg shadow-black/40 hover:border-blue-500/40 hover:shadow-xl hover:shadow-blue-500/5 hover:-translate-y-0.5"
-          : "border-white/[0.04] bg-[#0c1017]/60 opacity-75 hover:opacity-100 hover:border-white/15"
+          ? "border-slate-200/80 dark:border-zinc-800/80 bg-white dark:bg-zinc-950 shadow-xs dark:shadow-black/50 hover:border-slate-300 dark:hover:border-zinc-700 hover:shadow-md hover:-translate-y-0.5"
+          : "border-slate-200/60 dark:border-zinc-800/50 bg-white/70 dark:bg-zinc-900/40 opacity-70 hover:opacity-100 hover:border-slate-300 dark:hover:border-zinc-700"
       }`}
     >
-      {/* Top Header Row */}
+      {/* Top Header Row with Privacy Badge, Status Badge, and Shifted Actions (GitHub & Delete) */}
       <div>
         <div className="flex items-center justify-between gap-2 mb-3">
           <div className="flex items-center gap-2">
             {/* Privacy indicator */}
-            <span className="inline-flex items-center gap-1 rounded-md border border-white/[0.08] bg-white/[0.03] px-2 py-0.5 text-[11px] font-medium text-slate-400">
+            <span className="inline-flex items-center gap-1 rounded-lg border border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 px-2 py-0.5 text-[11px] font-medium text-slate-600 dark:text-zinc-400">
               {repo.isPrivate ? (
                 <>
-                  <Lock className="h-3 w-3 text-slate-400" />
+                  <Lock className="h-3 w-3 text-slate-500 dark:text-zinc-400" />
                   <span>Private</span>
                 </>
               ) : (
                 <>
-                  <Unlock className="h-3 w-3 text-slate-400" />
+                  <Unlock className="h-3 w-3 text-slate-500 dark:text-zinc-400" />
                   <span>Public</span>
                 </>
               )}
             </span>
 
-            {/* Monitoring Gate Pill */}
-            <span
-              className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-semibold tracking-wide uppercase ${
-                repo.isMonitored
-                  ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30"
-                  : "bg-slate-800 text-slate-400 border border-slate-700/60"
-              }`}
-            >
-              <span
-                className={`h-1.5 w-1.5 rounded-full ${
-                  repo.isMonitored ? "bg-emerald-400 animate-pulse" : "bg-slate-500"
-                }`}
-              />
-              {repo.isMonitored ? "PR Gate Active" : "Gate Paused"}
-            </span>
+            <StatusBadge status={repo.lastScanStatus} />
           </div>
 
-          <StatusBadge status={repo.lastScanStatus} />
+          {/* Shifted to upperside: GitHub Link & Delete Button */}
+          <div className="flex items-center gap-1.5">
+            <a
+              href={repo.htmlUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-slate-500 dark:text-zinc-400 hover:bg-slate-100 dark:hover:bg-zinc-800 hover:text-slate-800 dark:hover:text-zinc-200 transition-colors shadow-xs"
+              title="Open repository on GitHub"
+            >
+              <ExternalLink className="h-3.5 w-3.5" />
+            </a>
+
+            <button
+              onClick={() => onRequestDelete(repo)}
+              suppressHydrationWarning
+              className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-slate-400 dark:text-zinc-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 hover:border-rose-200 dark:hover:border-rose-900/60 hover:text-rose-600 dark:hover:text-rose-400 transition-colors shadow-xs"
+              title="Delete repository"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          </div>
         </div>
 
-        {/* Repository Title & Owner */}
+        {/* Repository Title */}
         <div className="mb-3">
-          <span className="text-[11px] font-mono text-slate-500 block truncate">
-            {repo.owner} /
-          </span>
           <Link
             href={`/repositories/${repo.id}`}
-            className="text-base font-bold text-slate-100 group-hover:text-blue-400 transition-colors truncate block mt-0.5"
+            className="text-base font-bold text-slate-900 dark:text-zinc-100 group-hover:text-[#281C59] dark:group-hover:text-blue-400 transition-colors truncate block mt-0.5 tracking-tight"
             title={repo.fullName}
           >
             {repo.name}
           </Link>
 
           {/* Branch & Scan Metadata */}
-          <div className="flex items-center gap-2.5 text-xs text-slate-400 font-mono mt-1.5 flex-wrap">
-            <span className="flex items-center gap-1 text-slate-300">
-              <GitBranch className="h-3 w-3 text-blue-400" />
+          <div className="flex items-center gap-2.5 text-xs text-slate-500 dark:text-zinc-400 font-mono mt-1.5 flex-wrap">
+            <span className="flex items-center gap-1 text-slate-700 dark:text-zinc-300 font-medium">
+              <GitBranch className="h-3 w-3 text-[#281C59] dark:text-blue-400" />
               <span>{repo.defaultBranch}</span>
             </span>
-            <span className="text-slate-600">·</span>
-            <span className="flex items-center gap-1 text-slate-500 text-[11px]">
-              <Clock className="h-3 w-3 text-slate-500" />
-              <span>
+            <span className="text-slate-300 dark:text-zinc-700">·</span>
+            <span suppressHydrationWarning className="flex items-center gap-1 text-slate-500 dark:text-zinc-400 text-[11px]">
+              <Clock className="h-3 w-3 text-slate-400 dark:text-zinc-500" />
+              <span suppressHydrationWarning>
                 {repo.lastScanAt ? `PR checked ${formatRelative(repo.lastScanAt)}` : "Awaiting first PR"}
               </span>
             </span>
           </div>
         </div>
-
-        {/* Pull Request Security Protection Note */}
-        <div className="mb-4 flex items-center justify-between rounded-xl border border-white/[0.05] bg-black/30 px-3 py-2 text-xs">
-          <div className="flex items-center gap-2 text-slate-400">
-            <ShieldCheck className="h-3.5 w-3.5 text-blue-400 shrink-0" />
-            <span className="text-[11px] text-slate-400">Automated GitHub PR security gate</span>
-          </div>
-          {repo.isMonitored ? (
-            <span className="text-[10px] font-semibold text-emerald-400 uppercase tracking-wider">
-              Enforcing
-            </span>
-          ) : (
-            <span className="text-[10px] font-medium text-slate-500 uppercase tracking-wider">
-              Paused
-            </span>
-          )}
-        </div>
-
-        {/* Metrics Grid */}
-        <div className="grid grid-cols-3 gap-2 mb-4">
-          <div
-            className={`text-center rounded-xl py-2.5 px-1 border transition-all ${
-              repo.criticalFindings > 0
-                ? "bg-red-500/10 border-red-500/25 shadow-sm shadow-red-500/10"
-                : "bg-black/30 border-white/[0.04]"
-            }`}
-          >
-            <p
-              className={`text-base font-bold ${
-                repo.criticalFindings > 0 ? "text-red-400" : "text-slate-400"
-              }`}
-            >
-              {repo.criticalFindings}
-            </p>
-            <p className="text-[10px] font-medium text-slate-500 uppercase tracking-wider mt-0.5">
-              Critical
-            </p>
-          </div>
-
-          <div
-            className={`text-center rounded-xl py-2.5 px-1 border transition-all ${
-              repo.highFindings > 0
-                ? "bg-amber-500/10 border-amber-500/25 shadow-sm shadow-amber-500/10"
-                : "bg-black/30 border-white/[0.04]"
-            }`}
-          >
-            <p
-              className={`text-base font-bold ${
-                repo.highFindings > 0 ? "text-amber-400" : "text-slate-400"
-              }`}
-            >
-              {repo.highFindings}
-            </p>
-            <p className="text-[10px] font-medium text-slate-500 uppercase tracking-wider mt-0.5">
-              High
-            </p>
-          </div>
-
-          <div
-            className={`text-center rounded-xl py-2.5 px-1 border transition-all ${
-              isClean && (repo.lastScanStatus === "clean" || repo.lastScanStatus === "passed")
-                ? "bg-emerald-500/10 border-emerald-500/25"
-                : "bg-black/30 border-white/[0.04]"
-            }`}
-          >
-            <p
-              className={`text-base font-bold ${
-                isClean && (repo.lastScanStatus === "clean" || repo.lastScanStatus === "passed")
-                  ? "text-emerald-400"
-                  : "text-slate-300"
-              }`}
-            >
-              {repo.openFindings}
-            </p>
-            <p className="text-[10px] font-medium text-slate-500 uppercase tracking-wider mt-0.5">
-              Total Open
-            </p>
-          </div>
-        </div>
       </div>
 
       {/* Action Controls & Navigation */}
-      <div className="pt-3 border-t border-white/[0.06] space-y-2.5">
-        {/* Primary Row: View Details & Quick Links */}
-        <div className="grid grid-cols-5 gap-1.5">
-          <Link
-            href={`/repositories/${repo.id}`}
-            className="col-span-3 flex items-center justify-center gap-1.5 rounded-lg border border-blue-500/30 bg-blue-600/15 px-3 py-1.5 text-xs font-semibold text-blue-300 hover:bg-blue-600/25 hover:border-blue-500/50 hover:text-white transition-all shadow-sm shadow-blue-950/40"
-            title="Open repository details, pull requests, and findings"
-          >
-            <span>View Details</span>
-            <ArrowRight className="h-3 w-3" />
-          </Link>
-
-          <Link
-            href={`/pull-requests?repo=${encodeURIComponent(repo.fullName)}`}
-            className="flex items-center justify-center gap-1 rounded-lg border border-white/[0.08] bg-white/[0.03] px-2 py-1.5 text-xs font-medium text-slate-300 hover:bg-white/[0.08] hover:text-white transition-colors"
-            title="View Pull Requests scanned by GitHub App"
-          >
-            <GitPullRequest className="h-3 w-3 text-blue-400" />
-            <span>PRs</span>
-          </Link>
-
-          <Link
-            href={`/findings?repo=${encodeURIComponent(repo.fullName)}`}
-            className="flex items-center justify-center gap-1 rounded-lg border border-white/[0.08] bg-white/[0.03] px-2 py-1.5 text-xs font-medium text-slate-300 hover:bg-white/[0.08] hover:text-white transition-colors"
-            title="View Security Findings"
-          >
-            <ShieldAlert className="h-3 w-3 text-red-400" />
-            <span className="text-[11px]">Alerts</span>
-          </Link>
-        </div>
-
-        {/* Secondary Row: External Links & Actions */}
-        <div className="flex items-center justify-end text-xs pt-1">
-          <div className="flex items-center gap-1">
-            <a
-              href={repo.htmlUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex h-7 w-7 items-center justify-center rounded-md border border-white/[0.06] text-slate-400 hover:bg-white/[0.08] hover:text-white transition-colors"
-              title="Open repository on GitHub"
-            >
-              <ExternalLink className="h-3 w-3" />
-            </a>
-
-            <button
-              onClick={() => void onRemove(repo.id)}
-              className="flex h-7 w-7 items-center justify-center rounded-md border border-white/[0.06] text-slate-500 hover:bg-red-500/15 hover:border-red-500/30 hover:text-red-400 transition-colors"
-              title="Remove repository from Secura"
-            >
-              <Trash2 className="h-3 w-3" />
-            </button>
-          </div>
-        </div>
+      <div className="pt-3 border-t border-slate-100 dark:border-zinc-800/80">
+        <Link
+          href={`/repositories/${repo.id}`}
+          className="w-full flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 py-2 text-xs font-semibold text-slate-800 dark:text-zinc-200 hover:bg-slate-50 dark:hover:bg-zinc-800 hover:text-slate-950 dark:hover:text-zinc-50 transition-all shadow-xs"
+          title="Open repository details, pull requests, and findings"
+        >
+          <span>View Details</span>
+          <ArrowRight className="h-3 w-3" />
+        </Link>
       </div>
     </div>
   );
@@ -496,14 +372,24 @@ function RepositoriesContent() {
     }
   };
 
-  const handleRemove = async (repoId: string) => {
-    if (!confirm("Are you sure you want to remove this repository from Secura?")) return;
-    setRepos((prev) => prev.filter((r) => r.id !== repoId));
+  const [repoToDelete, setRepoToDelete] = useState<Repository | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+
+  const handleConfirmDelete = async () => {
+    if (!repoToDelete) return;
+    setDeleteLoading(true);
+    const id = repoToDelete.id;
+    setRepos((prev) => prev.filter((r) => r.id !== id));
     try {
-      await api.removeRepository(repoId);
+      await api.removeRepository(id);
+      setRepoToDelete(null);
+      setSyncFeedback(`Repository "${repoToDelete.fullName}" was removed from Secura.`);
+      setTimeout(() => setSyncFeedback(null), 3000);
     } catch (e) {
       console.error("Failed to delete repo:", e);
       void handleRefresh();
+    } finally {
+      setDeleteLoading(false);
     }
   };
 
@@ -558,23 +444,24 @@ function RepositoriesContent() {
     <div className="max-w-screen-xl mx-auto space-y-6">
       {/* ─── GitHub App Connection Confirmation Alert ────────────────────── */}
       {installedBanner && (
-        <div className="flex items-center justify-between rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-xs text-emerald-300 shadow-xl shadow-emerald-950/20 animate-in fade-in">
+        <div className="flex items-center justify-between rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-xs text-emerald-900 shadow-sm animate-in fade-in">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-500/20 border border-emerald-500/30 text-emerald-400">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-100 border border-emerald-200 text-emerald-600">
               <CheckCircle2 className="h-5 w-5" />
             </div>
             <div>
-              <p className="font-bold text-sm text-emerald-200">
+              <p className="font-bold text-sm text-emerald-900">
                 GitHub App Installation Complete!
               </p>
-              <p className="text-slate-300 mt-0.5">
+              <p className="text-emerald-700 mt-0.5">
                 Secura is linked to your GitHub account and has synced all granted repositories. Live pull request scanning & secret protection are active.
               </p>
             </div>
           </div>
           <button
             onClick={() => setInstalledBanner(false)}
-            className="text-slate-400 hover:text-white transition-colors"
+            suppressHydrationWarning
+            className="text-emerald-600 hover:text-emerald-900 transition-colors"
           >
             <X className="h-4 w-4" />
           </button>
@@ -582,9 +469,9 @@ function RepositoriesContent() {
       )}
 
       {/* ─── Official GitHub App Integration Banner ──────────────────────── */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-2xl border border-blue-500/30 bg-gradient-to-r from-blue-900/25 via-blue-950/30 to-[#0d1117] p-5 shadow-xl shadow-blue-950/20">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-2xl border border-slate-200/80 dark:border-zinc-800/80 bg-[#EDE9E6]/40 dark:bg-zinc-950 p-5 shadow-xs">
         <div className="flex items-center gap-3.5">
-          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-blue-600/30 border border-blue-500/40 text-blue-400">
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[#EDE9E6] dark:bg-zinc-900 border border-[#EDE9E6] dark:border-zinc-800 text-[#281C59] dark:text-zinc-200 shadow-2xs">
             <svg className="h-6 w-6 fill-current" viewBox="0 0 24 24">
               <path
                 fillRule="evenodd"
@@ -595,17 +482,17 @@ function RepositoriesContent() {
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="text-sm font-semibold text-white">
+              <h2 className="text-sm font-semibold text-[#281C59] dark:text-zinc-100">
                 Secura GitHub Security Scanner
               </h2>
-              <span className="rounded-full bg-blue-500/20 border border-blue-400/30 px-2 py-0.5 text-[10px] font-medium text-blue-300">
+              <span className="rounded-full bg-[#EDE9E6] dark:bg-zinc-900 border border-[#EDE9E6] dark:border-zinc-800 px-2 py-0.5 text-[10px] font-semibold text-[#281C59] dark:text-zinc-300">
                 Official GitHub App
               </span>
             </div>
-            <p className="text-xs text-slate-400 mt-0.5">
+            <p className="text-xs text-slate-500 dark:text-zinc-400 mt-0.5">
               Install the GitHub App to automatically block secret leaks and trigger PR security checks.
               {currentUser?.githubUsername && (
-                <span className="text-blue-300 font-medium ml-1">
+                <span className="text-[#281C59] dark:text-zinc-300 font-medium ml-1">
                   Connected to @{currentUser.githubUsername}
                 </span>
               )}
@@ -614,23 +501,11 @@ function RepositoriesContent() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <button
-            onClick={handleSync}
-            disabled={syncLoading}
-            className="flex shrink-0 items-center justify-center gap-2 rounded-xl border border-blue-500/40 bg-blue-500/15 px-3.5 py-2.5 text-xs font-semibold text-blue-300 hover:bg-blue-500/25 hover:border-blue-400 transition-all disabled:opacity-50"
-          >
-            {syncLoading ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <RefreshCcw className="h-3.5 w-3.5" />
-            )}
-            <span>Sync Repositories</span>
-          </button>
           <a
             href={githubConfigureUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex shrink-0 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-xs font-semibold text-white shadow-lg shadow-blue-600/30 hover:bg-blue-500 transition-all"
+            className="flex shrink-0 items-center justify-center gap-2 rounded-xl bg-[#281C59] text-white px-4 py-2.5 text-xs font-semibold hover:bg-[#281C59]/90 shadow-xs transition-all"
           >
             <span>Configure on GitHub</span>
             <ExternalLink className="h-3.5 w-3.5" />
@@ -640,8 +515,8 @@ function RepositoriesContent() {
 
       {/* Sync Feedback Alert */}
       {syncFeedback && (
-        <div className="flex items-center gap-2 rounded-xl border border-blue-500/30 bg-blue-500/10 px-4 py-3 text-xs text-blue-300 animate-in fade-in">
-          <CheckCircle2 className="h-4 w-4 shrink-0 text-blue-400" />
+        <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-[#EDE9E6]/80 dark:border-zinc-800 dark:bg-zinc-900 px-4 py-3 text-xs text-[#281C59] dark:text-zinc-200 shadow-xs animate-in fade-in">
+          <CheckCircle2 className="h-4 w-4 shrink-0 text-[#281C59] dark:text-zinc-300" />
           <span>{syncFeedback}</span>
         </div>
       )}
@@ -650,39 +525,49 @@ function RepositoriesContent() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         {/* Search */}
         <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-slate-500" />
+          <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-slate-400 dark:text-zinc-500" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search repositories by name or owner..."
-            className="w-full rounded-xl border border-white/[0.08] bg-white/[0.03] pl-9 pr-3 py-2 text-xs text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
+            suppressHydrationWarning
+            className="w-full rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 pl-9 pr-3 py-2 text-xs text-slate-900 dark:text-zinc-100 placeholder:text-slate-400 dark:placeholder:text-zinc-500 focus:border-[#281C59] focus:outline-none shadow-xs"
           />
         </div>
 
         {/* Filter Tabs */}
         <div className="flex items-center gap-2">
-          <div className="flex p-0.5 rounded-lg bg-white/[0.03] border border-white/[0.06]">
+          <div className="flex p-0.5 rounded-xl bg-[#EDE9E6] dark:bg-zinc-900 border border-[#EDE9E6] dark:border-zinc-800">
             <button
               onClick={() => setFilterTab("all")}
-              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
-                filterTab === "all" ? "bg-blue-600 text-white" : "text-slate-400 hover:text-white"
+              suppressHydrationWarning
+              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${
+                filterTab === "all"
+                  ? "bg-white text-[#281C59] shadow-xs font-semibold"
+                  : "text-slate-600 dark:text-zinc-400 hover:text-[#281C59] dark:hover:text-zinc-100"
               }`}
             >
               All ({repos.length})
             </button>
             <button
               onClick={() => setFilterTab("monitored")}
-              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
-                filterTab === "monitored" ? "bg-blue-600 text-white" : "text-slate-400 hover:text-white"
+              suppressHydrationWarning
+              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${
+                filterTab === "monitored"
+                  ? "bg-white text-[#281C59] shadow-xs font-semibold"
+                  : "text-slate-600 dark:text-zinc-400 hover:text-[#281C59] dark:hover:text-zinc-100"
               }`}
             >
               Monitored ({monitoredCount})
             </button>
             <button
               onClick={() => setFilterTab("unmonitored")}
-              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
-                filterTab === "unmonitored" ? "bg-blue-600 text-white" : "text-slate-400 hover:text-white"
+              suppressHydrationWarning
+              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${
+                filterTab === "unmonitored"
+                  ? "bg-white text-[#281C59] shadow-xs font-semibold"
+                  : "text-slate-600 dark:text-zinc-400 hover:text-[#281C59] dark:hover:text-zinc-100"
               }`}
             >
               Paused ({repos.length - monitoredCount})
@@ -691,7 +576,8 @@ function RepositoriesContent() {
 
           <button
             onClick={handleOpenAddModal}
-            className="flex items-center gap-1.5 rounded-xl bg-blue-600 px-3.5 py-2 text-xs font-semibold text-white shadow-md shadow-blue-600/30 hover:bg-blue-500 transition-all"
+            suppressHydrationWarning
+            className="flex items-center gap-1.5 rounded-xl bg-[#281C59] hover:bg-[#281C59]/90 px-3.5 py-2 text-xs font-semibold text-white shadow-xs transition-all"
           >
             <Plus className="h-3.5 w-3.5" />
             <span>Add Repository</span>
@@ -701,12 +587,12 @@ function RepositoriesContent() {
 
       {/* ─── GitHub App Repository Selector Modal ────────────────────────── */}
       {showAddModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
-          <div className="relative w-full max-w-2xl rounded-2xl border border-white/[0.1] bg-[#0d1117] shadow-2xl flex flex-col max-h-[85vh] overflow-hidden">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 dark:bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="relative w-full max-w-2xl rounded-2xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 shadow-2xl flex flex-col max-h-[85vh] overflow-hidden text-slate-900 dark:text-zinc-100">
             {/* Modal Header */}
-            <div className="flex items-center justify-between border-b border-white/[0.08] p-5 pb-4">
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-zinc-800/80 p-5 pb-4">
               <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-600/20 border border-blue-500/30 text-blue-400">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900/60 text-blue-600 dark:text-blue-400">
                   <svg className="h-5 w-5 fill-current" viewBox="0 0 24 24">
                     <path
                       fillRule="evenodd"
@@ -716,8 +602,8 @@ function RepositoriesContent() {
                   </svg>
                 </div>
                 <div>
-                  <h3 className="text-base font-semibold text-white">Select Repositories to Monitor</h3>
-                  <p className="text-xs text-slate-400 mt-0.5">
+                  <h3 className="text-base font-semibold text-slate-900 dark:text-zinc-100">Select Repositories to Monitor</h3>
+                  <p className="text-xs text-slate-500 dark:text-zinc-400 mt-0.5">
                     Choose repositories accessible from GitHub to add to Secura.
                   </p>
                 </div>
@@ -725,28 +611,30 @@ function RepositoriesContent() {
               <button
                 type="button"
                 onClick={() => setShowAddModal(false)}
-                className="rounded-lg p-1.5 text-slate-400 hover:text-white hover:bg-white/[0.06] transition-colors"
+                className="rounded-lg p-1.5 text-slate-400 dark:text-zinc-500 hover:text-slate-700 dark:hover:text-zinc-200 hover:bg-slate-100 dark:hover:bg-zinc-900 transition-colors"
               >
                 <X className="h-5 w-5" />
               </button>
             </div>
 
             {/* Modal Search Toolbar */}
-            <div className="p-4 border-b border-white/[0.06] flex items-center gap-2">
+            <div className="p-4 border-b border-slate-100 dark:border-zinc-800/80 flex items-center gap-2">
               <div className="relative flex-1">
-                <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-slate-500" />
+                <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-slate-400 dark:text-zinc-500" />
                 <input
                   type="text"
                   value={availableSearch}
                   onChange={(e) => setAvailableSearch(e.target.value)}
                   placeholder="Filter available repositories by name..."
-                  className="w-full rounded-xl border border-white/[0.08] bg-white/[0.04] pl-9 pr-3 py-2 text-xs text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
+                  suppressHydrationWarning
+                  className="w-full rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 pl-9 pr-3 py-2 text-xs text-slate-900 dark:text-zinc-100 placeholder:text-slate-400 dark:placeholder:text-zinc-500 focus:border-blue-500 focus:outline-none shadow-xs"
                 />
               </div>
               <button
                 onClick={loadAvailableRepos}
                 disabled={availableLoading}
-                className="flex items-center gap-1.5 rounded-xl border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-xs font-medium text-slate-300 hover:bg-white/[0.08] transition-colors disabled:opacity-50"
+                suppressHydrationWarning
+                className="flex items-center gap-1.5 rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 py-2 text-xs font-medium text-slate-700 dark:text-zinc-300 hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors disabled:opacity-50 shadow-xs"
                 title="Refresh repositories from GitHub"
               >
                 <RefreshCcw className={`h-3.5 w-3.5 ${availableLoading ? "animate-spin" : ""}`} />
@@ -756,8 +644,8 @@ function RepositoriesContent() {
 
             {/* Modal Error/Feedback Banner */}
             {addFeedback && (
-              <div className="mx-4 mt-3 flex items-center gap-2 rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-300">
-                <AlertCircle className="h-4 w-4 shrink-0 text-red-400" />
+              <div className="mx-4 mt-3 flex items-center gap-2 rounded-xl border border-rose-200 dark:border-rose-900/60 bg-rose-50 dark:bg-rose-950/40 p-3 text-xs text-rose-700 dark:text-rose-300">
+                <AlertCircle className="h-4 w-4 shrink-0 text-rose-600 dark:text-rose-400" />
                 <span>{addFeedback}</span>
               </div>
             )}
@@ -765,22 +653,22 @@ function RepositoriesContent() {
             {/* Modal Repositories List */}
             <div className="flex-1 overflow-y-auto p-4 space-y-2">
               {availableLoading ? (
-                <div className="flex flex-col items-center justify-center py-16 text-slate-400 text-xs">
-                  <Loader2 className="h-7 w-7 animate-spin text-blue-500 mb-2" />
+                <div className="flex flex-col items-center justify-center py-16 text-slate-500 dark:text-zinc-400 text-xs gap-3">
+                  <Loader />
                   <span>Loading available repositories from GitHub...</span>
                 </div>
               ) : availableRepos.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-white/[0.1] p-8 text-center">
-                  <GitBranch className="h-8 w-8 text-slate-600 mx-auto mb-2" />
-                  <p className="text-sm font-semibold text-slate-300">No repositories available</p>
-                  <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
+                <div className="rounded-xl border border-dashed border-slate-300 dark:border-zinc-700 p-8 text-center bg-slate-50/50 dark:bg-zinc-900/40">
+                  <GitBranch className="h-8 w-8 text-slate-400 dark:text-zinc-500 mx-auto mb-2" />
+                  <p className="text-sm font-semibold text-slate-800 dark:text-zinc-200">No repositories available</p>
+                  <p className="text-xs text-slate-500 dark:text-zinc-400 mt-1 max-w-sm mx-auto">
                     Ensure the Secura GitHub App is installed on your GitHub account with access to your repositories.
                   </p>
                   <a
                     href={githubConfigureUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2 text-xs font-semibold text-white shadow-md shadow-blue-600/30 hover:bg-blue-500 transition-all mt-4"
+                    className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2 text-xs font-semibold text-white shadow-xs hover:bg-blue-500 transition-all mt-4"
                   >
                     <span>Grant Access on GitHub</span>
                     <ExternalLink className="h-3 w-3" />
@@ -797,7 +685,7 @@ function RepositoriesContent() {
 
                   if (filtered.length === 0) {
                     return (
-                      <div className="py-10 text-center text-xs text-slate-500">
+                      <div className="py-10 text-center text-xs text-slate-500 dark:text-zinc-400">
                         No repositories matching &quot;{availableSearch}&quot;
                       </div>
                     );
@@ -821,23 +709,23 @@ function RepositoriesContent() {
                             toggleSelectRepo(repo.fullName);
                           }
                         }}
-                        className={`flex items-center justify-between gap-3 rounded-xl border p-3.5 transition-all ${
+                        className={`flex items-center justify-between gap-3 rounded-xl border p-3.5 transition-all shadow-xs ${
                           repo.alreadyMonitored
-                            ? "border-white/[0.04] bg-white/[0.01] opacity-60 cursor-default"
+                            ? "border-slate-200/50 dark:border-zinc-800/80 bg-slate-50/50 dark:bg-zinc-900/30 opacity-60 cursor-default"
                             : isSelected
-                            ? "border-blue-500/50 bg-blue-600/15 cursor-pointer"
-                            : "border-white/[0.06] bg-white/[0.02] hover:border-white/[0.15] hover:bg-white/[0.04] cursor-pointer"
+                            ? "border-blue-300 dark:border-blue-700 bg-blue-50/70 dark:bg-blue-950/50 cursor-pointer"
+                            : "border-slate-200/80 dark:border-zinc-800 bg-white dark:bg-zinc-900/90 hover:border-slate-300 dark:hover:border-zinc-700 hover:bg-slate-50/70 dark:hover:bg-zinc-800 cursor-pointer"
                         }`}
                       >
                         <div className="flex items-center gap-3 min-w-0 flex-1">
                           {/* Checkbox */}
-                          <div className="shrink-0 text-slate-400">
+                          <div className="shrink-0 text-slate-400 dark:text-zinc-500">
                             {repo.alreadyMonitored ? (
-                              <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+                              <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
                             ) : isSelected ? (
-                              <CheckSquare className="h-4 w-4 text-blue-400" />
+                              <CheckSquare className="h-4 w-4 text-blue-600 dark:text-blue-400" />
                             ) : (
-                              <Square className="h-4 w-4 text-slate-500" />
+                              <Square className="h-4 w-4 text-slate-400 dark:text-zinc-500" />
                             )}
                           </div>
 
@@ -845,28 +733,28 @@ function RepositoriesContent() {
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-2 mb-0.5">
                               {repo.isPrivate ? (
-                                <Lock className="h-3 w-3 text-slate-500" />
+                                <Lock className="h-3 w-3 text-slate-400 dark:text-zinc-500" />
                               ) : (
-                                <Unlock className="h-3 w-3 text-slate-500" />
+                                <Unlock className="h-3 w-3 text-slate-400 dark:text-zinc-500" />
                               )}
-                              <span className="font-semibold text-xs text-slate-200 truncate">
+                              <span className="font-semibold text-xs text-slate-900 dark:text-zinc-100 truncate">
                                 {repo.fullName}
                               </span>
-                              <span className="text-[10px] text-slate-500 font-mono px-1.5 py-0.5 rounded bg-white/[0.04]">
+                              <span className="text-[10px] text-slate-600 dark:text-zinc-300 font-mono px-1.5 py-0.5 rounded bg-slate-100 dark:bg-zinc-800 border border-slate-200/80 dark:border-zinc-700">
                                 {repo.defaultBranch}
                               </span>
                               {repo.isPrivate ? (
-                                <span className="text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">
+                                <span className="text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-300 font-medium border border-slate-200/80 dark:border-zinc-700">
                                   Private
                                 </span>
                               ) : (
-                                <span className="text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400">
+                                <span className="text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 font-medium border border-blue-200 dark:border-blue-900/40">
                                   Public
                                 </span>
                               )}
                             </div>
                             {repo.description && (
-                              <p className="text-[11px] text-slate-400 truncate max-w-md">
+                              <p className="text-[11px] text-slate-500 dark:text-zinc-400 truncate max-w-md">
                                 {repo.description}
                               </p>
                             )}
@@ -876,7 +764,7 @@ function RepositoriesContent() {
                         {/* Action status */}
                         <div className="shrink-0">
                           {repo.alreadyMonitored ? (
-                            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2.5 py-0.5 text-[11px] font-medium text-emerald-400 border border-emerald-500/20">
+                            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 dark:bg-emerald-950/40 px-2.5 py-0.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/60">
                               <Check className="h-3 w-3" />
                               <span>Monitored</span>
                             </span>
@@ -888,7 +776,7 @@ function RepositoriesContent() {
                                 void handleAddSingleAvailableRepo(repo);
                               }}
                               disabled={bulkAddLoading}
-                              className="inline-flex items-center gap-1 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-500 transition-colors disabled:opacity-50 shadow-sm"
+                              className="inline-flex items-center gap-1 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-500 transition-colors disabled:opacity-50 shadow-xs"
                             >
                               <Plus className="h-3.5 w-3.5" />
                               <span>Add</span>
@@ -903,15 +791,15 @@ function RepositoriesContent() {
             </div>
 
             {/* Modal Footer */}
-            <div className="border-t border-white/[0.08] p-4 flex flex-col sm:flex-row items-center justify-between gap-3 bg-[#0a0e14]">
-              <div className="flex items-center gap-3 text-xs text-slate-400">
+            <div className="border-t border-slate-100 dark:border-zinc-800/80 p-4 flex flex-col sm:flex-row items-center justify-between gap-3 bg-slate-50/70 dark:bg-zinc-900/60">
+              <div className="flex items-center gap-3 text-xs text-slate-600 dark:text-zinc-400">
                 <span>
                   {selectedFullNames.size} {selectedFullNames.size === 1 ? "repository" : "repositories"} selected
                 </span>
                 <button
                   type="button"
                   onClick={() => setShowManualForm(!showManualForm)}
-                  className="text-xs text-blue-400 hover:underline"
+                  className="text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline"
                 >
                   {showManualForm ? "Hide manual entry" : "Enter name manually"}
                 </button>
@@ -921,7 +809,7 @@ function RepositoriesContent() {
                 <button
                   type="button"
                   onClick={() => setShowAddModal(false)}
-                  className="flex-1 sm:flex-none px-4 py-2 rounded-xl border border-white/[0.08] text-xs font-medium text-slate-300 hover:bg-white/[0.04] transition-colors"
+                  className="flex-1 sm:flex-none px-4 py-2 rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-xs font-medium text-slate-700 dark:text-zinc-300 hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors shadow-xs"
                 >
                   Cancel
                 </button>
@@ -929,7 +817,7 @@ function RepositoriesContent() {
                   type="button"
                   onClick={handleBulkAddSelected}
                   disabled={selectedFullNames.size === 0 || bulkAddLoading}
-                  className="flex-1 sm:flex-none flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-xs font-semibold text-white shadow-lg shadow-blue-600/30 hover:bg-blue-500 transition-all disabled:opacity-50"
+                  className="flex-1 sm:flex-none flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-xs font-semibold text-white shadow-xs hover:bg-blue-500 transition-all disabled:opacity-50"
                 >
                   {bulkAddLoading ? (
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -945,11 +833,11 @@ function RepositoriesContent() {
             {showManualForm && (
               <form
                 onSubmit={handleAddRepository}
-                className="border-t border-white/[0.08] p-4 bg-[#0d1117] space-y-3"
+                className="border-t border-slate-100 dark:border-zinc-800/80 p-4 bg-slate-50/50 dark:bg-zinc-900/50 space-y-3"
               >
                 <div className="grid sm:grid-cols-3 gap-3">
                   <div className="sm:col-span-2">
-                    <label htmlFor="new-repo-fullname-input" className="block text-[11px] text-slate-400 mb-1">
+                    <label htmlFor="new-repo-fullname-input" className="block text-[11px] font-medium text-slate-600 dark:text-zinc-400 mb-1">
                       Repository Full Name (owner/repo)
                     </label>
                     <input
@@ -959,35 +847,35 @@ function RepositoriesContent() {
                       value={newRepoFullName}
                       onChange={(e) => setNewRepoFullName(e.target.value)}
                       placeholder="e.g. organization/repository"
-                      className="w-full rounded-xl border border-white/[0.1] bg-white/[0.04] px-3 py-2 text-xs text-white placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
+                      className="w-full rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 py-2 text-xs text-slate-900 dark:text-zinc-100 placeholder:text-slate-400 dark:placeholder:text-zinc-500 focus:border-blue-500 focus:outline-none shadow-xs"
                     />
                   </div>
                   <div>
-                    <label htmlFor="new-repo-branch-input" className="block text-[11px] text-slate-400 mb-1">Branch</label>
+                    <label htmlFor="new-repo-branch-input" className="block text-[11px] font-medium text-slate-600 dark:text-zinc-400 mb-1">Branch</label>
                     <input
                       id="new-repo-branch-input"
                       type="text"
                       value={newRepoBranch}
                       onChange={(e) => setNewRepoBranch(e.target.value)}
                       placeholder="main"
-                      className="w-full rounded-xl border border-white/[0.1] bg-white/[0.04] px-3 py-2 text-xs text-white placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
+                      className="w-full rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 py-2 text-xs text-slate-900 dark:text-zinc-100 placeholder:text-slate-400 dark:placeholder:text-zinc-500 focus:border-blue-500 focus:outline-none shadow-xs"
                     />
                   </div>
                 </div>
                 <div className="flex items-center justify-between">
-                  <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
+                  <label className="flex items-center gap-2 text-xs text-slate-700 dark:text-zinc-300 cursor-pointer font-medium">
                     <input
                       type="checkbox"
                       checked={newRepoIsPrivate}
                       onChange={(e) => setNewRepoIsPrivate(e.target.checked)}
-                      className="rounded border-white/20 bg-white/5 text-blue-600"
+                      className="rounded border-slate-300 dark:border-zinc-700 text-blue-600 focus:ring-blue-500 bg-white dark:bg-zinc-900"
                     />
                     <span>Private Repository</span>
                   </label>
                   <button
                     type="submit"
                     disabled={addLoading}
-                    className="flex items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2 text-xs font-semibold text-white hover:bg-blue-500 transition-colors disabled:opacity-50"
+                    className="flex items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2 text-xs font-semibold text-white hover:bg-blue-500 transition-colors disabled:opacity-50 shadow-xs"
                   >
                     {addLoading ? (
                       <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -1003,10 +891,10 @@ function RepositoriesContent() {
         </div>
       )}
 
-      {/* ─── Repositories Grid ───────────────────────────────────────────── */}
-      <div>
+      {/* ─── Repositories Grid Container ─────────────────────────────────── */}
+      <div className="rounded-2xl border border-slate-200/80 dark:border-zinc-800/80 bg-[#EDE9E6] dark:bg-zinc-950/60 p-5 sm:p-6 shadow-xs min-h-[calc(100vh-15rem)] flex flex-col">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-sm font-semibold text-slate-200">
+          <h2 className="text-sm font-semibold text-[#281C59] dark:text-zinc-200">
             {filterTab === "all"
               ? `All Repositories (${filteredRepos.length})`
               : filterTab === "monitored"
@@ -1015,7 +903,7 @@ function RepositoriesContent() {
           </h2>
           <button
             onClick={() => void handleRefresh()}
-            className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-white transition-colors"
+            className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-zinc-400 hover:text-[#281C59] dark:hover:text-zinc-200 transition-colors"
           >
             <RefreshCcw className="h-3 w-3" />
             <span>Refresh</span>
@@ -1023,30 +911,18 @@ function RepositoriesContent() {
         </div>
 
         {filteredRepos.length === 0 ? (
-          <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-10 text-center">
-            <GitBranch className="h-8 w-8 text-slate-600 mx-auto mb-2.5" />
-            <h3 className="text-sm font-semibold text-slate-300">No repositories found</h3>
-            <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
-              Add a repository manually above or install the Secura GitHub App to sync all your organization repos.
+          <div className="rounded-xl border border-slate-200/80 dark:border-zinc-800/80 bg-white/90 dark:bg-zinc-950/90 p-12 text-center shadow-xs my-auto">
+            <GitBranch className="h-8 w-8 text-slate-400 dark:text-zinc-600 mx-auto mb-2.5" />
+            <h3 className="text-sm font-semibold text-slate-800 dark:text-zinc-200">No repositories found</h3>
+            <p className="text-xs text-slate-500 dark:text-zinc-400 mt-1 max-w-sm mx-auto">
+              Add a repository manually above or install the Secura GitHub App to monitor pull requests and scan for vulnerabilities.
             </p>
             <div className="flex flex-wrap items-center justify-center gap-3 mt-4">
-              <button
-                onClick={handleSync}
-                disabled={syncLoading}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-blue-500/40 bg-blue-500/15 px-4 py-2 text-xs font-semibold text-blue-300 hover:bg-blue-500/25 transition-all disabled:opacity-50"
-              >
-                {syncLoading ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <RefreshCcw className="h-3.5 w-3.5" />
-                )}
-                <span>Sync Allowed Repositories from GitHub</span>
-              </button>
               <a
                 href={githubConfigureUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2 text-xs font-semibold text-white shadow-md shadow-blue-600/30 hover:bg-blue-500 transition-all"
+                className="inline-flex items-center gap-1.5 rounded-xl bg-[#281C59] px-4 py-2 text-xs font-semibold text-white shadow-xs hover:bg-[#281C59]/90 transition-all"
               >
                 <span>Configure on GitHub</span>
                 <ExternalLink className="h-3 w-3" />
@@ -1059,13 +935,59 @@ function RepositoriesContent() {
               <RepoCard
                 key={repo.id}
                 repo={repo}
-                onToggleMonitoring={handleToggleMonitoring}
-                onRemove={handleRemove}
+                onRequestDelete={(r) => setRepoToDelete(r)}
               />
             ))}
           </div>
         )}
       </div>
+
+      {/* ─── Delete Repository Confirmation Modal ────────────────────────── */}
+      {repoToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 dark:bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="relative w-full max-w-md rounded-2xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-6 shadow-2xl space-y-4 text-slate-900 dark:text-zinc-100">
+            <div className="flex items-start gap-3.5">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-rose-100 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-900/60 text-rose-600 dark:text-rose-400">
+                <Trash2 className="h-5 w-5" />
+              </div>
+              <div className="min-w-0">
+                <h3 className="text-base font-bold text-slate-900 dark:text-zinc-100">
+                  Delete Repository
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-zinc-400 mt-1 leading-relaxed">
+                  Are you sure you want to delete <strong className="text-slate-800 dark:text-zinc-200 font-semibold">{repoToDelete.fullName}</strong>?
+                  This will remove the repository container, pull request security monitoring, and all associated findings from Secura.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100 dark:border-zinc-800/80">
+              <button
+                type="button"
+                onClick={() => setRepoToDelete(null)}
+                suppressHydrationWarning
+                className="rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-2 text-xs font-semibold text-slate-700 dark:text-zinc-300 hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors shadow-xs"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={deleteLoading}
+                onClick={handleConfirmDelete}
+                suppressHydrationWarning
+                className="flex items-center gap-1.5 rounded-xl bg-rose-600 px-4 py-2 text-xs font-semibold text-white shadow-xs hover:bg-rose-500 transition-all disabled:opacity-50"
+              >
+                {deleteLoading ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Trash2 className="h-3.5 w-3.5" />
+                )}
+                <span>Delete</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1074,8 +996,8 @@ export default function RepositoriesPage() {
   return (
     <Suspense
       fallback={
-        <div className="flex flex-col items-center justify-center py-20 text-slate-500 gap-2">
-          <Loader2 className="h-6 w-6 animate-spin text-blue-400" />
+        <div className="flex flex-col items-center justify-center py-20 text-slate-500 gap-3">
+          <Loader />
           <span className="text-xs">Loading repositories...</span>
         </div>
       }

@@ -38,13 +38,13 @@ function ChartTooltip({
 }) {
   if (!active || !payload?.length) return null;
   return (
-    <div className="rounded-lg border border-white/[0.08] bg-[#0d1117] px-3 py-2 text-xs shadow-xl">
-      <p className="mb-1.5 font-medium text-slate-300">{label}</p>
+    <div className="rounded-xl border border-slate-200 bg-white/95 px-3 py-2 text-xs shadow-xl backdrop-blur-xl dark:border-zinc-800 dark:bg-zinc-950/95">
+      <p className="mb-1.5 font-semibold text-slate-800 dark:text-zinc-100">{label}</p>
       {payload.map((p) => (
         <div key={p.name} className="flex items-center gap-2">
           <span className="h-2 w-2 rounded-full" style={{ background: p.color }} />
-          <span className="text-slate-400 capitalize">{p.name}:</span>
-          <span className="text-slate-200">{p.value}</span>
+          <span className="text-slate-500 dark:text-zinc-400 capitalize">{p.name}:</span>
+          <span className="text-slate-900 dark:text-zinc-100 font-medium">{p.value}</span>
         </div>
       ))}
     </div>
@@ -87,14 +87,14 @@ export default function InsightsPage() {
         <Card>
           <CardHeader>
             <CardTitle>Security posture score</CardTitle>
-            <span className="text-xs text-slate-500">Real-time calculated score</span>
+            <span className="text-xs text-slate-500 dark:text-zinc-400">Real-time calculated score</span>
           </CardHeader>
           <CardContent>
-            <p className={`text-4xl font-bold ${securityScore >= 80 ? "text-emerald-400" : securityScore >= 50 ? "text-yellow-400" : "text-red-400"}`}>
+            <p className={`text-4xl font-bold ${securityScore >= 80 ? "text-emerald-600 dark:text-emerald-400" : securityScore >= 50 ? "text-amber-600 dark:text-amber-400" : "text-rose-600 dark:text-rose-400"}`}>
               {securityScore}
-              <span className="text-lg text-slate-500">/100</span>
+              <span className="text-lg text-slate-500 dark:text-zinc-400">/100</span>
             </p>
-            <p className="text-xs text-slate-500 mt-1">
+            <p className="text-xs text-slate-500 dark:text-zinc-400 mt-1">
               Score = 100 − (30×critical + 20×high + 10×medium + 5×low).
             </p>
           </CardContent>
@@ -104,11 +104,11 @@ export default function InsightsPage() {
             <CardTitle>Active Open Findings</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-4xl font-bold text-slate-100">
+            <p className="text-4xl font-bold text-slate-900 dark:text-zinc-100">
               {findingsBySeverity.reduce((acc, curr) => acc + curr.count, 0)}
-              <span className="text-lg text-slate-500"> total</span>
+              <span className="text-lg text-slate-500 dark:text-zinc-400"> total</span>
             </p>
-            <p className="text-xs text-slate-500 mt-1">
+            <p className="text-xs text-slate-500 dark:text-zinc-400 mt-1">
               Across all monitored repositories
             </p>
           </CardContent>
@@ -118,10 +118,10 @@ export default function InsightsPage() {
             <CardTitle>Top finding type</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-xl font-semibold text-slate-100">
+            <p className="text-xl font-semibold text-slate-900 dark:text-zinc-100">
               {topFindingTypes[0]?.type ?? "None"}
             </p>
-            <p className="text-sm text-slate-400 mt-1">
+            <p className="text-sm text-slate-500 dark:text-zinc-400 mt-1">
               {topFindingTypes[0]?.count ?? 0} occurrences
             </p>
           </CardContent>
@@ -136,8 +136,8 @@ export default function InsightsPage() {
           </CardHeader>
           <CardContent>
             {findingsBySeverity.length === 0 ? (
-              <div className="flex h-[220px] flex-col items-center justify-center text-xs text-slate-500">
-                <ShieldCheck className="h-8 w-8 text-emerald-500 mb-2" />
+              <div className="flex h-[220px] flex-col items-center justify-center text-xs text-slate-500 dark:text-zinc-400">
+                <ShieldCheck className="h-8 w-8 text-emerald-600 dark:text-emerald-400 mb-2" />
                 <span>No active findings across repositories</span>
               </div>
             ) : (
@@ -157,7 +157,7 @@ export default function InsightsPage() {
                     ))}
                   </Pie>
                   <Tooltip content={<ChartTooltip />} />
-                  <Legend formatter={(v) => <span className="text-xs text-slate-400">{v}</span>} />
+                  <Legend formatter={(v) => <span className="text-xs text-slate-600 dark:text-zinc-300 font-medium">{v}</span>} />
                 </PieChart>
               </ResponsiveContainer>
             )}
@@ -171,8 +171,8 @@ export default function InsightsPage() {
           </CardHeader>
           <CardContent>
             {findingsByRepository.length === 0 ? (
-              <div className="flex h-[220px] flex-col items-center justify-center text-xs text-slate-500">
-                <CheckCircle2 className="h-8 w-8 text-emerald-500 mb-2" />
+              <div className="flex h-[220px] flex-col items-center justify-center text-xs text-slate-500 dark:text-zinc-400">
+                <CheckCircle2 className="h-8 w-8 text-emerald-600 dark:text-emerald-400 mb-2" />
                 <span>All connected repositories are clean</span>
               </div>
             ) : (
@@ -194,12 +194,12 @@ export default function InsightsPage() {
       <Card>
         <CardHeader>
           <CardTitle>Findings over time</CardTitle>
-          <span className="text-xs text-slate-500">Trend & Resolution History</span>
+          <span className="text-xs text-slate-500 dark:text-zinc-400">Trend & Resolution History</span>
         </CardHeader>
         <CardContent>
           {findingsOverTime.length === 0 ? (
-            <div className="flex h-[200px] flex-col items-center justify-center text-xs text-slate-500">
-              <CheckCircle2 className="h-6 w-6 text-emerald-500 mb-2" />
+            <div className="flex h-[200px] flex-col items-center justify-center text-xs text-slate-500 dark:text-zinc-400">
+              <CheckCircle2 className="h-6 w-6 text-emerald-600 dark:text-emerald-400 mb-2" />
               <span>No historical finding trend available yet</span>
             </div>
           ) : (
@@ -248,12 +248,12 @@ export default function InsightsPage() {
                 return (
                   <div key={item.type}>
                     <div className="flex justify-between text-xs mb-1">
-                      <span className="text-slate-300">{item.type}</span>
-                      <span className="text-slate-500">{item.count}</span>
+                      <span className="text-slate-800 dark:text-zinc-200 font-medium">{item.type}</span>
+                      <span className="text-slate-500 dark:text-zinc-400">{item.count}</span>
                     </div>
-                    <div className="h-1.5 rounded-full bg-white/[0.05]">
+                    <div className="h-1.5 rounded-full bg-slate-100 dark:bg-zinc-800 border border-slate-200/60 dark:border-zinc-700/60 overflow-hidden">
                       <div
-                        className="h-full rounded-full bg-blue-500/60"
+                        className="h-full rounded-full bg-blue-600"
                         style={{ width: `${pct}%` }}
                       />
                     </div>
