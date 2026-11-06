@@ -249,7 +249,6 @@ def get_me(current_user: User = Depends(get_current_user), db: Session = Depends
             db.rollback()
 
     return UserResponse.model_validate(current_user)
-    return UserResponse.model_validate(current_user)
 
 
 @router.patch("/me", response_model=UserResponse)

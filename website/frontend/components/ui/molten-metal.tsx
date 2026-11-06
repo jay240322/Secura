@@ -193,7 +193,7 @@ const parseColor = (value: string, fallback: [number, number, number] | null): [
   probe.fillStyle = value;
   const text = probe.fillStyle;
   if (text.startsWith('#')) {
-    const hex = parseInt(text.slice(1), 16);
+    const hex = Number.parseInt(text.slice(1), 16);
     return [((hex >> 16) & 255) / 255, ((hex >> 8) & 255) / 255, (hex & 255) / 255];
   }
   const match = /rgba?\(([\d.]+),\s*([\d.]+),\s*([\d.]+)(?:,\s*([\d.]+))?/.exec(text);

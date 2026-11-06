@@ -626,11 +626,14 @@ export default function SettingsPage() {
           role="dialog"
           aria-modal="true"
           className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-150"
-          onClick={() => setShowLogoutModal(false)}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setShowLogoutModal(false);
+            }
+          }}
         >
           <div
             className="relative w-full max-w-sm rounded-2xl border border-slate-200/90 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-6 shadow-2xl animate-in zoom-in-95 duration-150"
-            onClick={(e) => e.stopPropagation()}
           >
             {/* Warning Icon Badge */}
             <div className="mx-auto mb-3.5 flex h-12 w-12 items-center justify-center rounded-2xl bg-rose-50 text-rose-600 dark:bg-rose-950/40 dark:text-rose-400 border border-rose-100 dark:border-rose-900/40 shadow-xs">

@@ -749,7 +749,7 @@ export function ContextGraphSection() {
                       {activeStep.diff.lines.map((line, lIdx) => {
                         const renderHighlighted = (raw: string) => {
                           const segments = raw.split(
-                            /(\b(?:export|const|await|return|new|true|false|Status|Merge|FAILED|PASSED)\b|'[^']*'|"[^"]*"|\/\/.*$)/g
+                            /(\b(?:export|const|await|return|new|true|false|Status|Merge|FAILED|PASSED)\b|'[^'\r\n]*'|"[^"\r\n]*"|\/\/[^\r\n]*)/g
                           );
                           return segments.map((t, idx) => {
                             if (t.startsWith("//")) {

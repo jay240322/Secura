@@ -268,11 +268,11 @@ textarea {
 
 @keyframes pingPulse {
   0% {
-    r: 2;
+    transform: scale(0.2);
     opacity: 1;
   }
   100% {
-    r: 16;
+    transform: scale(1.6);
     opacity: 0;
   }
 }

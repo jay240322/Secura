@@ -441,12 +441,13 @@ export function CodeRabbitAuth({ initialMode = "login" }: CodeRabbitAuthProps) {
             <form onSubmit={handleEmailAuth} className="space-y-3.5 animate-in fade-in duration-150">
               {mode === "signup" && (
                 <div>
-                  <label className="block text-[11px] font-medium mb-1 text-slate-700 dark:text-zinc-300">
+                  <label htmlFor="auth-fullname" className="block text-[11px] font-medium mb-1 text-slate-700 dark:text-zinc-300">
                     Full Name
                   </label>
                   <div className="relative">
                     <User className="absolute left-3 top-2.5 h-3.5 w-3.5 text-slate-400 dark:text-zinc-500" />
                     <input
+                      id="auth-fullname"
                       type="text"
                       required
                       value={name}
@@ -459,12 +460,13 @@ export function CodeRabbitAuth({ initialMode = "login" }: CodeRabbitAuthProps) {
               )}
 
               <div>
-                <label className="block text-[11px] font-medium mb-1 text-slate-700 dark:text-zinc-300">
+                <label htmlFor="auth-email" className="block text-[11px] font-medium mb-1 text-slate-700 dark:text-zinc-300">
                   Work Email
                 </label>
                 <div className="relative">
                   <Mail className="absolute left-3 top-2.5 h-3.5 w-3.5 text-slate-400 dark:text-zinc-500" />
                   <input
+                    id="auth-email"
                     type="email"
                     required
                     value={email}
@@ -476,12 +478,13 @@ export function CodeRabbitAuth({ initialMode = "login" }: CodeRabbitAuthProps) {
               </div>
 
               <div>
-                <label className="block text-[11px] font-medium mb-1 text-slate-700 dark:text-zinc-300">
+                <label htmlFor="auth-password" className="block text-[11px] font-medium mb-1 text-slate-700 dark:text-zinc-300">
                   Password
                 </label>
                 <div className="relative">
                   <Lock className="absolute left-3 top-2.5 h-3.5 w-3.5 text-slate-400 dark:text-zinc-500" />
                   <input
+                    id="auth-password"
                     type={showPassword ? "text" : "password"}
                     required
                     value={password}
