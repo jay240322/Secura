@@ -227,6 +227,7 @@ function RepositoryDetailContent() {
   const openFindings = findings.filter((f) => f.status === "open");
   const criticalFindings = openFindings.filter((f) => f.severity === "CRITICAL");
   const highFindings = openFindings.filter((f) => f.severity === "HIGH");
+  const solvedFindings = findings.filter((f) => f.status === "resolved" || f.status === "solved");
 
   return (
     <div className="relative">
@@ -406,7 +407,6 @@ function RepositoryDetailContent() {
                       <span>Public</span>
                     </span>
                   )}
-                  <StatusBadge status={repo.lastScanStatus} />
                 </div>
 
                 <h1 className="text-xl sm:text-2xl font-bold text-[#281C59] dark:text-zinc-100 truncate">
@@ -520,7 +520,10 @@ function RepositoryDetailContent() {
                 <div>
                   <CardTitle className="text-sm font-semibold flex items-center gap-2 text-slate-900 dark:text-zinc-100">
                     <ShieldAlert className="h-4 w-4 text-orange-500" />
-                    <span>Security Findings in {repo.fullName} ({openFindings.length} open)</span>
+                    <span>
+                      Security Findings in {repo.fullName} ({openFindings.length} open
+                      {solvedFindings.length > 0 ? ` · ${solvedFindings.length} solved` : ""})
+                    </span>
                   </CardTitle>
                   <p className="text-xs text-slate-500 dark:text-zinc-400 mt-0.5">
                     Catalog of detected vulnerabilities across all scans for this repository.
@@ -535,17 +538,17 @@ function RepositoryDetailContent() {
                 </Link>
               </CardHeader>
               <CardContent className="pt-2">
-                {openFindings.length === 0 ? (
+                {findings.length === 0 ? (
                   <div className="py-12 text-center text-slate-500 dark:text-zinc-400 flex flex-col items-center">
                     <ShieldCheck className="h-10 w-10 mb-2 text-emerald-600 dark:text-emerald-400" />
-                    <p className="text-sm font-semibold text-slate-900 dark:text-zinc-100">Zero Open Vulnerabilities</p>
+                    <p className="text-sm font-semibold text-slate-900 dark:text-zinc-100">Zero Security Vulnerabilities</p>
                     <p className="text-xs text-slate-500 dark:text-zinc-400 mt-1">
                       All scanned code and pull requests for {repo.name} are clean. No exposed credentials detected.
                     </p>
                   </div>
                 ) : (
                   <div className="divide-y divide-slate-100 dark:divide-zinc-800/80">
-                    {openFindings.map((finding) => (
+                    {findings.map((finding) => (
                       <Link
                         key={finding.id}
                         href={`/findings/${finding.id}`}

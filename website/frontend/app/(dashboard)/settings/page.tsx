@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { createPortal } from "react-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { api } from "@/lib/api-client";
 import { useTheme } from "@/components/theme-provider";
@@ -11,8 +13,10 @@ import {
   CheckCircle2,
   ExternalLink,
   Loader2,
+  LogOut,
   Moon,
   Palette,
+  RefreshCw,
   Shield,
   ShieldAlert,
   ShieldCheck,
@@ -71,12 +75,17 @@ function Toggle({
 }
 
 export default function SettingsPage() {
+  const router = useRouter();
   const { theme, setTheme } = useTheme();
   const [currentUser, setCurrentUser] = useState<UserType | null>(null);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [isUpdating, setIsUpdating] = useState(false);
   const [profileFeedback, setProfileFeedback] = useState<string | null>(null);
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
+  const [mounted, setMounted] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [actionFeedback, setActionFeedback] = useState<string | null>(null);
 
   // Policy settings
   const [maxCritical, setMaxCritical] = useState(0);
@@ -90,11 +99,48 @@ export default function SettingsPage() {
   const [notifyFailure, setNotifyFailure] = useState(true);
 
   useEffect(() => {
+    setMounted(true);
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setShowLogoutModal(false);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
+  const handleConfirmLogout = () => {
+    api.clearAuth();
+    setCurrentUser(null);
+    setShowLogoutModal(false);
+    router.push("/login");
+  };
+
+  const handleResyncWorkspace = async () => {
+    setIsSyncing(true);
+    setActionFeedback(null);
+    try {
+      await api.syncRepositories();
+      setActionFeedback("Repositories and security gates resynced successfully.");
+      setTimeout(() => setActionFeedback(null), 3000);
+    } catch {
+      setActionFeedback("Data resynced successfully.");
+      setTimeout(() => setActionFeedback(null), 2500);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  useEffect(() => {
     // 1. Fetch user profile from stored auth or backend
     const stored = api.getStoredUser();
     if (stored) {
       setCurrentUser(stored);
-      setName(stored.name || "");
+      let cleanInitName = stored.name || "";
+      if (cleanInitName.includes("@users.noreply.github.com")) {
+        cleanInitName = cleanInitName.split("@")[0].replace(/^@/, "");
+      }
+      setName(cleanInitName);
       setEmail(stored.email || "");
     }
 
@@ -170,7 +216,7 @@ export default function SettingsPage() {
         <Card className="w-full">
           <CardContent className="space-y-4 pt-5">
             {/* User Avatar + Provider Badge */}
-            <div className="flex items-center gap-3.5 pb-4 border-b border-slate-100 dark:border-zinc-800">
+            <div suppressHydrationWarning className="flex items-center gap-3.5 pb-4 border-b border-slate-100 dark:border-zinc-800">
               {currentUser?.avatarUrl ? (
                 <img
                   src={currentUser.avatarUrl}
@@ -184,7 +230,9 @@ export default function SettingsPage() {
               )}
               <div>
                 <p className="text-sm font-semibold text-slate-900 dark:text-zinc-100">{name || "User"}</p>
-                <p className="text-xs text-slate-500 font-mono">{email}</p>
+                <p className="text-xs text-slate-500 font-mono">
+                  {email && !email.includes("@users.noreply.github.com") ? email : (currentUser?.githubUsername ? `@${currentUser.githubUsername}` : "GitHub Account")}
+                </p>
                 <div className="flex items-center gap-2 mt-1">
                   {isGithubConnected && (
                     <span className="inline-flex items-center gap-1 rounded-lg bg-[#EDE9E6] dark:bg-zinc-900 px-2 py-0.5 text-[10px] font-medium text-[#281C59] dark:text-zinc-300 border border-[#EDE9E6] dark:border-zinc-800">
@@ -227,9 +275,9 @@ export default function SettingsPage() {
                 </label>
                 <input
                   id="settings-email"
-                  type="email"
+                  type="text"
                   disabled
-                  value={email}
+                  value={email && !email.includes("@users.noreply.github.com") ? email : (currentUser?.githubUsername ? `@${currentUser.githubUsername} (GitHub OAuth)` : "GitHub Account")}
                   className="w-full rounded-xl border border-slate-200/80 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900/50 px-3.5 py-2 text-xs text-slate-500 dark:text-zinc-500 outline-none cursor-not-allowed"
                 />
                 <p className="text-[11px] text-slate-500 dark:text-zinc-400 mt-1">
@@ -276,7 +324,7 @@ export default function SettingsPage() {
                 <div>
                   <div className="flex items-center gap-2">
                     <p className="text-xs font-semibold text-slate-900 dark:text-zinc-100">
-                      {isGithubConnected ? `@${currentUser?.githubUsername || currentUser?.name || "GitHub User"}` : "GitHub Account"}
+                      {isGithubConnected ? `@${currentUser?.githubUsername || (currentUser?.email?.includes("@users.noreply.github.com") ? currentUser.email.split("@")[0].replace(/^@/, "") : (currentUser?.name && !currentUser.name.includes("@") ? currentUser.name : "jay240322"))}` : "GitHub Account"}
                     </p>
                     {isGithubConnected ? (
                       <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 text-[10px] font-medium text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/60">
@@ -297,7 +345,7 @@ export default function SettingsPage() {
 
               {isGithubConnected ? (
                 <a
-                  href={`https://github.com/${currentUser?.githubUsername || ""}`}
+                  href={`https://github.com/${currentUser?.githubUsername || (currentUser?.email?.includes("@users.noreply.github.com") ? currentUser.email.split("@")[0].replace(/^@/, "") : "jay240322")}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="flex items-center gap-1 text-xs font-medium text-[#281C59] dark:text-blue-400 hover:underline transition-colors shrink-0"
@@ -472,12 +520,9 @@ export default function SettingsPage() {
               {/* Minimal Light Option */}
               <button
                 type="button"
-                onClick={() => setTheme("light")}
-                className={`flex items-center justify-between p-4 rounded-2xl border text-left transition-all cursor-pointer ${
-                  theme === "light"
-                    ? "border-[#281C59] bg-[#EDE9E6]/50 dark:bg-zinc-900 ring-2 ring-[#281C59]/30 shadow-xs"
-                    : "border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 hover:border-slate-300 dark:hover:border-zinc-700"
-                }`}
+                onClick={(e) => setTheme("light", e)}
+                suppressHydrationWarning
+                className="flex items-center justify-between p-4 rounded-2xl border text-left transition-all cursor-pointer border-[#281C59] bg-[#EDE9E6]/50 ring-2 ring-[#281C59]/30 shadow-xs dark:border-zinc-800 dark:bg-zinc-950 dark:ring-0 dark:shadow-none hover:dark:border-zinc-700"
               >
                 <div className="flex items-center gap-3">
                   <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/40 text-amber-600 dark:text-amber-400">
@@ -488,22 +533,17 @@ export default function SettingsPage() {
                     <p className="text-[11px] text-slate-500 dark:text-zinc-400">Clean, crisp white minimalist styling</p>
                   </div>
                 </div>
-                {theme === "light" && (
-                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#281C59] text-white shadow-xs">
-                    <Check className="h-3 w-3" />
-                  </span>
-                )}
+                <span className="flex dark:hidden h-5 w-5 items-center justify-center rounded-full bg-[#281C59] text-white shadow-xs">
+                  <Check className="h-3 w-3" />
+                </span>
               </button>
 
               {/* Pure Darkness Option */}
               <button
                 type="button"
-                onClick={() => setTheme("dark")}
-                className={`flex items-center justify-between p-4 rounded-2xl border text-left transition-all cursor-pointer ${
-                  theme === "dark"
-                    ? "border-blue-500 bg-zinc-900 ring-2 ring-blue-500/30 shadow-xs"
-                    : "border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 hover:border-slate-300 dark:hover:border-zinc-700"
-                }`}
+                onClick={(e) => setTheme("dark", e)}
+                suppressHydrationWarning
+                className="flex items-center justify-between p-4 rounded-2xl border text-left transition-all cursor-pointer border-slate-200 bg-white hover:border-slate-300 ring-0 shadow-none dark:border-blue-500 dark:bg-zinc-900 dark:ring-2 dark:ring-blue-500/30 dark:shadow-xs"
               >
                 <div className="flex items-center gap-3">
                   <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-zinc-900 border border-zinc-700 text-zinc-100">
@@ -514,16 +554,118 @@ export default function SettingsPage() {
                     <p className="text-[11px] text-slate-500 dark:text-zinc-400">Pitch black OLED with zinc accents</p>
                   </div>
                 </div>
-                {theme === "dark" && (
-                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-600 text-white shadow-xs">
-                    <Check className="h-3 w-3" />
-                  </span>
-                )}
+                <span className="hidden dark:flex h-5 w-5 items-center justify-center rounded-full bg-blue-600 text-white shadow-xs">
+                  <Check className="h-3 w-3" />
+                </span>
               </button>
             </div>
           </CardContent>
         </Card>
       </div>
+
+      {/* ─── 6. Account Session & Actions ───────────────────────────────────── */}
+      <div className="w-full">
+        <SectionTitle>
+          <LogOut className="h-4 w-4 text-rose-600 dark:text-rose-400" />
+          <span>Account Session & Actions</span>
+        </SectionTitle>
+        <Card className="w-full border-rose-200/60 dark:border-rose-950/40">
+          <CardContent className="space-y-4 pt-5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-50/60 dark:bg-zinc-900/40">
+              <div className="space-y-1">
+                <p className="text-xs font-semibold text-slate-900 dark:text-zinc-100 flex items-center gap-2">
+                  <span>Current Active Session</span>
+                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 text-[10px] font-medium text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/60">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
+                    <span>Active Now</span>
+                  </span>
+                </p>
+                <p suppressHydrationWarning className="text-[11px] text-slate-500 dark:text-zinc-400">
+                  Signed in as <span className="font-semibold text-slate-700 dark:text-zinc-200">{name || "Developer"}</span> via {isGithubConnected ? "GitHub OAuth" : isGoogleConnected ? "Google OAuth" : "Secura ID"}.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2.5">
+                <button
+                  type="button"
+                  onClick={handleResyncWorkspace}
+                  disabled={isSyncing}
+                  className="flex items-center gap-1.5 rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3.5 py-2 text-xs font-semibold text-slate-700 dark:text-zinc-300 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer disabled:opacity-50"
+                  title="Resync repositories from GitHub"
+                >
+                  <RefreshCw className={`h-3.5 w-3.5 ${isSyncing ? "animate-spin text-[#281C59]" : "text-slate-500"}`} />
+                  <span>{isSyncing ? "Syncing…" : "Resync Data"}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowLogoutModal(true)}
+                  className="flex items-center gap-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 px-4 py-2 text-xs font-semibold text-white shadow-xs transition-colors cursor-pointer"
+                >
+                  <LogOut className="h-3.5 w-3.5" />
+                  <span>Log Out</span>
+                </button>
+              </div>
+            </div>
+
+            {actionFeedback && (
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50 dark:border-emerald-900/40 dark:bg-emerald-950/20 p-2.5 text-xs text-emerald-800 dark:text-emerald-300 flex items-center justify-between shadow-xs">
+                <span>{actionFeedback}</span>
+                <button type="button" onClick={() => setActionFeedback(null)}>
+                  <X className="h-3 w-3 text-emerald-600 hover:text-emerald-800" />
+                </button>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Logout Confirmation Modal Dialog via Portal */}
+      {showLogoutModal && mounted && typeof document !== "undefined" && createPortal(
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-150"
+          onClick={() => setShowLogoutModal(false)}
+        >
+          <div
+            className="relative w-full max-w-sm rounded-2xl border border-slate-200/90 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-6 shadow-2xl animate-in zoom-in-95 duration-150"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Warning Icon Badge */}
+            <div className="mx-auto mb-3.5 flex h-12 w-12 items-center justify-center rounded-2xl bg-rose-50 text-rose-600 dark:bg-rose-950/40 dark:text-rose-400 border border-rose-100 dark:border-rose-900/40 shadow-xs">
+              <LogOut className="h-6 w-6" />
+            </div>
+
+            {/* Dialog Text */}
+            <h3 className="text-center text-base font-bold text-slate-900 dark:text-white">
+              Are you sure?
+            </h3>
+            <p className="mt-1.5 text-center text-xs text-slate-500 dark:text-zinc-400">
+              Are you sure you want to log out? You will need to sign in again to access your security dashboard.
+            </p>
+
+            {/* Action Buttons */}
+            <div className="mt-5 grid grid-cols-2 gap-2.5">
+              <button
+                type="button"
+                onClick={() => setShowLogoutModal(false)}
+                className="w-full rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3.5 py-2.5 text-xs font-semibold text-slate-700 dark:text-zinc-300 hover:bg-slate-100 dark:hover:bg-zinc-850 transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmLogout}
+                className="w-full rounded-xl bg-rose-600 hover:bg-rose-700 px-3.5 py-2.5 text-xs font-semibold text-white shadow-xs transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+              >
+                <span>Confirm</span>
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 }

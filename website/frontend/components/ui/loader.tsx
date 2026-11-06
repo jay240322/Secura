@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
+import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 
 // ─── Custom 3-Bar Jumping Loader Component (From Uiverse.io by Donewenfu) ───────
@@ -15,9 +15,9 @@ export function Loader({
     size === "sm" ? "scale-75" : size === "lg" ? "scale-125" : "scale-100";
 
   return (
-    <div className={`relative inline-flex items-center justify-center w-[80px] h-[60px] ${scale} ${className}`}>
+    <div className={`relative inline-flex items-center justify-center w-[120px] h-[80px] overflow-visible ${scale} ${className}`}>
       <div className="loader">
-        <div className="justify-content-center jimu-primary-loading" />
+        <div className="jimu-primary-loading" />
       </div>
     </div>
   );
@@ -44,8 +44,10 @@ export function GlobalLoaderProvider({ children }: { children: React.ReactNode }
   const [isLoading, setIsLoading] = useState(false);
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const loadStartTimeRef = useRef<number>(0);
 
   const showLoader = useCallback((durationMs?: number) => {
+    loadStartTimeRef.current = Date.now();
     setIsLoading(true);
     if (durationMs) {
       setTimeout(() => {
@@ -58,14 +60,20 @@ export function GlobalLoaderProvider({ children }: { children: React.ReactNode }
     setIsLoading(false);
   }, []);
 
-  // When pathname or search params change, hide the navigation loader smoothly
+  // When pathname or search params change, hide the navigation loader after ensuring minimum display time
   useEffect(() => {
-    setIsLoading(false);
+    const elapsed = Date.now() - loadStartTimeRef.current;
+    const remainingTime = Math.max(0, 250 - elapsed);
+
+    const timer = setTimeout(() => {
+      setIsLoading(false);
+    }, remainingTime);
+
+    return () => clearTimeout(timer);
   }, [pathname, searchParams]);
 
   // Page Navigation Listener: Only triggers when the user clicks a link that navigates to ANOTHER page
   useEffect(() => {
-    let timeoutId: NodeJS.Timeout | null = null;
     let safetyTimer: NodeJS.Timeout | null = null;
 
     const handleClick = (e: MouseEvent) => {
@@ -99,17 +107,14 @@ export function GlobalLoaderProvider({ children }: { children: React.ReactNode }
 
           // Only show loader when user goes to another page!
           if (isDifferentPath || isDifferentSearch) {
-            // Delay slightly so Next.js Link onClick handles client routing first
-            if (timeoutId) clearTimeout(timeoutId);
-            timeoutId = setTimeout(() => {
-              setIsLoading(true);
-            }, 60);
+            loadStartTimeRef.current = Date.now();
+            setIsLoading(true);
 
             // Safety fallback timeout in case route transition is slow or aborted
             if (safetyTimer) clearTimeout(safetyTimer);
             safetyTimer = setTimeout(() => {
               setIsLoading(false);
-            }, 6000);
+            }, 5000);
           }
         }
       } catch {
@@ -117,11 +122,9 @@ export function GlobalLoaderProvider({ children }: { children: React.ReactNode }
       }
     };
 
-    // Standard event bubbling (no capture) so Next.js Link receives and processes the click
     document.addEventListener("click", handleClick);
     return () => {
       document.removeEventListener("click", handleClick);
-      if (timeoutId) clearTimeout(timeoutId);
       if (safetyTimer) clearTimeout(safetyTimer);
     };
   }, []);
@@ -134,13 +137,16 @@ export function GlobalLoaderProvider({ children }: { children: React.ReactNode }
         <div
           role="status"
           aria-label="Loading page..."
-          className="fixed inset-0 z-[99999] pointer-events-none w-screen h-screen flex items-center justify-center bg-white/70 dark:bg-black/75 backdrop-blur-[6px] animate-in fade-in duration-150 select-none"
+          className="fixed inset-0 z-[99999] pointer-events-none w-screen h-screen flex flex-col items-center justify-center bg-white/70 dark:bg-black/75 backdrop-blur-[6px] animate-in fade-in duration-150 select-none"
         >
-          <div className="relative w-[120px] h-[80px] flex items-center justify-center">
+          <div className="relative w-36 h-28 flex items-center justify-center overflow-visible">
             <div className="loader">
-              <div className="justify-content-center jimu-primary-loading" />
+              <div className="jimu-primary-loading" />
             </div>
           </div>
+          <p className="mt-3 text-xs font-mono font-medium text-slate-600 dark:text-zinc-400 animate-pulse">
+            Loading...
+          </p>
         </div>
       )}
     </LoaderContext.Provider>

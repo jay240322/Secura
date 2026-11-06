@@ -227,3 +227,33 @@ def get_repository_file_content(
     response.raise_for_status()
 
     return response.text
+
+
+def get_repository_tree(
+    installation_token: str | None,
+    owner: str,
+    repo: str,
+    ref: str = "main",
+) -> list[dict]:
+    """Fetch repository file tree recursively at a given Git ref."""
+    url = f"{GITHUB_API_URL}/repos/{owner}/{repo}/git/trees/{ref}"
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        "User-Agent": "Secura-Security-Scanner",
+    }
+    if installation_token:
+        headers["Authorization"] = f"Bearer {installation_token}"
+
+    try:
+        response = requests.get(
+            url,
+            headers=headers,
+            params={"recursive": "1"},
+            timeout=15,
+        )
+        if response.status_code == 200:
+            return response.json().get("tree", [])
+    except Exception as exc:
+        log_debug(f"Failed to fetch tree for {owner}/{repo}@{ref}: {exc}")
+    return []

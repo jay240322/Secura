@@ -1,5 +1,5 @@
 import datetime
-from typing import Optional
+from typing import Optional, Union
 from pydantic import BaseModel, ConfigDict
 
 
@@ -22,7 +22,7 @@ class RepositoryCreate(BaseModel):
     is_monitored: bool = True
     html_url: Optional[str] = None
     github_repo_id: Optional[int] = None
-    installation_id: Optional[str] = None
+    installation_id: Optional[Union[str, int]] = None
 
 
 class RepositoryUpdate(BaseModel):
@@ -39,6 +39,10 @@ class RepositoryResponse(RepositoryBase):
     open_findings_count: int = 0
     critical_findings_count: int = 0
     high_findings_count: int = 0
+    open_findings: int = 0
+    critical_findings: int = 0
+    high_findings: int = 0
+    score: int = 100
     last_scan_status: Optional[str] = None
     last_scan_at: Optional[datetime.datetime] = None
     created_at: datetime.datetime
@@ -57,6 +61,7 @@ class AvailableRepositoryResponse(BaseModel):
     description: Optional[str] = None
     installation_id: Optional[int] = None
     already_monitored: bool = False
+    in_github_app: bool = False
 
 
 class BulkRepositoryAdd(BaseModel):

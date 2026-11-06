@@ -1,22 +1,15 @@
-"use client";
-
-import { useEffect, useState } from "react";
+export { CodeRabbitAuth as AuthCard } from "./coderabbit-auth";
+export { CodeRabbitAuth } from "./coderabbit-auth";
 import { useRouter, useSearchParams } from "next/navigation";
-import Link from "next/link";
 import {
-  Shield,
   Mail,
   Lock,
   User,
   Eye,
   EyeOff,
   ArrowRight,
-  CheckCircle2,
   AlertCircle,
   Loader2,
-  ExternalLink,
-  Check,
-  HelpCircle,
 } from "lucide-react";
 import { api } from "@/lib/api-client";
 import {
@@ -26,14 +19,11 @@ import {
   signInWithPopup,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
-  fetchGitHubUserProfile,
 } from "@/lib/firebase";
 
 interface AuthCardProps {
   initialMode?: "login" | "signup";
 }
-
-const GITHUB_APP_INSTALL_URL = "https://github.com/apps/secura-security-scanner";
 
 export function AuthCard({ initialMode = "login" }: AuthCardProps) {
   const router = useRouter();
@@ -43,9 +33,8 @@ export function AuthCard({ initialMode = "login" }: AuthCardProps) {
   const [mode, setMode] = useState<"login" | "signup">(initialMode);
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [socialLoading, setSocialLoading] = useState<"github" | "google" | "github-user" | null>(null);
+  const [socialLoading, setSocialLoading] = useState<"github" | "google" | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   // Form states
   const [name, setName] = useState("");
@@ -55,16 +44,13 @@ export function AuthCard({ initialMode = "login" }: AuthCardProps) {
   const [rememberMe, setRememberMe] = useState(true);
   const [agreedTerms, setAgreedTerms] = useState(false);
 
-  // GitHub username direct fetch modal state
-  const [showGithubUsernameModal, setShowGithubUsernameModal] = useState(false);
-  const [customGithubHandle, setCustomGithubHandle] = useState("");
-  const [githubFetchLoading, setGithubFetchLoading] = useState(false);
+  // Sync mode if initialMode changes
+  useEffect(() => {
+    setMode(initialMode);
+  }, [initialMode]);
 
-  // Post-auth redirect:
-  // - If logging in (isLogin = true): DO NOT redirect to GitHub App; stay on website and navigate to dashboard/redirectUrl.
-  // - If not logging in (new signup / isLogin = false): open the GitHub App in another tab so user can grant repositories,
-  //   while navigating the current tab to the Secura repositories page!
-  const handlePostAuthSuccess = (msg: string, isLogin: boolean = true) => {
+  // Post-auth redirect: seamless and immediate
+  const handlePostAuthSuccess = (isLogin: boolean = true) => {
     const pendingInstId =
       typeof window !== "undefined"
         ? sessionStorage.getItem("secura_pending_installation_id")
@@ -74,40 +60,13 @@ export function AuthCard({ initialMode = "login" }: AuthCardProps) {
       if (typeof window !== "undefined") {
         sessionStorage.removeItem("secura_pending_installation_id");
       }
-      setSuccessMessage(`${msg} Connecting your GitHub App installation...`);
       void api.syncRepositories().finally(() => {
-        setTimeout(
-          () =>
-            router.push(
-              `/repositories?installed=true&installation_id=${pendingInstId}`
-            ),
-          700
-        );
+        router.push(`/repositories?installed=true&installation_id=${pendingInstId}`);
       });
       return;
     }
 
-    if (isLogin) {
-      // User logged in: do NOT redirect to GitHub App; go directly to dashboard
-      setSuccessMessage(`${msg} Redirecting to your dashboard...`);
-      setTimeout(() => {
-        router.push(redirectUrl || "/dashboard");
-      }, 700);
-      return;
-    }
-
-    // New registration / signup (not login):
-    // Open the GitHub App in another tab for selecting repositories,
-    // while the current tab smoothly loads the Secura repositories page.
-    setSuccessMessage(`${msg} Opening Secura GitHub App in a new tab to select repositories...`);
-    try {
-      window.open(GITHUB_APP_INSTALL_URL, "_blank", "noopener,noreferrer");
-    } catch {
-      // ignore popup blocker if any
-    }
-    setTimeout(() => {
-      router.push("/repositories?setup_action=signup");
-    }, 800);
+    router.push(redirectUrl || "/dashboard");
   };
 
   // Automatically handle GitHub OAuth code callback if redirected back from GitHub
@@ -121,10 +80,7 @@ export function AuthCard({ initialMode = "login" }: AuthCardProps) {
         .then((res) => {
           setLoading(false);
           if (res.success && res.user) {
-            handlePostAuthSuccess(
-              `Authenticated as @${res.user.githubUsername || res.user.name} via GitHub!`,
-              mode === "login"
-            );
+            handlePostAuthSuccess(mode === "login");
           } else {
             setErrorMessage(res.error || "GitHub authentication failed.");
           }
@@ -136,7 +92,7 @@ export function AuthCard({ initialMode = "login" }: AuthCardProps) {
     }
   }, [searchParams, redirectUrl, router, mode]);
 
-  // Password requirements validation
+  // Password requirements validation for signup
   const hasMinLength = password.length >= 8;
   const hasUpperCase = /[A-Z]/.test(password);
   const hasNumber = /[0-9]/.test(password);
@@ -148,7 +104,7 @@ export function AuthCard({ initialMode = "login" }: AuthCardProps) {
     if (hasUpperCase) score++;
     if (hasNumber) score++;
     if (hasSymbol) score++;
-    return score; // 0 - 4
+    return score;
   };
 
   const passwordScore = getPasswordStrength();
@@ -159,25 +115,33 @@ export function AuthCard({ initialMode = "login" }: AuthCardProps) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
-    setSuccessMessage(null);
 
-    if (!email || !email.includes("@")) {
+    const emailClean = email.trim().toLowerCase();
+    if (!emailClean || !emailClean.includes("@")) {
       setErrorMessage("Please enter a valid email address.");
       return;
     }
 
-    if (password.length < 6) {
-      setErrorMessage("Password must be at least 6 characters.");
-      return;
-    }
-
     if (mode === "signup") {
+      if (!name.trim()) {
+        setErrorMessage("Please enter your full name.");
+        return;
+      }
+      if (password.length < 6) {
+        setErrorMessage("Password must be at least 6 characters.");
+        return;
+      }
       if (password !== confirmPassword) {
         setErrorMessage("Passwords do not match.");
         return;
       }
       if (!agreedTerms) {
-        setErrorMessage("Please accept the terms and security policy to create an account.");
+        setErrorMessage("Please accept the terms to create an account.");
+        return;
+      }
+    } else {
+      if (password.length < 6) {
+        setErrorMessage("Password must be at least 6 characters.");
         return;
       }
     }
@@ -187,27 +151,27 @@ export function AuthCard({ initialMode = "login" }: AuthCardProps) {
     try {
       if (mode === "login") {
         try {
-          await signInWithEmailAndPassword(auth, email, password);
+          await signInWithEmailAndPassword(auth, emailClean, password);
         } catch (fbErr: unknown) {
           console.info("Firebase email sign-in fallback:", fbErr);
         }
 
-        const res = await api.login(email, password);
+        const res = await api.login(emailClean, password);
         if (res.success) {
-          handlePostAuthSuccess("Welcome back!", true);
+          handlePostAuthSuccess(true);
         } else {
           setErrorMessage(res.error || "Invalid email or password.");
         }
       } else {
         try {
-          await createUserWithEmailAndPassword(auth, email, password);
+          await createUserWithEmailAndPassword(auth, emailClean, password);
         } catch (fbErr: unknown) {
           console.info("Firebase registration fallback:", fbErr);
         }
 
-        const res = await api.register(email, password, name);
+        const res = await api.register(emailClean, password, name.trim());
         if (res.success) {
-          handlePostAuthSuccess("Account created successfully!", false);
+          handlePostAuthSuccess(false);
         } else {
           setErrorMessage(res.error || "Registration failed.");
         }
@@ -222,11 +186,9 @@ export function AuthCard({ initialMode = "login" }: AuthCardProps) {
   // Handle Real Social OAuth (Firebase Popup or Direct GitHub OAuth)
   const handleOAuth = async (provider: "github" | "google") => {
     setErrorMessage(null);
-    setSuccessMessage(null);
     setSocialLoading(provider);
 
     try {
-      // 1. Authenticate using Firebase Popup (uses https://secura-35ffc.firebaseapp.com/__/auth/handler)
       const activeProvider = provider === "github" ? githubProvider : googleProvider;
       const result = await signInWithPopup(auth, activeProvider);
       const firebaseUser = result.user;
@@ -235,20 +197,39 @@ export function AuthCard({ initialMode = "login" }: AuthCardProps) {
         throw new Error(`Could not retrieve profile from ${provider}.`);
       }
 
-      const userEmail =
-        firebaseUser.email || `${firebaseUser.githubUsername || "user"}@users.noreply.github.com`;
-      const userName =
-        firebaseUser.displayName || (firebaseUser.githubUsername ? `@${firebaseUser.githubUsername}` : "User");
-      const userAvatar = firebaseUser.photoURL || undefined;
+      const isGithub = provider === "github";
+      const ghUsername = firebaseUser.githubUsername;
+
+      let userEmail =
+        firebaseUser.email || (isGithub && ghUsername ? `${ghUsername}@users.noreply.github.com` : "");
+      if (!userEmail) {
+        userEmail = `user-${Date.now()}@secura.security`;
+      }
+
+      // Compute authentic display name (never allow noreply string)
+      let userName = firebaseUser.displayName;
+      if (isGithub) {
+        if (!userName || userName.includes("@users.noreply.github.com") || userName.includes("@")) {
+          userName = ghUsername || (userEmail.includes("@") ? userEmail.split("@")[0] : "Developer");
+        }
+      } else {
+        if (!userName || userName.includes("@")) {
+          userName = firebaseUser.displayName || (userEmail.includes("@") ? userEmail.split("@")[0] : "Google User");
+        }
+      }
+
+      const userAvatar =
+        firebaseUser.photoURL ||
+        (isGithub && ghUsername ? `https://github.com/${ghUsername}.png` : undefined);
 
       const res = await api.oauthSignIn(
         provider,
         userEmail,
         userName,
         userAvatar,
-        provider === "github"
+        isGithub
           ? {
-              username: firebaseUser.githubUsername,
+              username: ghUsername,
               profileUrl: firebaseUser.githubProfileUrl,
               reposCount: firebaseUser.githubReposCount,
             }
@@ -256,12 +237,9 @@ export function AuthCard({ initialMode = "login" }: AuthCardProps) {
       );
 
       if (res.success) {
-        handlePostAuthSuccess(
-          `Connected as ${firebaseUser.githubUsername ? `@${firebaseUser.githubUsername}` : userName}!`,
-          mode === "login"
-        );
+        handlePostAuthSuccess(mode === "login");
       } else {
-        setErrorMessage(res.error || `Authentication succeeded with Firebase, but dashboard sync failed.`);
+        setErrorMessage(res.error || `Authentication succeeded with ${provider}, but dashboard sync failed.`);
       }
     } catch (fbErr: unknown) {
       const err = fbErr as { code?: string; message?: string };
@@ -284,7 +262,7 @@ export function AuthCard({ initialMode = "login" }: AuthCardProps) {
         err?.message?.includes("account-exists-with-different-credential")
       ) {
         setErrorMessage(
-          "Account Conflict: An account with this email address already exists using Google (or Email). Please click 'Continue with Google' to sign in, or enable 'Allow creation of multiple accounts with the same email address' in Firebase Console (Settings ➔ User account linking)."
+          "An account with this email already exists via another provider. Please continue with that provider."
         );
         return;
       }
@@ -294,120 +272,49 @@ export function AuthCard({ initialMode = "login" }: AuthCardProps) {
         err?.message?.includes("client_id and/or client_secret")
       ) {
         setErrorMessage(
-          "Firebase GitHub Error: Incorrect client credentials. The Client ID and Client Secret in Firebase Console (Authentication ➔ Sign-in method ➔ GitHub) must match your GitHub OAuth App credentials (Client ID: Ov23liUhYd0XHKWzMo4M)."
+          "Firebase GitHub Error: Incorrect client credentials in Firebase Console."
         );
         return;
       }
 
       setErrorMessage(
-        err?.message ||
-          "Could not authenticate. Please verify network connectivity."
+        err?.message || "Could not authenticate. Please verify network connectivity."
       );
     } finally {
       setSocialLoading(null);
     }
   };
 
-  // Direct GitHub Account fetch by username
-  const handleFetchGitHubAccount = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!customGithubHandle.trim()) return;
-
-    setGithubFetchLoading(true);
-    setErrorMessage(null);
-
-    try {
-      const cleanHandle = customGithubHandle.trim().replace(/^@/, "");
-      const ghProfile = await fetchGitHubUserProfile(cleanHandle);
-
-      if (!ghProfile) {
-        setErrorMessage(`GitHub user "@${cleanHandle}" not found. Please verify the username.`);
-        setGithubFetchLoading(false);
-        return;
-      }
-
-      const res = await api.oauthSignIn(
-        "github",
-        ghProfile.email || `${cleanHandle}@users.noreply.github.com`,
-        ghProfile.name || cleanHandle,
-        ghProfile.avatarUrl,
-        {
-          username: ghProfile.login,
-          profileUrl: ghProfile.htmlUrl,
-          reposCount: ghProfile.publicRepos,
-        }
-      );
-
-      if (res.success) {
-        setShowGithubUsernameModal(false);
-        handlePostAuthSuccess(`Connected GitHub account @${ghProfile.login}!`, mode === "login");
-      } else {
-        setErrorMessage(res.error || "Failed to link GitHub account.");
-      }
-    } catch {
-      setErrorMessage("Could not connect to GitHub API. Please check network connection.");
-    } finally {
-      setGithubFetchLoading(false);
-    }
-  };
-
-
   return (
-    <div className="w-full max-w-md mx-auto" suppressHydrationWarning>
-      {/* Background card with clean minimal light styling */}
-      <div className="relative rounded-2xl border border-slate-200/80 bg-white/95 backdrop-blur-xl p-7 sm:p-8 shadow-2xl shadow-slate-900/10 dark:border-zinc-800/80 dark:bg-zinc-950/95 dark:shadow-none" suppressHydrationWarning>
+    <div className="w-full max-w-sm sm:max-w-md mx-auto" suppressHydrationWarning>
+      <div
+        className="relative rounded-2xl border border-slate-200/90 dark:border-zinc-800/90 bg-white dark:bg-zinc-950 p-5 sm:p-6 shadow-xl shadow-slate-900/5 dark:shadow-none"
+        suppressHydrationWarning
+      >
         {/* Brand Header */}
-        <div className="text-center mb-6">
-          <Link href="/" className="inline-flex items-center gap-2.5 group mb-3">
+        <div className="text-center mb-3.5">
+          <div className="inline-flex items-center justify-center mb-2">
             <img
               src="/logo.png"
               alt="Secura"
-              className="h-11 w-11 rounded-2xl object-cover shadow-md shadow-[#281C59]/15 group-hover:scale-105 transition-all"
+              className="h-9 w-9 rounded-xl object-cover shadow-sm ring-1 ring-slate-200/80 dark:ring-zinc-800"
             />
-            <span className="text-2xl font-bold tracking-tight text-[#281C59] dark:text-zinc-100">
-              Secura
-            </span>
-          </Link>
-          <h2 className="text-base font-semibold tracking-tight text-slate-900 dark:text-zinc-100">
+          </div>
+          <h2 className="text-base sm:text-lg font-bold tracking-tight text-slate-900 dark:text-zinc-100">
             {mode === "login" ? "Sign in to Secura" : "Create your account"}
           </h2>
-          <p className="text-xs text-slate-500 dark:text-zinc-400 mt-1">
-            Automated secret leak detection & DevSecOps merge gates
+          <p className="text-[11px] text-slate-500 dark:text-zinc-400 mt-0.5">
+            {mode === "login"
+              ? "Automated secret leak detection & merge gates"
+              : "Start securing your pull requests in seconds"}
           </p>
         </div>
 
-        {/* ─── Official GitHub App CTA Banner ─────────────────────────────── */}
-        <div className="mb-5 rounded-xl border border-slate-200 bg-slate-50/80 p-3 text-xs hover:border-slate-300 dark:border-zinc-800 dark:bg-zinc-900/60 dark:hover:border-zinc-700 transition-colors">
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2.5 min-w-0">
-              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-white border border-slate-200 text-slate-700 dark:bg-zinc-800 dark:border-zinc-700 dark:text-zinc-200 shadow-2xs">
-                <svg className="h-4 w-4 fill-current" viewBox="0 0 24 24">
-                  <path
-                    fillRule="evenodd"
-                    clipRule="evenodd"
-                    d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"
-                  />
-                </svg>
-              </span>
-              <div className="truncate">
-                <span className="font-medium text-slate-800 dark:text-zinc-200">Secura GitHub App</span>
-                <p className="text-[10px] text-slate-500 dark:text-zinc-400">Install to auto-scan your repositories</p>
-              </div>
-            </div>
-            <a
-              href="https://github.com/apps/secura-security-scanner"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-blue-600 px-2.5 py-1 text-[11px] font-medium text-white shadow-sm hover:bg-blue-500 transition-colors"
-            >
-              <span>Install</span>
-              <ExternalLink className="h-3 w-3" />
-            </a>
-          </div>
-        </div>
-
-        {/* Tab switch */}
-        <div className="grid grid-cols-2 p-1 mb-5 rounded-xl bg-slate-100 dark:bg-zinc-900 border border-slate-200/80 dark:border-zinc-800" suppressHydrationWarning>
+        {/* Tab Switch */}
+        <div
+          className="grid grid-cols-2 p-1 mb-3.5 rounded-xl bg-slate-100 dark:bg-zinc-900 border border-slate-200/80 dark:border-zinc-800 text-xs"
+          suppressHydrationWarning
+        >
           <button
             type="button"
             suppressHydrationWarning
@@ -415,9 +322,9 @@ export function AuthCard({ initialMode = "login" }: AuthCardProps) {
               setMode("login");
               setErrorMessage(null);
             }}
-            className={`py-1.5 text-xs font-semibold rounded-lg transition-all ${
+            className={`py-1.5 font-semibold rounded-lg transition-all cursor-pointer ${
               mode === "login"
-                ? "bg-white dark:bg-zinc-800 text-slate-900 dark:text-zinc-100 shadow-sm"
+                ? "bg-white dark:bg-zinc-800 text-slate-900 dark:text-zinc-100 shadow-xs"
                 : "text-slate-500 dark:text-zinc-400 hover:text-slate-800 dark:hover:text-zinc-200"
             }`}
           >
@@ -430,9 +337,9 @@ export function AuthCard({ initialMode = "login" }: AuthCardProps) {
               setMode("signup");
               setErrorMessage(null);
             }}
-            className={`py-1.5 text-xs font-semibold rounded-lg transition-all ${
+            className={`py-1.5 font-semibold rounded-lg transition-all cursor-pointer ${
               mode === "signup"
-                ? "bg-white dark:bg-zinc-800 text-slate-900 dark:text-zinc-100 shadow-sm"
+                ? "bg-white dark:bg-zinc-800 text-slate-900 dark:text-zinc-100 shadow-xs"
                 : "text-slate-500 dark:text-zinc-400 hover:text-slate-800 dark:hover:text-zinc-200"
             }`}
           >
@@ -440,67 +347,213 @@ export function AuthCard({ initialMode = "login" }: AuthCardProps) {
           </button>
         </div>
 
-        {/* Notifications */}
+        {/* Error notification (clean alert on failure, never green lines) */}
         {errorMessage && (
-          <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 dark:border-rose-900/50 dark:bg-rose-950/40 p-3.5 text-xs text-rose-800 dark:text-rose-300 animate-in fade-in">
-            <div className="flex items-start gap-2.5">
-              <AlertCircle className="h-4 w-4 shrink-0 text-rose-600 dark:text-rose-400 mt-0.5" />
-              <div className="flex-1 space-y-2">
-                <p>{errorMessage}</p>
-                {errorMessage.includes("Continue with Google") && (
-                  <button
-                    type="button"
-                    suppressHydrationWarning
-                    onClick={() => handleOAuth("google")}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-medium text-xs shadow transition-all"
-                  >
-                    <span>Sign In with Google Now</span>
-                    <ArrowRight className="h-3 w-3" />
-                  </button>
-                )}
-              </div>
-            </div>
+          <div className="mb-3 rounded-xl border border-rose-200 bg-rose-50 dark:border-rose-900/50 dark:bg-rose-950/40 p-2.5 text-xs text-rose-800 dark:text-rose-300 flex items-start gap-2 animate-in fade-in duration-150">
+            <AlertCircle className="h-4 w-4 shrink-0 text-rose-600 dark:text-rose-400 mt-0.5" />
+            <p className="flex-1 leading-snug">{errorMessage}</p>
           </div>
         )}
 
-        {successMessage && (
-          <div className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 dark:border-emerald-900/50 dark:bg-emerald-950/40 p-3.5 text-xs text-emerald-800 dark:text-emerald-300 animate-in fade-in">
-            <div className="flex items-start gap-2.5">
-              <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400 mt-0.5" />
-              <div className="flex-1 space-y-2">
-                <p className="font-medium">{successMessage}</p>
-                <div className="flex items-center gap-2 pt-0.5">
-                  <a
-                    href={GITHUB_APP_INSTALL_URL}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-2.5 py-1 text-[11px] font-medium text-white shadow hover:bg-emerald-500 transition-colors"
-                  >
-                    <span>Go to GitHub App (new tab)</span>
-                    <ExternalLink className="h-3 w-3" />
-                  </a>
-                  <button
-                    type="button"
-                    onClick={() => router.push(redirectUrl || "/dashboard")}
-                    className="text-[11px] text-slate-500 dark:text-zinc-400 hover:text-slate-800 dark:hover:text-zinc-200 underline underline-offset-2 transition-colors"
-                  >
-                    Skip to Command Center
-                  </button>
+        {/* ─── Upper Side: Form Fields ─────────────────────────────────────── */}
+        <form onSubmit={handleSubmit} className="space-y-2.5" suppressHydrationWarning>
+          {mode === "signup" && (
+            <div>
+              <label htmlFor="full-name-input" className="block text-[11px] font-medium text-slate-700 dark:text-zinc-300 mb-1">
+                Full Name
+              </label>
+              <div className="relative">
+                <User className="absolute left-3 top-2 h-3.5 w-3.5 text-slate-400" />
+                <input
+                  id="full-name-input"
+                  type="text"
+                  required
+                  suppressHydrationWarning
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="Alex Rivera"
+                  className="w-full rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-50/60 dark:bg-zinc-900/60 pl-8.5 pr-3 py-1.5 text-xs text-slate-900 dark:text-zinc-100 placeholder:text-slate-400 dark:placeholder:text-zinc-500 focus:bg-white dark:focus:bg-zinc-900 focus:border-[#281C59] focus:ring-1 focus:ring-[#281C59]/20 focus:outline-none transition-all"
+                />
+              </div>
+            </div>
+          )}
+
+          <div>
+            <label htmlFor="work-email-input" className="block text-[11px] font-medium text-slate-700 dark:text-zinc-300 mb-1">
+              Work Email
+            </label>
+            <div className="relative">
+              <Mail className="absolute left-3 top-2 h-3.5 w-3.5 text-slate-400" />
+              <input
+                id="work-email-input"
+                type="email"
+                required
+                suppressHydrationWarning
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="developer@company.com"
+                className="w-full rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-50/60 dark:bg-zinc-900/60 pl-8.5 pr-3 py-1.5 text-xs text-slate-900 dark:text-zinc-100 placeholder:text-slate-400 dark:placeholder:text-zinc-500 focus:bg-white dark:focus:bg-zinc-900 focus:border-[#281C59] focus:ring-1 focus:ring-[#281C59]/20 focus:outline-none transition-all"
+              />
+            </div>
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label htmlFor="auth-password-input" className="text-[11px] font-medium text-slate-700 dark:text-zinc-300">
+                Password
+              </label>
+              {mode === "login" && (
+                <button
+                  type="button"
+                  suppressHydrationWarning
+                  onClick={() => alert("A password reset link has been dispatched to your email address.")}
+                  className="text-[11px] text-[#281C59] dark:text-blue-400 hover:underline font-medium transition-colors cursor-pointer"
+                >
+                  Forgot password?
+                </button>
+              )}
+            </div>
+            <div className="relative">
+              <Lock className="absolute left-3 top-2 h-3.5 w-3.5 text-slate-400" />
+              <input
+                id="auth-password-input"
+                type={showPassword ? "text" : "password"}
+                required
+                suppressHydrationWarning
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••••••"
+                className="w-full rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-50/60 dark:bg-zinc-900/60 pl-8.5 pr-9 py-1.5 text-xs text-slate-900 dark:text-zinc-100 placeholder:text-slate-400 dark:placeholder:text-zinc-500 focus:bg-white dark:focus:bg-zinc-900 focus:border-[#281C59] focus:ring-1 focus:ring-[#281C59]/20 focus:outline-none transition-all"
+              />
+              <button
+                type="button"
+                suppressHydrationWarning
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-3 top-2 text-slate-400 hover:text-slate-600 dark:hover:text-zinc-200 transition-colors cursor-pointer"
+                aria-label="Toggle password visibility"
+              >
+                {showPassword ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+              </button>
+            </div>
+
+            {/* Password strength bar on signup when typing */}
+            {mode === "signup" && password.length > 0 && (
+              <div className="mt-1.5 space-y-1">
+                <div className="flex gap-1 h-1">
+                  {[0, 1, 2, 3].map((lvl) => (
+                    <div
+                      key={lvl}
+                      className={`h-full flex-1 rounded-full transition-colors ${
+                        passwordScore > lvl
+                          ? strengthColors[passwordScore - 1]
+                          : "bg-slate-200 dark:bg-zinc-800"
+                      }`}
+                    />
+                  ))}
                 </div>
+                <p className="text-[10px] text-slate-500 dark:text-zinc-400 flex items-center justify-between">
+                  <span>8+ chars with uppercase, number & symbol</span>
+                  {passwordScore > 0 && (
+                    <span className="font-semibold text-slate-700 dark:text-zinc-300">
+                      {strengthLabels[passwordScore - 1]}
+                    </span>
+                  )}
+                </p>
+              </div>
+            )}
+          </div>
+
+          {mode === "signup" && (
+            <div>
+              <label htmlFor="confirm-password-input" className="block text-[11px] font-medium text-slate-700 dark:text-zinc-300 mb-1">
+                Confirm Password
+              </label>
+              <div className="relative">
+                <Lock className="absolute left-3 top-2 h-3.5 w-3.5 text-slate-400" />
+                <input
+                  id="confirm-password-input"
+                  type={showPassword ? "text" : "password"}
+                  required
+                  suppressHydrationWarning
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="••••••••••••"
+                  className="w-full rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-50/60 dark:bg-zinc-900/60 pl-8.5 pr-3 py-1.5 text-xs text-slate-900 dark:text-zinc-100 placeholder:text-slate-400 dark:placeholder:text-zinc-500 focus:bg-white dark:focus:bg-zinc-900 focus:border-[#281C59] focus:ring-1 focus:ring-[#281C59]/20 focus:outline-none transition-all"
+                />
               </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {/* ─── Social Login Buttons ────────────────────────────────────────── */}
-        <div className="space-y-2 mb-5" suppressHydrationWarning>
+          {mode === "login" ? (
+            <div className="flex items-center gap-2 pt-0.5">
+              <input
+                id="remember"
+                type="checkbox"
+                suppressHydrationWarning
+                checked={rememberMe}
+                onChange={(e) => setRememberMe(e.target.checked)}
+                className="h-3.5 w-3.5 rounded border-slate-300 dark:border-zinc-700 text-[#281C59] focus:ring-0 cursor-pointer"
+              />
+              <label htmlFor="remember" className="text-xs text-slate-600 dark:text-zinc-400 cursor-pointer select-none">
+                Remember this device for 30 days
+              </label>
+            </div>
+          ) : (
+            <div className="flex items-start gap-2 pt-0.5">
+              <input
+                id="terms"
+                type="checkbox"
+                required
+                suppressHydrationWarning
+                checked={agreedTerms}
+                onChange={(e) => setAgreedTerms(e.target.checked)}
+                className="mt-0.5 h-3.5 w-3.5 rounded border-slate-300 dark:border-zinc-700 text-[#281C59] focus:ring-0 cursor-pointer"
+              />
+              <label htmlFor="terms" className="text-[11px] text-slate-600 dark:text-zinc-400 leading-tight cursor-pointer select-none">
+                I agree to the Secura Security Gate Terms and code inspection policies.
+              </label>
+            </div>
+          )}
+
+          {/* Primary Submit Button */}
+          <button
+            type="submit"
+            suppressHydrationWarning
+            disabled={loading || socialLoading !== null}
+            className="w-full flex items-center justify-center gap-2 py-2 px-4 rounded-xl bg-[#281C59] hover:bg-[#281C59]/90 text-white font-semibold text-xs shadow-xs transition-all disabled:opacity-50 cursor-pointer mt-1"
+          >
+            {loading ? (
+              <Loader2 className="h-4 w-4 animate-spin text-white" />
+            ) : (
+              <>
+                <span>
+                  {mode === "login" ? "Sign In to Secura" : "Create Developer Account"}
+                </span>
+                <ArrowRight className="h-3.5 w-3.5" />
+              </>
+            )}
+          </button>
+        </form>
+
+        {/* ─── Divider: or continue with ─────────────────────────────────────── */}
+        <div className="relative flex items-center justify-center my-3">
+          <div className="border-t border-slate-200 dark:border-zinc-800 w-full" />
+          <span className="bg-white dark:bg-zinc-950 px-2.5 text-[10px] uppercase font-semibold text-slate-400 dark:text-zinc-500 shrink-0">
+            or continue with
+          </span>
+          <div className="border-t border-slate-200 dark:border-zinc-800 w-full" />
+        </div>
+
+        {/* ─── Lower Side: The Two Buttons (GitHub and Google) ───────────────── */}
+        <div className="grid grid-cols-2 gap-2.5" suppressHydrationWarning>
           {/* GitHub Button */}
           <button
             type="button"
             suppressHydrationWarning
             disabled={socialLoading !== null || loading}
             onClick={() => handleOAuth("github")}
-            className="w-full flex items-center justify-center gap-2.5 px-4 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-slate-700 dark:text-zinc-200 font-medium text-xs hover:bg-slate-50 dark:hover:bg-zinc-800 hover:border-slate-300 dark:hover:border-zinc-700 transition-all shadow-2xs disabled:opacity-50"
+            className="flex items-center justify-center gap-2 px-3 py-2 rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-slate-700 dark:text-zinc-200 font-medium text-xs hover:bg-slate-50 dark:hover:bg-zinc-850 hover:border-slate-300 dark:hover:border-zinc-700 transition-all shadow-2xs disabled:opacity-50 cursor-pointer"
+            title={mode === "login" ? "Continue with GitHub" : "Sign up with GitHub"}
           >
             {socialLoading === "github" ? (
               <Loader2 className="h-4 w-4 animate-spin text-slate-500 dark:text-zinc-400" />
@@ -514,7 +567,7 @@ export function AuthCard({ initialMode = "login" }: AuthCardProps) {
               </svg>
             )}
             <span>
-              {mode === "login" ? "Continue with GitHub" : "Sign up with GitHub"}
+              {socialLoading === "github" ? "Connecting…" : "GitHub"}
             </span>
           </button>
 
@@ -524,7 +577,8 @@ export function AuthCard({ initialMode = "login" }: AuthCardProps) {
             suppressHydrationWarning
             disabled={socialLoading !== null || loading}
             onClick={() => handleOAuth("google")}
-            className="w-full flex items-center justify-center gap-2.5 px-4 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-slate-700 dark:text-zinc-200 font-medium text-xs hover:bg-slate-50 dark:hover:bg-zinc-800 hover:border-slate-300 dark:hover:border-zinc-700 transition-all shadow-2xs disabled:opacity-50"
+            className="flex items-center justify-center gap-2 px-3 py-2 rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-slate-700 dark:text-zinc-200 font-medium text-xs hover:bg-slate-50 dark:hover:bg-zinc-850 hover:border-slate-300 dark:hover:border-zinc-700 transition-all shadow-2xs disabled:opacity-50 cursor-pointer"
+            title={mode === "login" ? "Continue with Google" : "Sign up with Google"}
           >
             {socialLoading === "google" ? (
               <Loader2 className="h-4 w-4 animate-spin text-slate-500 dark:text-zinc-400" />
@@ -549,270 +603,9 @@ export function AuthCard({ initialMode = "login" }: AuthCardProps) {
               </svg>
             )}
             <span>
-              {mode === "login" ? "Continue with Google" : "Sign up with Google"}
+              {socialLoading === "google" ? "Connecting…" : "Google"}
             </span>
           </button>
-        </div>
-
-        {/* Quick Option: Connect by GitHub Username */}
-        <div className="text-center mb-5">
-          <button
-            type="button"
-            onClick={() => setShowGithubUsernameModal(!showGithubUsernameModal)}
-            className="text-[11px] text-slate-500 dark:text-zinc-400 hover:text-blue-600 dark:hover:text-blue-400 inline-flex items-center gap-1.5 transition-colors"
-          >
-            <svg className="h-3 w-3 fill-current text-slate-600 dark:text-zinc-400" viewBox="0 0 24 24">
-              <path
-                fillRule="evenodd"
-                clipRule="evenodd"
-                d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"
-              />
-            </svg>
-            <span>Connect with GitHub username directly</span>
-          </button>
-        </div>
-
-        {/* Direct GitHub username modal */}
-        {showGithubUsernameModal && (
-          <form onSubmit={handleFetchGitHubAccount} className="mb-5 p-3.5 rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 space-y-2.5">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-slate-800 dark:text-zinc-200">Fetch GitHub Account</span>
-              <button
-                type="button"
-                onClick={() => setShowGithubUsernameModal(false)}
-                className="text-[10px] text-slate-400 hover:text-slate-600 dark:hover:text-zinc-200"
-              >
-                ✕
-              </button>
-            </div>
-            <div className="relative">
-              <span className="absolute left-3 top-2.5 text-xs text-slate-400">@</span>
-              <input
-                type="text"
-                required
-                value={customGithubHandle}
-                onChange={(e) => setCustomGithubHandle(e.target.value)}
-                placeholder="your-github-username"
-                className="w-full rounded-lg border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 pl-7 pr-3 py-1.5 text-xs text-slate-900 dark:text-zinc-100 placeholder:text-slate-400 dark:placeholder:text-zinc-500 focus:border-blue-600 focus:outline-none"
-              />
-            </div>
-            <button
-              type="submit"
-              disabled={githubFetchLoading}
-              className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-medium text-xs transition-colors shadow-sm"
-            >
-              {githubFetchLoading ? (
-                <Loader2 className="h-3 w-3 animate-spin" />
-              ) : (
-                <span>Fetch & Sign In with GitHub</span>
-              )}
-            </button>
-          </form>
-        )}
-
-        {/* Divider */}
-        <div className="relative flex items-center justify-center mb-5">
-          <div className="border-t border-slate-200 dark:border-zinc-800 w-full" />
-          <span className="bg-white dark:bg-zinc-950 px-3 text-[10px] uppercase tracking-wider font-semibold text-slate-400 dark:text-zinc-500">
-            or continue with email
-          </span>
-          <div className="border-t border-slate-200 dark:border-zinc-800 w-full" />
-        </div>
-
-        {/* Email/Password Form */}
-        <form onSubmit={handleSubmit} className="space-y-4" suppressHydrationWarning>
-          {mode === "signup" && (
-            <div>
-              <label htmlFor="full-name-input" className="block text-xs font-medium text-slate-700 dark:text-zinc-300 mb-1.5">
-                Full Name
-              </label>
-              <div className="relative">
-                <User className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-                <input
-                  id="full-name-input"
-                  type="text"
-                  required
-                  suppressHydrationWarning
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="Alex Rivera"
-                  className="w-full rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-50/60 dark:bg-zinc-900/60 pl-9 pr-3 py-2 text-xs text-slate-900 dark:text-zinc-100 placeholder:text-slate-400 dark:placeholder:text-zinc-500 focus:bg-white dark:focus:bg-zinc-900 focus:border-blue-600 focus:ring-1 focus:ring-blue-600/20 focus:outline-none transition-all"
-                />
-              </div>
-            </div>
-          )}
-
-          <div>
-            <label htmlFor="work-email-input" className="block text-xs font-medium text-slate-700 dark:text-zinc-300 mb-1.5">
-              Work Email
-            </label>
-            <div className="relative">
-              <Mail className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-              <input
-                id="work-email-input"
-                type="email"
-                required
-                suppressHydrationWarning
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="developer@company.com"
-                className="w-full rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-50/60 dark:bg-zinc-900/60 pl-9 pr-3 py-2 text-xs text-slate-900 dark:text-zinc-100 placeholder:text-slate-400 dark:placeholder:text-zinc-500 focus:bg-white dark:focus:bg-zinc-900 focus:border-blue-600 focus:ring-1 focus:ring-blue-600/20 focus:outline-none transition-all"
-              />
-            </div>
-          </div>
-
-          <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <label htmlFor="auth-password-input" className="text-xs font-medium text-slate-700 dark:text-zinc-300">
-                Password
-              </label>
-              {mode === "login" && (
-                <button
-                  type="button"
-                  suppressHydrationWarning
-                  onClick={() => alert("A password reset link has been dispatched to your email address.")}
-                  className="text-[11px] text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 font-medium transition-colors"
-                >
-                  Forgot password?
-                </button>
-              )}
-            </div>
-            <div className="relative">
-              <Lock className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-              <input
-                id="auth-password-input"
-                type={showPassword ? "text" : "password"}
-                required
-                suppressHydrationWarning
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••••••"
-                className="w-full rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-50/60 dark:bg-zinc-900/60 pl-9 pr-10 py-2 text-xs text-slate-900 dark:text-zinc-100 placeholder:text-slate-400 dark:placeholder:text-zinc-500 focus:bg-white dark:focus:bg-zinc-900 focus:border-blue-600 focus:ring-1 focus:ring-blue-600/20 focus:outline-none transition-all"
-              />
-              <button
-                type="button"
-                suppressHydrationWarning
-                onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 dark:hover:text-zinc-200 transition-colors"
-                aria-label="Toggle password visibility"
-              >
-                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-              </button>
-            </div>
-
-            {/* Interactive Password Requirements Checklist on Signup */}
-            {mode === "signup" && (
-              <div className="mt-2.5 space-y-2 p-3 rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900/60">
-                {/* Visual Bar */}
-                <div className="flex gap-1 h-1">
-                  {[0, 1, 2, 3].map((lvl) => (
-                    <div
-                      key={lvl}
-                      className={`h-full flex-1 rounded-full transition-colors ${
-                        passwordScore > lvl
-                          ? strengthColors[passwordScore - 1]
-                          : "bg-slate-200 dark:bg-zinc-800"
-                      }`}
-                    />
-                  ))}
-                </div>
-
-                <div className="grid grid-cols-2 gap-1 text-[10px] text-slate-500 dark:text-zinc-400 pt-1">
-                  <span className={`flex items-center gap-1 ${hasMinLength ? "text-emerald-600 dark:text-emerald-400 font-medium" : ""}`}>
-                    {hasMinLength ? <Check className="h-3 w-3" /> : "•"} 8+ characters
-                  </span>
-                  <span className={`flex items-center gap-1 ${hasUpperCase ? "text-emerald-600 dark:text-emerald-400 font-medium" : ""}`}>
-                    {hasUpperCase ? <Check className="h-3 w-3" /> : "•"} Uppercase letter
-                  </span>
-                  <span className={`flex items-center gap-1 ${hasNumber ? "text-emerald-600 dark:text-emerald-400 font-medium" : ""}`}>
-                    {hasNumber ? <Check className="h-3 w-3" /> : "•"} Number (0-9)
-                  </span>
-                  <span className={`flex items-center gap-1 ${hasSymbol ? "text-emerald-600 dark:text-emerald-400 font-medium" : ""}`}>
-                    {hasSymbol ? <Check className="h-3 w-3" /> : "•"} Special symbol
-                  </span>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {mode === "signup" && (
-            <div>
-              <label htmlFor="confirm-password-input" className="block text-xs font-medium text-slate-700 dark:text-zinc-300 mb-1.5">
-                Confirm Password
-              </label>
-              <div className="relative">
-                <Lock className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-                <input
-                  id="confirm-password-input"
-                  type={showPassword ? "text" : "password"}
-                  required
-                  suppressHydrationWarning
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  placeholder="••••••••••••"
-                  className="w-full rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-50/60 dark:bg-zinc-900/60 pl-9 pr-3 py-2 text-xs text-slate-900 dark:text-zinc-100 placeholder:text-slate-400 dark:placeholder:text-zinc-500 focus:bg-white dark:focus:bg-zinc-900 focus:border-blue-600 focus:ring-1 focus:ring-blue-600/20 focus:outline-none transition-all"
-                />
-              </div>
-            </div>
-          )}
-
-          {/* Options */}
-          {mode === "login" ? (
-            <div className="flex items-center gap-2 pt-0.5">
-              <input
-                id="remember"
-                type="checkbox"
-                suppressHydrationWarning
-                checked={rememberMe}
-                onChange={(e) => setRememberMe(e.target.checked)}
-                className="h-3.5 w-3.5 rounded border-slate-300 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 text-blue-600 focus:ring-0"
-              />
-              <label htmlFor="remember" className="text-xs text-slate-600 dark:text-zinc-300 cursor-pointer">
-                Remember this device for 30 days
-              </label>
-            </div>
-          ) : (
-            <div className="flex items-start gap-2 pt-0.5">
-              <input
-                id="terms"
-                type="checkbox"
-                required
-                suppressHydrationWarning
-                checked={agreedTerms}
-                onChange={(e) => setAgreedTerms(e.target.checked)}
-                className="mt-0.5 h-3.5 w-3.5 rounded border-slate-300 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 text-blue-600 focus:ring-0"
-              />
-              <label htmlFor="terms" className="text-[11px] text-slate-600 dark:text-zinc-300 leading-tight cursor-pointer">
-                I agree to the Secura Security Gate Terms of Service and automated code inspection policies.
-              </label>
-            </div>
-          )}
-
-          {/* Submit Button */}
-          <button
-            type="submit"
-            suppressHydrationWarning
-            disabled={loading || socialLoading !== null}
-            className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-medium text-xs shadow-md shadow-blue-600/25 transition-all disabled:opacity-50 mt-1"
-          >
-            {loading ? (
-              <Loader2 className="h-4 w-4 animate-spin text-white" />
-            ) : (
-              <>
-                <span>
-                  {mode === "login" ? "Sign In to Secura" : "Create Developer Account"}
-                </span>
-                <ArrowRight className="h-3.5 w-3.5" />
-              </>
-            )}
-          </button>
-        </form>
-
-        {/* Footer Security Badge */}
-        <div className="mt-4 text-center">
-          <span className="inline-flex items-center gap-1.5 text-[11px] text-slate-500 dark:text-zinc-400">
-            <span>🔒</span> End-to-end encrypted session • Zero secret retention
-          </span>
         </div>
       </div>
     </div>

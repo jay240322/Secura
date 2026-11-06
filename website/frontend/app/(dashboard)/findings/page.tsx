@@ -99,6 +99,9 @@ function FindingsContent() {
   const criticalCount = findings.filter(
     (f) => f.status === "open" && f.severity === "CRITICAL"
   ).length;
+  const solvedCount = findings.filter(
+    (f) => f.status === "resolved" || f.status === "solved"
+  ).length;
 
   return (
     <div className="max-w-screen-2xl mx-auto space-y-5">
@@ -106,7 +109,7 @@ function FindingsContent() {
       <div className="flex items-center gap-4">
         <div className="flex-1">
           <h2 className="text-sm font-medium text-slate-500 dark:text-zinc-400">
-            {openCount} open · {criticalCount} critical
+            {openCount} open · {criticalCount} critical · {solvedCount} solved
           </h2>
         </div>
       </div>
@@ -159,7 +162,7 @@ function FindingsContent() {
             <option value="">All statuses</option>
             {STATUS_OPTIONS.map((s) => (
               <option key={s} value={s}>
-                {s.charAt(0).toUpperCase() + s.slice(1)}
+                {s === "resolved" ? "Solved" : s.charAt(0).toUpperCase() + s.slice(1)}
               </option>
             ))}
           </select>

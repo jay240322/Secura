@@ -98,47 +98,6 @@ function SummaryCard({
   );
 }
 
-// ─── Circular Score Ring ──────────────────────────────────────────────────
-function ScoreRing({ score }: { score: number }) {
-  const radius = 40;
-  const circumference = 2 * Math.PI * radius;
-  const offset = circumference - (score / 100) * circumference;
-  const color =
-    score >= 80 ? "#10b981" : score >= 50 ? "#f59e0b" : "#f43f5e";
-
-  return (
-    <div className="relative flex flex-col items-center justify-center">
-      <svg width={100} height={100} className="rotate-[-90deg]">
-        <circle
-          cx={50}
-          cy={50}
-          r={radius}
-          fill="none"
-          stroke="currentColor"
-          className="text-slate-100 dark:text-zinc-800"
-          strokeWidth={7}
-        />
-        <circle
-          cx={50}
-          cy={50}
-          r={radius}
-          fill="none"
-          stroke={color}
-          strokeWidth={7}
-          strokeDasharray={circumference}
-          strokeDashoffset={offset}
-          strokeLinecap="round"
-          style={{ transition: "stroke-dashoffset 0.6s ease" }}
-        />
-      </svg>
-      <div className="absolute flex flex-col items-center">
-        <span className="text-xl font-bold tracking-tight text-slate-900 dark:text-zinc-100">{score}</span>
-        <span className="text-[10px] font-mono text-slate-400 dark:text-zinc-500">/100</span>
-      </div>
-    </div>
-  );
-}
-
 // ─── Custom chart tooltip ─────────────────────────────────────────────────
 function ChartTooltip({
   active,
@@ -247,7 +206,7 @@ function DashboardContent() {
   }, []);
 
   const reposNeedingAttention = repos
-    .filter((r) => r.criticalFindings > 0 || r.highFindings > 0)
+    .filter((r) => r.criticalFindings > 0 || r.highFindings > 0 || r.openFindings > 0)
     .slice(0, 3);
 
   return (
@@ -517,45 +476,58 @@ function DashboardContent() {
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
-              {reposNeedingAttention.map((r) => (
-                <Link
-                  key={r.id}
-                  href={`/repositories/${r.id}`}
-                  className="block rounded-xl border border-slate-200/80 dark:border-zinc-800 bg-slate-50/50 dark:bg-zinc-900/50 p-3 hover:bg-slate-50 dark:hover:bg-zinc-900 hover:border-slate-300 dark:hover:border-zinc-700 transition-colors"
-                >
-                  <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-sm font-medium text-slate-900 dark:text-zinc-100 truncate">
-                      {r.name}
-                    </span>
-                    <StatusBadge status={r.lastScanStatus} />
-                  </div>
-                  <div className="flex gap-3 text-xs">
-                    <span className="text-rose-600 dark:text-rose-400 font-medium">
-                      {r.criticalFindings} critical
-                    </span>
-                    <span className="text-amber-600 dark:text-amber-400 font-medium">
-                      {r.highFindings} high
-                    </span>
-                  </div>
-                </Link>
-              ))}
-              {reposNeedingAttention.length === 0 && (
-                <p className="text-center text-sm text-slate-500 dark:text-zinc-400 py-4">
-                  All repositories are clean ✅
-                </p>
+              {repos.length === 0 ? (
+                <div className="text-center py-6 text-xs text-slate-500 dark:text-zinc-400 space-y-1">
+                  <p className="font-medium text-slate-700 dark:text-zinc-300">No repositories added yet</p>
+                  <Link href="/repositories" className="text-blue-600 dark:text-blue-400 font-medium hover:underline inline-block">
+                    + Add Repository to start monitoring
+                  </Link>
+                </div>
+              ) : reposNeedingAttention.length === 0 ? (
+                <div className="text-center py-6 text-xs text-emerald-600 dark:text-emerald-400 space-y-1">
+                  <CheckCircle2 className="h-6 w-6 mx-auto text-emerald-500" />
+                  <p className="font-semibold text-sm text-slate-900 dark:text-zinc-100">All repositories are clean ✅</p>
+                  <p className="text-slate-500 dark:text-zinc-400">
+                    Zero open vulnerabilities detected across {repos.length} {repos.length === 1 ? "monitored repository" : "monitored repositories"}
+                  </p>
+                </div>
+              ) : (
+                reposNeedingAttention.map((r) => (
+                  <Link
+                    key={r.id}
+                    href={`/repositories/${r.id}`}
+                    className="block rounded-xl border border-slate-200/80 dark:border-zinc-800 bg-slate-50/50 dark:bg-zinc-900/50 p-3 hover:bg-slate-50 dark:hover:bg-zinc-900 hover:border-slate-300 dark:hover:border-zinc-700 transition-colors"
+                  >
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-sm font-medium text-slate-900 dark:text-zinc-100 truncate">
+                        {r.name}
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <StatusBadge status={r.lastScanStatus} />
+                      </div>
+                    </div>
+                    <div className="flex gap-3 text-xs">
+                      {r.criticalFindings > 0 && (
+                        <span className="text-rose-600 dark:text-rose-400 font-medium">
+                          {r.criticalFindings} critical
+                        </span>
+                      )}
+                      {r.highFindings > 0 && (
+                        <span className="text-amber-600 dark:text-amber-400 font-medium">
+                          {r.highFindings} high
+                        </span>
+                      )}
+                      {r.openFindings > 0 && (
+                        <span className="text-slate-500 dark:text-zinc-400">
+                          {r.openFindings} total open
+                        </span>
+                      )}
+                    </div>
+                  </Link>
+                ))
               )}
             </div>
 
-            {/* Security score */}
-            <div className="mt-4 border-t border-slate-100 dark:border-zinc-800/80 pt-4">
-              <p className="text-xs text-slate-500 mb-3">Security score</p>
-              <div className="relative flex justify-center">
-                <ScoreRing score={summary.securityScore} />
-              </div>
-              <p className="mt-1 text-center text-xs text-slate-500">
-                Score is based on open findings severity
-              </p>
-            </div>
           </CardContent>
         </Card>
       </div>

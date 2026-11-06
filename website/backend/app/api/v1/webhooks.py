@@ -5,11 +5,16 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.database import SessionLocal
+from app.models.finding import Finding
 from app.models.installation import GitHubInstallation
 from app.models.repository import Repository
 from app.models.user import User
 from app.services.github_service import verify_webhook_signature
-from app.services.scan_runner import execute_pr_scan
+from app.services.scan_runner import (
+    execute_pr_scan,
+    execute_main_merge_scan,
+    execute_main_push_scan,
+)
 
 logger = logging.getLogger("secura.webhook")
 router = APIRouter(tags=["Webhooks"])
@@ -60,11 +65,24 @@ async def github_webhook(
             account_name = account.get("login", "")
             avatar_url = account.get("avatar_url", "")
 
-            user = db.query(User).first()
+            user = None
+            if account_name:
+                user = db.query(User).filter(func.lower(User.github_username) == account_name.lower()).first()
             if not user:
-                user = User(email="admin@secura.security", name="Admin")
+                existing_inst = db.query(GitHubInstallation).filter(GitHubInstallation.github_installation_id == inst_id).first()
+                if existing_inst and existing_inst.user_id:
+                    user = db.query(User).filter(User.id == existing_inst.user_id).first()
+            if not user:
+                user = User(
+                    email=f"{account_name.lower()}@users.noreply.github.com" if account_name else "admin@secura.security",
+                    name=account_name or "Developer",
+                    github_username=account_name,
+                    provider="github",
+                    is_active=True,
+                )
                 db.add(user)
                 db.commit()
+                db.refresh(user)
 
             if action == "created":
                 inst = GitHubInstallation(
@@ -120,11 +138,20 @@ async def github_webhook(
                 account = installation_data.get("account", {})
                 account_name = account.get("login", "")
                 avatar_url = account.get("avatar_url", "")
-                user = db.query(User).filter(User.github_username == account_name).first() or db.query(User).first()
+                user = None
+                if account_name:
+                    user = db.query(User).filter(func.lower(User.github_username) == account_name.lower()).first()
                 if not user:
-                    user = User(email=f"{account_name or 'admin'}@secura.security", name=account_name or "Admin")
+                    user = User(
+                        email=f"{account_name.lower()}@users.noreply.github.com" if account_name else "admin@secura.security",
+                        name=account_name or "Developer",
+                        github_username=account_name,
+                        provider="github",
+                        is_active=True,
+                    )
                     db.add(user)
                     db.commit()
+                    db.refresh(user)
                 inst = GitHubInstallation(
                     user_id=user.id,
                     github_installation_id=inst_id,
@@ -237,6 +264,31 @@ async def github_webhook(
                     else:
                         s.pr_closed_at = now_utc
                 db.commit()
+
+                if not is_merged:
+                    # PR closed without merging -> mark any remaining open findings as resolved so they don't block
+                    pr_scan_ids = [s.id for s in pr_scans]
+                    if pr_scan_ids:
+                        db.query(Finding).filter(
+                            Finding.scan_id.in_(pr_scan_ids),
+                            Finding.status == "open",
+                        ).update({Finding.status: "resolved"}, synchronize_session=False)
+                        db.commit()
+                    logger.info("Marked findings for closed PR #%s on %s as resolved", pull_number, full_name)
+                else:
+                    # PR merged into main -> scan merged changes on main to detect new findings and resolve solved ones!
+                    merge_commit_sha = pr_data.get("merge_commit_sha") or head_sha
+                    background_tasks.add_task(
+                        execute_main_merge_scan,
+                        repository_id=repo.id,
+                        pull_number=pull_number,
+                        merge_commit_sha=merge_commit_sha,
+                        head_sha=head_sha,
+                        base_branch=base_branch,
+                        installation_id=installation_id,
+                    )
+                    logger.info("Enqueued main branch merge scan for %s PR #%s (%s)", full_name, pull_number, merge_commit_sha[:7] if merge_commit_sha else "")
+
                 logger.info("Updated PR #%s status to %s for %s", pull_number, pr_state, full_name)
                 return {
                     "status": "updated",
@@ -268,6 +320,38 @@ async def github_webhook(
                 "commit": head_sha,
                 "action": action,
             }
+
+        # 5. Push event (commits pushed directly or merged into main)
+        if x_github_event == "push":
+            ref = payload.get("ref", "")
+            repo_data = payload.get("repository", {})
+            full_name = repo_data.get("full_name")
+            inst_data = payload.get("installation", {})
+            installation_id = inst_data.get("id")
+            after_sha = payload.get("after")
+
+            repo = db.query(Repository).filter(Repository.full_name == full_name).first()
+            if not repo:
+                logger.info("Repository %s not monitored by Secura, ignoring push event", full_name)
+                return {"status": "unmonitored", "repository": full_name}
+
+            default_branch = repo.default_branch or "main"
+            branch = ref.replace("refs/heads/", "") if ref.startswith("refs/heads/") else ref
+
+            if branch in (default_branch, "main", "master"):
+                background_tasks.add_task(
+                    execute_main_push_scan,
+                    repository_id=repo.id,
+                    commit_sha=after_sha,
+                    commits=payload.get("commits", []),
+                    head_commit=payload.get("head_commit"),
+                    branch=branch,
+                    installation_id=installation_id,
+                )
+                logger.info("Enqueued main branch push scan for %s (%s)", full_name, after_sha[:7] if after_sha else "")
+                return {"status": "enqueued", "event": "push", "branch": branch, "commit": after_sha}
+
+            return {"status": "ignored", "event": "push", "branch": branch}
 
         return {"status": "ignored", "event": x_github_event}
 
