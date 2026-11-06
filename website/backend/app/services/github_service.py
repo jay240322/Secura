@@ -376,22 +376,26 @@ def get_pull_request_commits(
 
 
 
+def _app_jwt_get(url: str, app_jwt: str, timeout: int = 10) -> Optional[requests.Response]:
+    return requests.get(
+        url,
+        headers={
+            "Authorization": f"Bearer {app_jwt}",
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+            "User-Agent": "Secura-Security-Scanner",
+        },
+        timeout=timeout,
+    )
+
+
 def get_repository_installation_id(owner: str, repo: str) -> Optional[int]:
     """Find the GitHub App installation ID for a specific repository if installed."""
     try:
         app_jwt = create_app_jwt()
         url = f"{GITHUB_API_URL}/repos/{owner}/{repo}/installation"
-        response = requests.get(
-            url,
-            headers={
-                "Authorization": f"Bearer {app_jwt}",
-                "Accept": "application/vnd.github+json",
-                "X-GitHub-Api-Version": "2022-11-28",
-                "User-Agent": "Secura-Security-Scanner",
-            },
-            timeout=10,
-        )
-        if response.ok:
+        response = _app_jwt_get(url, app_jwt)
+        if response and response.ok:
             data = response.json()
             return data.get("id")
         return None
@@ -437,34 +441,16 @@ def get_user_installation(username: str) -> Optional[Dict[str, Any]]:
         # First try GET /users/{username}/installation
         url = f"{GITHUB_API_URL}/users/{username}/installation"
         log_debug(f"GET {url} with App JWT...")
-        response = requests.get(
-            url,
-            headers={
-                "Authorization": f"Bearer {app_jwt}",
-                "Accept": "application/vnd.github+json",
-                "X-GitHub-Api-Version": "2022-11-28",
-                "User-Agent": "Secura-Security-Scanner",
-            },
-            timeout=10,
-        )
-        log_debug(f"GET {url} response: status={response.status_code}, body={response.text[:200]}")
-        if response.ok:
+        response = _app_jwt_get(url, app_jwt)
+        log_debug(f"GET {url} response: status={response.status_code if response else 'None'}, body={response.text[:200] if response else ''}")
+        if response and response.ok:
             return response.json()
         # Also try GET /orgs/{username}/installation
         org_url = f"{GITHUB_API_URL}/orgs/{username}/installation"
         log_debug(f"GET {org_url} with App JWT...")
-        org_resp = requests.get(
-            org_url,
-            headers={
-                "Authorization": f"Bearer {app_jwt}",
-                "Accept": "application/vnd.github+json",
-                "X-GitHub-Api-Version": "2022-11-28",
-                "User-Agent": "Secura-Security-Scanner",
-            },
-            timeout=10,
-        )
-        log_debug(f"GET {org_url} response: status={org_resp.status_code}, body={org_resp.text[:200]}")
-        if org_resp.ok:
+        org_resp = _app_jwt_get(org_url, app_jwt)
+        log_debug(f"GET {org_url} response: status={org_resp.status_code if org_resp else 'None'}, body={org_resp.text[:200] if org_resp else ''}")
+        if org_resp and org_resp.ok:
             return org_resp.json()
         return None
     except Exception as exc:

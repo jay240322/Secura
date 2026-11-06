@@ -31,21 +31,10 @@ import {
 } from "@/lib/firebase";
 import { useTheme } from "@/components/theme-provider";
 import MoltenMetal from "@/components/ui/molten-metal";
+import { GithubIcon } from "@/components/ui/github-icon";
 
 interface CodeRabbitAuthProps {
   initialMode?: "login" | "signup";
-}
-
-function GithubIcon({ className = "h-4 w-4" }: { className?: string }) {
-  return (
-    <svg className={className} fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-      <path
-        fillRule="evenodd"
-        clipRule="evenodd"
-        d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"
-      />
-    </svg>
-  );
 }
 
 function GoogleIcon({ className = "h-4 w-4" }: { className?: string }) {
@@ -355,67 +344,41 @@ export function CodeRabbitAuth({ initialMode = "login" }: CodeRabbitAuthProps) {
           {!showSSO ? (
             /* ── Provider Stack: ONLY GitHub & Google with Last used badge + chevron down ── */
             <div className="space-y-3">
-              {/* GitHub Cloud Button */}
-              <div className="relative">
-                {mounted && lastUsedProvider === "github" && (
-                  <span
-                    className="absolute -top-2.5 right-6 px-1.5 py-0.5 text-[10px] font-sans font-medium bg-white dark:bg-[#111113] border border-slate-300 dark:border-zinc-700 text-slate-600 dark:text-zinc-300 rounded leading-none select-none z-10 shadow-xs"
-                    title="Last used on this computer"
-                  >
-                    Last used
-                  </span>
-                )}
-                <button
-                  type="button"
-                  disabled={socialLoading !== null}
-                  onClick={() => handleOAuth("github")}
-                  suppressHydrationWarning
-                  className="w-full h-11 px-4 rounded-lg border flex items-center justify-between cursor-pointer shadow-xs disabled:opacity-50 text-left border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/40 hover:bg-slate-50 dark:hover:bg-zinc-800/80 text-slate-800 dark:text-zinc-200 transition-colors"
-                >
-                  <div className="flex items-center gap-3">
-                    {socialLoading === "github" ? (
-                      <Loader2 className="h-4 w-4 animate-spin text-[#281C59] dark:text-zinc-400" />
-                    ) : (
-                      <GithubIcon className="h-4.5 w-4.5 shrink-0 text-slate-900 dark:text-white fill-current" />
-                    )}
-                    <span className="font-semibold text-xs text-slate-900 dark:text-zinc-200">
-                      GitHub Cloud
+              {[
+                { key: "github" as const, label: "GitHub Cloud", Icon: GithubIcon },
+                { key: "google" as const, label: "Google Cloud", Icon: GoogleIcon },
+              ].map(({ key, label, Icon }) => (
+                <div key={key} className="relative">
+                  {mounted && lastUsedProvider === key && (
+                    <span
+                      className="absolute -top-2.5 right-6 px-1.5 py-0.5 text-[10px] font-sans font-medium bg-white dark:bg-[#111113] border border-slate-300 dark:border-zinc-700 text-slate-600 dark:text-zinc-300 rounded leading-none select-none z-10 shadow-xs"
+                      title="Last used on this computer"
+                    >
+                      Last used
                     </span>
-                  </div>
-                  <ChevronDown className="h-4 w-4 text-slate-400 dark:text-zinc-500 shrink-0" />
-                </button>
-              </div>
-
-              {/* Google Cloud Button */}
-              <div className="relative">
-                {mounted && lastUsedProvider === "google" && (
-                  <span
-                    className="absolute -top-2.5 right-6 px-1.5 py-0.5 text-[10px] font-sans font-medium bg-white dark:bg-[#111113] border border-slate-300 dark:border-zinc-700 text-slate-600 dark:text-zinc-300 rounded leading-none select-none z-10 shadow-xs"
-                    title="Last used on this computer"
+                  )}
+                  <button
+                    type="button"
+                    disabled={socialLoading !== null}
+                    onClick={() => handleOAuth(key)}
+                    suppressHydrationWarning
+                    className="w-full h-11 px-4 rounded-lg border flex items-center justify-between cursor-pointer shadow-xs disabled:opacity-50 text-left border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/40 hover:bg-slate-50 dark:hover:bg-zinc-800/80 text-slate-800 dark:text-zinc-200 transition-colors"
                   >
-                    Last used
-                  </span>
-                )}
-                <button
-                  type="button"
-                  disabled={socialLoading !== null}
-                  onClick={() => handleOAuth("google")}
-                  suppressHydrationWarning
-                  className="w-full h-11 px-4 rounded-lg border flex items-center justify-between cursor-pointer shadow-xs disabled:opacity-50 text-left border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/40 hover:bg-slate-50 dark:hover:bg-zinc-800/80 text-slate-800 dark:text-zinc-200 transition-colors"
-                >
-                  <div className="flex items-center gap-3">
-                    {socialLoading === "google" ? (
-                      <Loader2 className="h-4 w-4 animate-spin text-[#281C59] dark:text-zinc-400" />
-                    ) : (
-                      <GoogleIcon className="h-4.5 w-4.5 shrink-0" />
-                    )}
-                    <span className="font-semibold text-xs text-slate-900 dark:text-zinc-200">
-                      Google Cloud
-                    </span>
-                  </div>
-                  <ChevronDown className="h-4 w-4 text-slate-400 dark:text-zinc-500 shrink-0" />
-                </button>
-              </div>
+                    <div className="flex items-center gap-3">
+                      {socialLoading === key ? (
+                        <Loader2 className="h-4 w-4 animate-spin text-[#281C59] dark:text-zinc-400" />
+                      ) : (
+                        <Icon className="h-4.5 w-4.5 shrink-0 text-slate-900 dark:text-white fill-current" />
+                      )}
+                      <span className="font-semibold text-xs text-slate-900 dark:text-zinc-200">
+                        {label}
+                      </span>
+                    </div>
+                    <ChevronDown className="h-4 w-4 text-slate-400 dark:text-zinc-500 shrink-0" />
+                  </button>
+                </div>
+              ))}
+            </div>
 
               {/* Divider: or */}
               <div className="relative flex items-center justify-center py-2">

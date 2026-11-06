@@ -84,6 +84,25 @@ def persist_scan_findings(
     db.commit()
 
 
+def _get_repo_token_and_names(
+    db: Session,
+    repository_id: str,
+    installation_id: Optional[int] = None,
+) -> Tuple[Optional[Repository], Optional[str], str, str, Optional[int]]:
+    repo = db.query(Repository).filter(Repository.id == repository_id).first()
+    if not repo:
+        return None, None, "", "", None
+    inst_id = installation_id or (repo.installation.github_installation_id if repo.installation else None)
+    token = None
+    if inst_id:
+        try:
+            token = create_installation_token(inst_id)
+        except Exception as e:
+            logger.warning("Could not obtain token: %s", e)
+    owner, repo_name = repo.full_name.split("/", 1) if "/" in repo.full_name else (repo.owner, repo.name)
+    return repo, token, owner, repo_name, inst_id
+
+
 def execute_repository_scan(
     repository_id: str,
     commit_sha: str = "HEAD",
@@ -110,7 +129,7 @@ def execute_repository_scan(
     db.refresh(scan)
 
     try:
-        repo = db.query(Repository).filter(Repository.id == repository_id).first()
+        repo, token, owner, repo_name, inst_id = _get_repo_token_and_names(db, repository_id, installation_id)
         if not repo:
             logger.error("Repository %s not found for scan %s", repository_id, scan.id)
             scan.scan_status = "failed"
@@ -118,15 +137,6 @@ def execute_repository_scan(
             db.commit()
             return
 
-        inst_id = installation_id or (repo.installation.github_installation_id if repo.installation else None)
-        token = None
-        if inst_id:
-            try:
-                token = create_installation_token(inst_id)
-            except Exception as e:
-                logger.warning("Could not obtain token: %s", e)
-
-        owner, repo_name = repo.full_name.split("/", 1) if "/" in repo.full_name else (repo.owner, repo.name)
         target_branch = branch or repo.default_branch or "main"
 
         findings_data: List[Dict[str, Any]] = []
@@ -251,6 +261,178 @@ def execute_repository_scan(
         db.close()
 
 
+def _get_or_create_pr_scan(
+    db: Session,
+    repository_id: str,
+    pull_number: int,
+    commit_sha: str = "HEAD",
+    branch: str = "main",
+    base_branch: str = "main",
+    pr_title: Optional[str] = None,
+    pr_author: Optional[str] = None,
+    pr_html_url: Optional[str] = None,
+    pr_state: Optional[str] = "open",
+    pr_merged_at: Optional[datetime.datetime] = None,
+    pr_closed_at: Optional[datetime.datetime] = None,
+    default_owner: str = "",
+    default_repo_name: str = "",
+) -> Scan:
+    short_sha = commit_sha[:12] if commit_sha else "HEAD"
+    scan = (
+        db.query(Scan)
+        .filter(
+            Scan.repository_id == repository_id,
+            Scan.pull_number == pull_number,
+            Scan.commit_sha == short_sha,
+        )
+        .first()
+    )
+    if not scan:
+        fallback_url = (
+            f"https://github.com/{default_owner}/{default_repo_name}/pull/{pull_number}"
+            if default_owner
+            else None
+        )
+        scan = Scan(
+            repository_id=repository_id,
+            commit_sha=short_sha,
+            branch=branch,
+            base_branch=base_branch,
+            pull_number=pull_number,
+            pr_title=pr_title or f"Pull Request #{pull_number}",
+            pr_author=pr_author or default_owner,
+            pr_html_url=pr_html_url or fallback_url,
+            pr_state=pr_state or "open",
+            pr_merged_at=pr_merged_at,
+            pr_closed_at=pr_closed_at,
+            scan_status="running",
+            score=100,
+        )
+        db.add(scan)
+        db.commit()
+        db.refresh(scan)
+    else:
+        scan.branch = branch
+        scan.base_branch = base_branch
+        if pr_title:
+            scan.pr_title = pr_title
+        if pr_author:
+            scan.pr_author = pr_author
+        if pr_html_url:
+            scan.pr_html_url = pr_html_url
+        if pr_state:
+            scan.pr_state = pr_state
+        if pr_merged_at:
+            scan.pr_merged_at = pr_merged_at
+        if pr_closed_at:
+            scan.pr_closed_at = pr_closed_at
+        db.commit()
+    return scan
+
+
+def _finalize_pr_scan_metrics(
+    scan: Scan,
+    eval_result: Dict[str, Any],
+    findings_data: List[Dict[str, Any]],
+    duration: Optional[float] = None,
+    check_run_id: Optional[int] = None,
+) -> None:
+    counts = eval_result.get("counts", {})
+    has_violations = not eval_result.get("passed", True) or len(findings_data) > 0 and (
+        counts.get("CRITICAL", 0) > 0 or counts.get("HIGH", 0) > 0
+    )
+    scan.scan_status = "completed"
+    scan.scan_result = "failed" if (has_violations or len(findings_data) > 0) else "passed"
+    scan.score = eval_result.get("score", 100 if len(findings_data) == 0 else 0)
+    scan.total_findings = len(findings_data)
+    scan.critical_count = counts.get("CRITICAL", 0)
+    scan.high_count = counts.get("HIGH", 0)
+    scan.medium_count = counts.get("MEDIUM", 0)
+    scan.low_count = counts.get("LOW", 0)
+    if duration is not None:
+        scan.scan_duration = duration
+    if check_run_id is not None:
+        scan.check_run_id = check_run_id
+    scan.completed_at = datetime.datetime.now(datetime.timezone.utc)
+
+
+def _reconcile_pr_findings_in_db(
+    db: Session,
+    repo_id: str,
+    scan_id: str,
+    pull_number: int,
+    findings_data: List[Dict[str, Any]],
+) -> None:
+    pr_scans = (
+        db.query(Scan)
+        .filter(
+            Scan.repository_id == repo_id,
+            Scan.pull_number == pull_number,
+        )
+        .all()
+    )
+    pr_scan_ids = [s.id for s in pr_scans]
+    existing_pr_findings = (
+        db.query(Finding)
+        .filter(Finding.scan_id.in_(pr_scan_ids))
+        .all()
+        if pr_scan_ids
+        else []
+    )
+
+    now = datetime.datetime.now(datetime.timezone.utc)
+    detected_fps = {
+        compute_finding_fingerprint(
+            repo_id,
+            map_type_to_rule_id(item.get("type", "Unknown")),
+            str(item.get("file", "")),
+            int(item.get("line", 1)),
+        )
+        for item in findings_data
+    }
+    detected_file_rules = {
+        (str(item.get("file", "")), map_type_to_rule_id(item.get("type", "Unknown")))
+        for item in findings_data
+    }
+
+    for ef in existing_pr_findings:
+        if ef.fingerprint not in detected_fps and (ef.file_path, ef.rule_id) not in detected_file_rules:
+            ef.status = "resolved"
+            ef.last_detected = now
+        else:
+            ef.status = "open"
+            ef.scan_id = scan_id
+            ef.last_detected = now
+
+    existing_fps = {ef.fingerprint for ef in existing_pr_findings}
+    brand_new = [
+        item for item in findings_data
+        if compute_finding_fingerprint(
+            repo_id,
+            map_type_to_rule_id(item.get("type", "Unknown")),
+            str(item.get("file", "")),
+            int(item.get("line", 1)),
+        ) not in existing_fps
+    ]
+    if brand_new:
+        persist_scan_findings(
+            db,
+            scan_id,
+            repo_id,
+            brand_new,
+            default_recommendation="Remove credential or secret from pull request.",
+        )
+    elif not findings_data:
+        for s in pr_scans:
+            s.total_findings = 0
+            s.critical_count = 0
+            s.high_count = 0
+            s.medium_count = 0
+            s.low_count = 0
+            s.scan_result = "passed"
+            s.score = 100
+
+
 def execute_pr_scan(
     repository_id: str,
     pull_number: int,
@@ -276,49 +458,18 @@ def execute_pr_scan(
     """
     db: Session = SessionLocal()
     start_time = time.time()
-    target_sha = commit_sha[:12] if commit_sha else "HEAD"
-
-    scan = (
-        db.query(Scan)
-        .filter(
-            Scan.repository_id == repository_id,
-            Scan.pull_number == pull_number,
-            Scan.commit_sha == target_sha,
-        )
-        .first()
-    )
-    if not scan:
-        scan = Scan(
-            repository_id=repository_id,
-            commit_sha=target_sha,
-            branch=branch,
-            base_branch=base_branch,
-            pull_number=pull_number,
-            pr_title=pr_title or f"Pull Request #{pull_number}",
-            pr_author=pr_author,
-            pr_html_url=pr_html_url,
-            pr_state=pr_state or "open",
-            pr_merged_at=pr_merged_at,
-            pr_closed_at=pr_closed_at,
-            scan_status="running",
-            score=100,
-        )
-        db.add(scan)
-        db.commit()
-        db.refresh(scan)
-    else:
-        scan.scan_status = "running"
-        scan.branch = branch
-        scan.base_branch = base_branch
-        if pr_title:
-            scan.pr_title = pr_title
-        if pr_author:
-            scan.pr_author = pr_author
-        if pr_html_url:
-            scan.pr_html_url = pr_html_url
-        if pr_state:
-            scan.pr_state = pr_state
-        db.commit()
+    scan_meta = {
+        "commit_sha": commit_sha,
+        "branch": branch,
+        "base_branch": base_branch,
+        "pr_title": pr_title,
+        "pr_author": pr_author,
+        "pr_html_url": pr_html_url,
+        "pr_state": pr_state,
+        "pr_merged_at": pr_merged_at,
+        "pr_closed_at": pr_closed_at,
+    }
+    scan = _get_or_create_pr_scan(db, repository_id, pull_number, **scan_meta)
 
     try:
         repo = db.query(Repository).filter(Repository.id == repository_id).first()
@@ -410,98 +561,11 @@ def execute_pr_scan(
         # 3. Evaluate findings with security policy
         policy = load_policy()
         eval_result = evaluate_policy(findings_data, policy)
-        counts = eval_result.get("counts", {})
         duration = round(time.time() - start_time, 2)
-
-        has_violations = not eval_result.get("passed", True) or len(findings_data) > 0 and (
-            counts.get("CRITICAL", 0) > 0 or counts.get("HIGH", 0) > 0
-        )
-
-        scan.scan_status = "completed"
-        scan.scan_result = "failed" if (has_violations or len(findings_data) > 0) else "passed"
-        scan.score = eval_result.get("score", 100 if len(findings_data) == 0 else 0)
-        scan.total_findings = len(findings_data)
-        scan.critical_count = counts.get("CRITICAL", 0)
-        scan.high_count = counts.get("HIGH", 0)
-        scan.medium_count = counts.get("MEDIUM", 0)
-        scan.low_count = counts.get("LOW", 0)
-        scan.scan_duration = duration
-        scan.completed_at = datetime.datetime.now(datetime.timezone.utc)
+        _finalize_pr_scan_metrics(scan, eval_result, findings_data, duration=duration)
 
         # 4. Save and reconcile findings in database:
-        pr_scans = (
-            db.query(Scan)
-            .filter(
-                Scan.repository_id == repository_id,
-                Scan.pull_number == pull_number,
-            )
-            .all()
-        )
-        pr_scan_ids = [s.id for s in pr_scans]
-        existing_pr_findings = (
-            db.query(Finding)
-            .filter(Finding.scan_id.in_(pr_scan_ids))
-            .all()
-            if pr_scan_ids
-            else []
-        )
-
-        now = datetime.datetime.now(datetime.timezone.utc)
-        detected_fps = {
-            compute_finding_fingerprint(
-                repository_id,
-                map_type_to_rule_id(item.get("type", "Unknown")),
-                str(item.get("file", "")),
-                int(item.get("line", 1)),
-            )
-            for item in findings_data
-        }
-        detected_file_rules = {
-            (str(item.get("file", "")), map_type_to_rule_id(item.get("type", "Unknown")))
-            for item in findings_data
-        }
-
-        # If a previously detected finding is no longer in this commit:
-        # User solved it! Mark it as "resolved" (displays with Solved label) so it stays visible in the findings section!
-        for ef in existing_pr_findings:
-            if ef.fingerprint not in detected_fps and (ef.file_path, ef.rule_id) not in detected_file_rules:
-                ef.status = "resolved"
-                ef.last_detected = now
-            else:
-                ef.status = "open"
-                ef.scan_id = scan.id
-                ef.last_detected = now
-
-        # Add brand new findings
-        existing_fps = {ef.fingerprint for ef in existing_pr_findings}
-        brand_new = [
-            item for item in findings_data
-            if compute_finding_fingerprint(
-                repository_id,
-                map_type_to_rule_id(item.get("type", "Unknown")),
-                str(item.get("file", "")),
-                int(item.get("line", 1)),
-            ) not in existing_fps
-        ]
-        if brand_new:
-            persist_scan_findings(
-                db,
-                scan.id,
-                repository_id,
-                brand_new,
-                default_recommendation="Remove credential or secret from pull request.",
-            )
-
-        if not findings_data:
-            # All findings for this PR were solved! Mark PR scans as passed
-            for s in pr_scans:
-                s.total_findings = 0
-                s.critical_count = 0
-                s.high_count = 0
-                s.medium_count = 0
-                s.low_count = 0
-                s.scan_result = "passed"
-                s.score = 100
+        _reconcile_pr_findings_in_db(db, repository_id, scan.id, pull_number, findings_data)
 
         repo.last_scanned_at = datetime.datetime.now(datetime.timezone.utc)
         repo.last_scan_status = scan.scan_result
@@ -611,136 +675,38 @@ def record_pr_scan_results(
 
         findings_data = findings or []
         eval_result = result or {}
-        counts = eval_result.get("counts", {})
 
-        short_sha = commit_sha[:12] if commit_sha else "HEAD"
-        scan = (
-            db.query(Scan)
-            .filter(
-                Scan.repository_id == repo.id,
-                Scan.pull_number == pull_number,
-                Scan.commit_sha == short_sha,
-            )
-            .first()
-        )
-        if not scan:
-            scan = Scan(
-                repository_id=repo.id,
-                commit_sha=short_sha,
-                branch=branch,
-                base_branch=base_branch,
-                pull_number=pull_number,
-                pr_title=pr_title or f"Pull Request #{pull_number}",
-                pr_author=pr_author or repo.owner,
-                pr_html_url=pr_html_url or f"https://github.com/{repository_name}/pull/{pull_number}",
-                pr_state=pr_state or "open",
-                pr_merged_at=pr_merged_at,
-                pr_closed_at=pr_closed_at,
-            )
-            db.add(scan)
-            db.commit()
-            db.refresh(scan)
-        else:
-            scan.branch = branch
-            scan.base_branch = base_branch
-            if pr_title:
-                scan.pr_title = pr_title
-            if pr_author:
-                scan.pr_author = pr_author
-            if pr_html_url:
-                scan.pr_html_url = pr_html_url
-            if pr_state:
-                scan.pr_state = pr_state
-            if pr_merged_at:
-                scan.pr_merged_at = pr_merged_at
-            if pr_closed_at:
-                scan.pr_closed_at = pr_closed_at
-
-        has_violations = not eval_result.get("passed", True) or len(findings_data) > 0 and (
-            counts.get("CRITICAL", 0) > 0 or counts.get("HIGH", 0) > 0
+        scan = _get_or_create_pr_scan(
+            db=db,
+            repository_id=repo.id,
+            pull_number=pull_number,
+            commit_sha=commit_sha,
+            branch=branch,
+            base_branch=base_branch,
+            pr_title=pr_title,
+            pr_author=pr_author,
+            pr_html_url=pr_html_url,
+            pr_state=pr_state,
+            pr_merged_at=pr_merged_at,
+            pr_closed_at=pr_closed_at,
+            default_owner=repo.owner,
+            default_repo_name=repo.name,
         )
 
-        scan.scan_status = "completed"
-        scan.scan_result = "failed" if (has_violations or len(findings_data) > 0) else "passed"
-        scan.score = eval_result.get("score", 100 if len(findings_data) == 0 else 0)
-        scan.total_findings = len(findings_data)
-        scan.critical_count = counts.get("CRITICAL", 0)
-        scan.high_count = counts.get("HIGH", 0)
-        scan.medium_count = counts.get("MEDIUM", 0)
-        scan.low_count = counts.get("LOW", 0)
-        if check_run_id:
-            scan.check_run_id = check_run_id
-        scan.completed_at = datetime.datetime.now(datetime.timezone.utc)
-
-        # Reconcile findings for this PR: keep solved findings marked as "resolved"
-        pr_scans = (
-            db.query(Scan)
-            .filter(
-                Scan.repository_id == repo.id,
-                Scan.pull_number == pull_number,
-            )
-            .all()
-        )
-        pr_scan_ids = [s.id for s in pr_scans]
-        existing_pr_findings = (
-            db.query(Finding)
-            .filter(Finding.scan_id.in_(pr_scan_ids))
-            .all()
-            if pr_scan_ids
-            else []
+        _finalize_pr_scan_metrics(
+            scan=scan,
+            eval_result=eval_result,
+            findings_data=findings_data,
+            check_run_id=check_run_id,
         )
 
-        now = datetime.datetime.now(datetime.timezone.utc)
-        detected_fps = {
-            compute_finding_fingerprint(
-                repo.id,
-                map_type_to_rule_id(item.get("type", "Unknown")),
-                str(item.get("file", "")),
-                int(item.get("line", 1)),
-            )
-            for item in findings_data
-        }
-        detected_file_rules = {
-            (str(item.get("file", "")), map_type_to_rule_id(item.get("type", "Unknown")))
-            for item in findings_data
-        }
-
-        for ef in existing_pr_findings:
-            if ef.fingerprint not in detected_fps and (ef.file_path, ef.rule_id) not in detected_file_rules:
-                ef.status = "resolved"
-                ef.last_detected = now
-            else:
-                ef.status = "open"
-                ef.scan_id = scan.id
-                ef.last_detected = now
-
-        existing_fps = {ef.fingerprint for ef in existing_pr_findings}
-        brand_new = [
-            item for item in findings_data
-            if compute_finding_fingerprint(
-                repo.id,
-                map_type_to_rule_id(item.get("type", "Unknown")),
-                str(item.get("file", "")),
-                int(item.get("line", 1)),
-            ) not in existing_fps
-        ]
-        if brand_new:
-            persist_scan_findings(
-                db,
-                scan.id,
-                repo.id,
-                brand_new,
-                default_recommendation="Remove credential or secret from pull request.",
-            )
-        elif not findings_data:
-            for s in pr_scans:
-                s.total_findings = 0
-                s.critical_count = 0
-                s.high_count = 0
-                s.medium_count = 0
-                s.low_count = 0
-                s.scan_result = "passed"
-                s.score = 100
+        _reconcile_pr_findings_in_db(
+            db=db,
+            repo_id=repo.id,
+            scan_id=scan.id,
+            pull_number=pull_number,
+            findings_data=findings_data,
+        )
 
         # Update repository stats
         repo.last_scanned_at = datetime.datetime.now(datetime.timezone.utc)
@@ -755,6 +721,86 @@ def record_pr_scan_results(
         return None
     finally:
         db.close()
+
+
+def _resolve_removed_files(db: Session, repo_id: str, removed_files: Iterable[str]) -> None:
+    now = datetime.datetime.now(datetime.timezone.utc)
+    for filename in removed_files:
+        db.query(Finding).filter(
+            Finding.repository_id == repo_id,
+            Finding.file_path == filename,
+            Finding.status == "open",
+        ).update(
+            {Finding.status: "resolved", Finding.last_detected: now},
+            synchronize_session=False,
+        )
+
+
+def _scan_and_resolve_files(
+    db: Session,
+    repo_id: str,
+    token: Optional[str],
+    owner: str,
+    repo_name: str,
+    ref_sha: str,
+    filenames: Iterable[str],
+) -> List[Dict[str, Any]]:
+    findings_data: List[Dict[str, Any]] = []
+    if not token:
+        return findings_data
+
+    now = datetime.datetime.now(datetime.timezone.utc)
+    for filename in filenames:
+        if not is_scannable_file(filename):
+            continue
+        try:
+            content = get_repository_file_content(token, owner, repo_name, filename, ref_sha)
+            if content:
+                sec_results = scan_secrets_content(content, file_path=filename)
+                file_sast = scan_sast_content(content, file_path=filename)
+                file_findings = sec_results + file_sast
+
+                if file_findings:
+                    findings_data.extend(file_findings)
+                else:
+                    db.query(Finding).filter(
+                        Finding.repository_id == repo_id,
+                        Finding.file_path == filename,
+                        Finding.status == "open",
+                    ).update(
+                        {Finding.status: "resolved", Finding.last_detected: now},
+                        synchronize_session=False,
+                    )
+        except Exception as content_err:
+            logger.warning("Could not read file %s: %s", filename, content_err)
+
+    return findings_data
+
+
+def _record_branch_scan_completion(
+    db: Session,
+    scan: Scan,
+    repo: Repository,
+    findings_data: List[Dict[str, Any]],
+    start_time: float,
+    default_recommendation: str,
+) -> float:
+    policy = load_policy()
+    eval_result = evaluate_policy(findings_data, policy)
+    duration = round(time.time() - start_time, 2)
+    _finalize_pr_scan_metrics(scan, eval_result, findings_data, duration=duration)
+    if findings_data:
+        persist_scan_findings(
+            db,
+            scan.id,
+            repo.id,
+            findings_data,
+            default_recommendation=default_recommendation,
+        )
+    repo.last_scanned_at = datetime.datetime.now(datetime.timezone.utc)
+    repo.last_scan_status = scan.scan_result
+    db.commit()
+    return duration
 
 
 def execute_main_merge_scan(
@@ -780,19 +826,9 @@ def execute_main_merge_scan(
     db: Session = SessionLocal()
     start_time = time.time()
     try:
-        repo = db.query(Repository).filter(Repository.id == repository_id).first()
+        repo, token, owner, repo_name, _ = _get_repo_token_and_names(db, repository_id, installation_id)
         if not repo:
             return
-
-        inst_id = installation_id or (repo.installation.github_installation_id if repo.installation else None)
-        token = None
-        if inst_id:
-            try:
-                token = create_installation_token(inst_id)
-            except Exception as e:
-                logger.warning("Could not obtain token: %s", e)
-
-        owner, repo_name = repo.full_name.split("/", 1) if "/" in repo.full_name else (repo.owner, repo.name)
         ref_sha = merge_commit_sha if merge_commit_sha and merge_commit_sha != "HEAD" else head_sha
 
         short_sha = ref_sha[:12] if ref_sha else "HEAD"
@@ -813,47 +849,18 @@ def execute_main_merge_scan(
         if token:
             try:
                 pr_files = get_pull_request_files(token, owner, repo_name, pull_number)
-                for f in pr_files:
-                    filename = f.get("filename")
-                    if not filename:
-                        continue
-                    status = f.get("status", "")
-
-                    if status == "removed":
-                        db.query(Finding).filter(
-                            Finding.repository_id == repo.id,
-                            Finding.file_path == filename,
-                            Finding.status == "open",
-                        ).update(
-                            {Finding.status: "resolved", Finding.last_detected: datetime.datetime.now(datetime.timezone.utc)},
-                            synchronize_session=False,
-                        )
-                        continue
-
-                    if not is_scannable_file(filename):
-                        continue
-
-                    try:
-                        content = get_repository_file_content(token, owner, repo_name, filename, ref_sha)
-                        if content:
-                            sec_results = scan_secrets_content(content, file_path=filename)
-                            file_sast = scan_sast_content(content, file_path=filename)
-                            file_findings = sec_results + file_sast
-
-                            if file_findings:
-                                findings_data.extend(file_findings)
-                            else:
-                                # Clean in this file -> mark old open findings as resolved (Solved)
-                                db.query(Finding).filter(
-                                    Finding.repository_id == repo.id,
-                                    Finding.file_path == filename,
-                                    Finding.status == "open",
-                                ).update(
-                                    {Finding.status: "resolved", Finding.last_detected: datetime.datetime.now(datetime.timezone.utc)},
-                                    synchronize_session=False,
-                                )
-                    except Exception as content_err:
-                        logger.warning("Could not read file %s: %s", filename, content_err)
+                removed_files = [
+                    f.get("filename") for f in pr_files
+                    if f.get("filename") and f.get("status") == "removed"
+                ]
+                _resolve_removed_files(db, repo.id, removed_files)
+                scannable_files = [
+                    f.get("filename") for f in pr_files
+                    if f.get("filename") and f.get("status") != "removed"
+                ]
+                findings_data = _scan_and_resolve_files(
+                    db, repo.id, token, owner, repo_name, ref_sha, scannable_files
+                )
             except Exception as gh_err:
                 logger.warning("Error fetching merged PR files: %s", gh_err)
 
@@ -869,34 +876,10 @@ def execute_main_merge_scan(
                 synchronize_session=False,
             )
 
-        policy = load_policy()
-        eval_result = evaluate_policy(findings_data, policy)
-        counts = eval_result.get("counts", {})
-        duration = round(time.time() - start_time, 2)
-
-        scan.scan_status = "completed"
-        scan.scan_result = "failed" if len(findings_data) > 0 else "passed"
-        scan.score = eval_result.get("score", 100 if len(findings_data) == 0 else 0)
-        scan.total_findings = len(findings_data)
-        scan.critical_count = counts.get("CRITICAL", 0)
-        scan.high_count = counts.get("HIGH", 0)
-        scan.medium_count = counts.get("MEDIUM", 0)
-        scan.low_count = counts.get("LOW", 0)
-        scan.scan_duration = duration
-        scan.completed_at = datetime.datetime.now(datetime.timezone.utc)
-
-        if findings_data:
-            persist_scan_findings(
-                db,
-                scan.id,
-                repo.id,
-                findings_data,
-                default_recommendation="Review and remediate security vulnerability on main branch.",
-            )
-
-        repo.last_scanned_at = datetime.datetime.now(datetime.timezone.utc)
-        repo.last_scan_status = scan.scan_result
-        db.commit()
+        duration = _record_branch_scan_completion(
+            db, scan, repo, findings_data, start_time,
+            default_recommendation="Review and remediate security vulnerability on main branch.",
+        )
         logger.info("Merged PR #%s main branch scan finished in %ss with %s findings", pull_number, duration, len(findings_data))
     except Exception as exc:
         db.rollback()
@@ -921,19 +904,9 @@ def execute_main_push_scan(
     db: Session = SessionLocal()
     start_time = time.time()
     try:
-        repo = db.query(Repository).filter(Repository.id == repository_id).first()
+        repo, token, owner, repo_name, _ = _get_repo_token_and_names(db, repository_id, installation_id)
         if not repo:
             return
-
-        inst_id = installation_id or (repo.installation.github_installation_id if repo.installation else None)
-        token = None
-        if inst_id:
-            try:
-                token = create_installation_token(inst_id)
-            except Exception as e:
-                logger.warning("Could not obtain token: %s", e)
-
-        owner, repo_name = repo.full_name.split("/", 1) if "/" in repo.full_name else (repo.owner, repo.name)
         ref_sha = commit_sha or "HEAD"
 
         short_sha = ref_sha[:12] if ref_sha else "HEAD"
@@ -964,72 +937,15 @@ def execute_main_push_scan(
                 removed.add(f)
                 added_or_modified.discard(f)
 
-        for f in removed:
-            db.query(Finding).filter(
-                Finding.repository_id == repo.id,
-                Finding.file_path == f,
-                Finding.status == "open",
-            ).update(
-                {Finding.status: "resolved", Finding.last_detected: datetime.datetime.now(datetime.timezone.utc)},
-                synchronize_session=False,
-            )
+        _resolve_removed_files(db, repo.id, removed)
+        findings_data = _scan_and_resolve_files(
+            db, repo.id, token, owner, repo_name, ref_sha, added_or_modified
+        )
 
-        findings_data: List[Dict[str, Any]] = []
-
-        if token:
-            for filename in added_or_modified:
-                if not is_scannable_file(filename):
-                    continue
-                try:
-                    content = get_repository_file_content(token, owner, repo_name, filename, ref_sha)
-                    if content:
-                        sec_results = scan_secrets_content(content, file_path=filename)
-                        file_sast = scan_sast_content(content, file_path=filename)
-                        file_findings = sec_results + file_sast
-
-                        if file_findings:
-                            findings_data.extend(file_findings)
-                        else:
-                            # Clean in this file -> mark old open findings as resolved (Solved)
-                            db.query(Finding).filter(
-                                Finding.repository_id == repo.id,
-                                Finding.file_path == filename,
-                                Finding.status == "open",
-                            ).update(
-                                {Finding.status: "resolved", Finding.last_detected: datetime.datetime.now(datetime.timezone.utc)},
-                                synchronize_session=False,
-                            )
-                except Exception as file_err:
-                    logger.warning("Could not read file %s on push: %s", filename, file_err)
-
-        policy = load_policy()
-        eval_result = evaluate_policy(findings_data, policy)
-        counts = eval_result.get("counts", {})
-        duration = round(time.time() - start_time, 2)
-
-        scan.scan_status = "completed"
-        scan.scan_result = "failed" if len(findings_data) > 0 else "passed"
-        scan.score = eval_result.get("score", 100 if len(findings_data) == 0 else 0)
-        scan.total_findings = len(findings_data)
-        scan.critical_count = counts.get("CRITICAL", 0)
-        scan.high_count = counts.get("HIGH", 0)
-        scan.medium_count = counts.get("MEDIUM", 0)
-        scan.low_count = counts.get("LOW", 0)
-        scan.scan_duration = duration
-        scan.completed_at = datetime.datetime.now(datetime.timezone.utc)
-
-        if findings_data:
-            persist_scan_findings(
-                db,
-                scan.id,
-                repo.id,
-                findings_data,
-                default_recommendation="Remediate security finding on main branch.",
-            )
-
-        repo.last_scanned_at = datetime.datetime.now(datetime.timezone.utc)
-        repo.last_scan_status = scan.scan_result
-        db.commit()
+        duration = _record_branch_scan_completion(
+            db, scan, repo, findings_data, start_time,
+            default_recommendation="Remediate security finding on main branch.",
+        )
         logger.info("Main branch push scan completed in %ss with %s findings", duration, len(findings_data))
     except Exception as exc:
         db.rollback()

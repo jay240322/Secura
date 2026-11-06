@@ -583,13 +583,13 @@ export function PullRequestRow({
                                   {f.severity}
                                 </span>
                               </div>
-                              <p className="text-[11px] font-mono text-slate-600 dark:text-zinc-400">
-                                {f.filePath}:{f.lineNumber}
-                              </p>
+                              <div className="text-[11px] font-mono text-slate-600 dark:text-zinc-400">
+                                <code>{f.filePath}:{f.lineNumber}</code>
+                              </div>
                               {f.recommendation && (
-                                <p className="text-[11px] text-emerald-700 dark:text-emerald-400 mt-0.5">
-                                  <strong>Remediation:</strong> {f.recommendation}
-                                </p>
+                                <div className="text-[11px] text-emerald-700 dark:text-emerald-400 mt-1">
+                                  <span className="font-semibold">Remediation:</span> {f.recommendation}
+                                </div>
                               )}
                             </div>
                           ))}

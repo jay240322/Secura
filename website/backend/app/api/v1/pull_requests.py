@@ -63,6 +63,128 @@ def serialize_pr_finding(f: Finding) -> Dict[str, Any]:
     }
 
 
+def serialize_pr_scan_info(sc: Scan) -> Dict[str, Any]:
+    sc_findings = [serialize_pr_finding(f) for f in sc.findings]
+    sc_status = "neutral"
+    if sc.scan_result == "passed":
+        sc_status = "success"
+    elif sc.scan_result in ("failed", "error"):
+        sc_status = "failure"
+    elif sc.scan_status == "running":
+        sc_status = "in_progress"
+
+    return {
+        "id": sc.id,
+        "commit_sha": sc.commit_sha[:7] if sc.commit_sha else "HEAD",
+        "full_commit_sha": sc.commit_sha,
+        "branch": sc.branch,
+        "scan_status": sc.scan_status,
+        "scan_result": sc.scan_result,
+        "check_run_status": sc_status,
+        "total_findings": sc.total_findings,
+        "critical_findings": sc.critical_count,
+        "high_findings": sc.high_count,
+        "medium_findings": sc.medium_count,
+        "low_findings": sc.low_count,
+        "score": sc.score,
+        "created_at": sc.created_at.isoformat() if sc.created_at else None,
+        "findings": sc_findings,
+    }
+
+
+def annotate_pr_commits(
+    raw_commits: List[Dict[str, Any]],
+    scans_by_sha: Dict[str, Dict[str, Any]],
+    all_scans_for_pr: List[Scan],
+    fallback_scan: Optional[Scan] = None,
+    default_owner: str = "developer",
+    repo_full_name: str = "",
+) -> List[Dict[str, Any]]:
+    annotated = []
+    known_shas = set()
+    total_pr_scans_count = len(all_scans_for_pr)
+    for c in raw_commits:
+        c_dict = dict(c)
+        sha = (c.get("sha") or "").lower()
+        full_sha = (c.get("full_sha") or c.get("sha") or "").lower()
+        if sha:
+            known_shas.add(sha)
+            known_shas.add(sha[:7])
+        if full_sha:
+            known_shas.add(full_sha)
+            known_shas.add(full_sha[:7])
+
+        matching = (
+            scans_by_sha.get(full_sha)
+            or scans_by_sha.get(sha)
+            or scans_by_sha.get(sha[:7] if len(sha) >= 7 else sha)
+        )
+        if matching:
+            c_dict["scan_result"] = matching["scan_result"]
+            c_dict["scan_status"] = matching["scan_status"]
+            c_dict["check_run_status"] = matching["check_run_status"]
+            c_dict["total_findings"] = matching["total_findings"]
+            c_dict["critical_findings"] = matching["critical_findings"]
+            c_dict["high_findings"] = matching["high_findings"]
+            c_dict["score"] = matching["score"]
+            c_dict["scan_id"] = matching["id"]
+            c_dict["findings"] = matching["findings"]
+        else:
+            if fallback_scan and len(raw_commits) == 1 and total_pr_scans_count == 1:
+                status = "neutral"
+                if fallback_scan.scan_result == "passed":
+                    status = "success"
+                elif fallback_scan.scan_result in ("failed", "error"):
+                    status = "failure"
+                c_dict["scan_result"] = fallback_scan.scan_result
+                c_dict["scan_status"] = fallback_scan.scan_status
+                c_dict["check_run_status"] = status
+                c_dict["total_findings"] = fallback_scan.total_findings
+                c_dict["critical_findings"] = fallback_scan.critical_count
+                c_dict["high_findings"] = fallback_scan.high_count
+                c_dict["score"] = fallback_scan.score
+                c_dict["scan_id"] = fallback_scan.id
+                c_dict["findings"] = [serialize_pr_finding(f) for f in fallback_scan.findings]
+            else:
+                c_dict["scan_result"] = None
+                c_dict["scan_status"] = None
+                c_dict["check_run_status"] = "neutral"
+                c_dict["total_findings"] = 0
+                c_dict["critical_findings"] = 0
+                c_dict["high_findings"] = 0
+                c_dict["score"] = None
+                c_dict["scan_id"] = None
+                c_dict["findings"] = []
+
+        annotated.append(c_dict)
+
+    for sc in all_scans_for_pr:
+        sc_sha = (sc.commit_sha or "").lower()
+        if sc_sha and sc_sha not in known_shas and sc_sha[:7] not in known_shas:
+            sc_info = serialize_pr_scan_info(sc)
+            annotated.append({
+                "sha": sc.commit_sha[:7],
+                "full_sha": sc.commit_sha,
+                "message": f"Historical Commit {sc.commit_sha[:7]} (Scanned by Secura)",
+                "author": sc.pr_author or default_owner,
+                "author_avatar": None,
+                "date": sc.created_at.isoformat() if sc.created_at else None,
+                "html_url": f"https://github.com/{repo_full_name}/commit/{sc.commit_sha}" if repo_full_name else None,
+                "scan_result": sc_info["scan_result"],
+                "scan_status": sc_info["scan_status"],
+                "check_run_status": sc_info["check_run_status"],
+                "total_findings": sc_info["total_findings"],
+                "critical_findings": sc_info["critical_findings"],
+                "high_findings": sc_info["high_findings"],
+                "score": sc_info["score"],
+                "scan_id": sc_info["id"],
+                "findings": sc_info["findings"],
+                "is_historical": True,
+            })
+
+    return annotated
+
+
 def fast_sync_repository_prs(db: Session, repo: Repository, background_tasks: Optional[BackgroundTasks] = None) -> int:
     """
     Rapidly fetch and synchronize all PRs for a repository in a single GitHub API call.
@@ -223,32 +345,7 @@ def build_annotated_pr_data(
     seen_finding_keys = set()
 
     for sc in all_scans_for_pr:
-        sc_findings = [serialize_pr_finding(f) for f in sc.findings]
-        sc_status = "neutral"
-        if sc.scan_result == "passed":
-            sc_status = "success"
-        elif sc.scan_result in ("failed", "error"):
-            sc_status = "failure"
-        elif sc.scan_status == "running":
-            sc_status = "in_progress"
-
-        sc_info = {
-            "id": sc.id,
-            "commit_sha": sc.commit_sha[:7] if sc.commit_sha else "HEAD",
-            "full_commit_sha": sc.commit_sha,
-            "branch": sc.branch,
-            "scan_status": sc.scan_status,
-            "scan_result": sc.scan_result,
-            "check_run_status": sc_status,
-            "total_findings": sc.total_findings,
-            "critical_findings": sc.critical_count,
-            "high_findings": sc.high_count,
-            "medium_findings": sc.medium_count,
-            "low_findings": sc.low_count,
-            "score": sc.score,
-            "created_at": sc.created_at.isoformat() if sc.created_at else None,
-            "findings": sc_findings,
-        }
+        sc_info = serialize_pr_scan_info(sc)
         scan_runs_list.append(sc_info)
 
         sha_val = (sc.commit_sha or "").lower()
@@ -296,91 +393,14 @@ def build_annotated_pr_data(
             }
         ]
 
-    annotated_commits = []
-    known_shas = set()
-
-    for c in raw_commits:
-        c_dict = dict(c)
-        sha = (c.get("sha") or "").lower()
-        full_sha = (c.get("full_sha") or c.get("sha") or "").lower()
-        if sha:
-            known_shas.add(sha)
-            known_shas.add(sha[:7])
-        if full_sha:
-            known_shas.add(full_sha)
-            known_shas.add(full_sha[:7])
-
-        matching_scan = (
-            scans_by_sha.get(full_sha)
-            or scans_by_sha.get(sha)
-            or scans_by_sha.get(sha[:7] if len(sha) >= 7 else sha)
-        )
-        if matching_scan:
-            c_dict["scan_result"] = matching_scan["scan_result"]
-            c_dict["scan_status"] = matching_scan["scan_status"]
-            c_dict["check_run_status"] = matching_scan["check_run_status"]
-            c_dict["total_findings"] = matching_scan["total_findings"]
-            c_dict["critical_findings"] = matching_scan["critical_findings"]
-            c_dict["high_findings"] = matching_scan["high_findings"]
-            c_dict["score"] = matching_scan["score"]
-            c_dict["scan_id"] = matching_scan["id"]
-            c_dict["findings"] = matching_scan["findings"]
-        else:
-            if len(all_scans_for_pr) == 1 and len(raw_commits) == 1:
-                c_dict["scan_result"] = s.scan_result
-                c_dict["scan_status"] = s.scan_status
-                c_dict["check_run_status"] = check_status
-                c_dict["total_findings"] = s.total_findings
-                c_dict["critical_findings"] = s.critical_count
-                c_dict["high_findings"] = s.high_count
-                c_dict["score"] = s.score
-                c_dict["scan_id"] = s.id
-                c_dict["findings"] = serialized_findings
-            else:
-                c_dict["scan_result"] = None
-                c_dict["scan_status"] = None
-                c_dict["check_run_status"] = "neutral"
-                c_dict["total_findings"] = 0
-                c_dict["critical_findings"] = 0
-                c_dict["high_findings"] = 0
-                c_dict["score"] = None
-                c_dict["scan_id"] = None
-                c_dict["findings"] = []
-
-        annotated_commits.append(c_dict)
-
-    # Also include any scans that were performed for this PR whose commit wasn't in raw_commits
-    for sc in all_scans_for_pr:
-        sc_sha = (sc.commit_sha or "").lower()
-        if sc_sha and sc_sha not in known_shas and sc_sha[:7] not in known_shas:
-            sc_findings = [serialize_pr_finding(f) for f in sc.findings]
-            sc_status = "neutral"
-            if sc.scan_result == "passed":
-                sc_status = "success"
-            elif sc.scan_result in ("failed", "error"):
-                sc_status = "failure"
-            elif sc.scan_status == "running":
-                sc_status = "in_progress"
-
-            annotated_commits.append({
-                "sha": sc.commit_sha[:7],
-                "full_sha": sc.commit_sha,
-                "message": f"Historical Commit {sc.commit_sha[:7]} (Scanned by Secura)",
-                "author": sc.pr_author or (owner or "developer"),
-                "author_avatar": None,
-                "date": sc.created_at.isoformat() if sc.created_at else None,
-                "html_url": f"https://github.com/{repo_name}/commit/{sc.commit_sha}",
-                "scan_result": sc.scan_result,
-                "scan_status": sc.scan_status,
-                "check_run_status": sc_status,
-                "total_findings": sc.total_findings,
-                "critical_findings": sc.critical_count,
-                "high_findings": sc.high_count,
-                "score": sc.score,
-                "scan_id": sc.id,
-                "findings": sc_findings,
-                "is_historical": True,
-            })
+    annotated_commits = annotate_pr_commits(
+        raw_commits=raw_commits,
+        scans_by_sha=scans_by_sha,
+        all_scans_for_pr=all_scans_for_pr,
+        fallback_scan=s,
+        default_owner=owner or "developer",
+        repo_full_name=repo_name,
+    )
 
     # Check if a previous scan failed but current head scan passed
     has_previous_failure = any(
@@ -547,6 +567,17 @@ def sync_pull_requests(
     return list_pull_requests(repository_id=repository_id, state=None, db=db, current_user=current_user)
 
 
+def _get_pr_scans_and_owner(db: Session, repo: Repository, pull_number: int) -> Tuple[List[Scan], str, str]:
+    scans = (
+        db.query(Scan)
+        .filter(Scan.repository_id == repo.id, Scan.pull_number == pull_number)
+        .order_by(Scan.created_at.desc())
+        .all()
+    )
+    owner, repo_name = repo.full_name.split("/", 1) if "/" in repo.full_name else (repo.owner, repo.name)
+    return scans, owner, repo_name
+
+
 @router.get("/{repository_id}/{pull_number}/commits", response_model=List[Dict[str, Any]])
 def get_pr_commits(
     repository_id: str,
@@ -557,15 +588,7 @@ def get_pr_commits(
     """Fetch all commits associated with a specific pull request, enriched with Secura scan results."""
     repo = get_user_repository_or_404(db, repository_id, current_user.id)
     scan = get_latest_pr_scan(db, repo.id, pull_number)
-
-    all_scans_for_pr = (
-        db.query(Scan)
-        .filter(Scan.repository_id == repo.id, Scan.pull_number == pull_number)
-        .order_by(Scan.created_at.desc())
-        .all()
-    )
-
-    owner, repo_name = repo.full_name.split("/", 1) if "/" in repo.full_name else (repo.owner, repo.name)
+    all_scans_for_pr, owner, repo_name = _get_pr_scans_and_owner(db, repo, pull_number)
 
     inst_id = repo.installation.github_installation_id if repo.installation else None
     if not inst_id:
@@ -600,30 +623,7 @@ def get_pr_commits(
     # Map scans by sha
     scans_by_sha = {}
     for sc in all_scans_for_pr:
-        sc_findings = [serialize_pr_finding(f) for f in sc.findings]
-        sc_status = "neutral"
-        if sc.scan_result == "passed":
-            sc_status = "success"
-        elif sc.scan_result in ("failed", "error"):
-            sc_status = "failure"
-        elif sc.scan_status == "running":
-            sc_status = "in_progress"
-
-        sc_info = {
-            "id": sc.id,
-            "commit_sha": sc.commit_sha[:7] if sc.commit_sha else "HEAD",
-            "full_commit_sha": sc.commit_sha,
-            "branch": sc.branch,
-            "scan_status": sc.scan_status,
-            "scan_result": sc.scan_result,
-            "check_run_status": sc_status,
-            "total_findings": sc.total_findings,
-            "critical_findings": sc.critical_count,
-            "high_findings": sc.high_count,
-            "score": sc.score,
-            "created_at": sc.created_at.isoformat() if sc.created_at else None,
-            "findings": sc_findings,
-        }
+        sc_info = serialize_pr_scan_info(sc)
         sha_val = (sc.commit_sha or "").lower()
         if sha_val:
             scans_by_sha[sha_val] = sc_info
@@ -631,90 +631,14 @@ def get_pr_commits(
             if len(sha_val) >= 12:
                 scans_by_sha[sha_val[:12]] = sc_info
 
-    annotated = []
-    known_shas = set()
-    for c in raw_commits:
-        c_dict = dict(c)
-        sha = (c.get("sha") or "").lower()
-        full_sha = (c.get("full_sha") or c.get("sha") or "").lower()
-        if sha:
-            known_shas.add(sha)
-            known_shas.add(sha[:7])
-        if full_sha:
-            known_shas.add(full_sha)
-            known_shas.add(full_sha[:7])
-
-        matching = (
-            scans_by_sha.get(full_sha)
-            or scans_by_sha.get(sha)
-            or scans_by_sha.get(sha[:7] if len(sha) >= 7 else sha)
-        )
-        if matching:
-            c_dict["scan_result"] = matching["scan_result"]
-            c_dict["scan_status"] = matching["scan_status"]
-            c_dict["check_run_status"] = matching["check_run_status"]
-            c_dict["total_findings"] = matching["total_findings"]
-            c_dict["critical_findings"] = matching["critical_findings"]
-            c_dict["high_findings"] = matching["high_findings"]
-            c_dict["score"] = matching["score"]
-            c_dict["scan_id"] = matching["id"]
-            c_dict["findings"] = matching["findings"]
-        else:
-            if scan and len(raw_commits) == 1 and len(all_scans_for_pr) == 1:
-                c_dict["scan_result"] = scan.scan_result
-                c_dict["scan_status"] = scan.scan_status
-                c_dict["check_run_status"] = "success" if scan.scan_result == "passed" else ("failure" if scan.scan_result in ("failed", "error") else "neutral")
-                c_dict["total_findings"] = scan.total_findings
-                c_dict["critical_findings"] = scan.critical_count
-                c_dict["high_findings"] = scan.high_count
-                c_dict["score"] = scan.score
-                c_dict["scan_id"] = scan.id
-                c_dict["findings"] = [serialize_pr_finding(f) for f in scan.findings]
-            else:
-                c_dict["scan_result"] = None
-                c_dict["scan_status"] = None
-                c_dict["check_run_status"] = "neutral"
-                c_dict["total_findings"] = 0
-                c_dict["critical_findings"] = 0
-                c_dict["high_findings"] = 0
-                c_dict["score"] = None
-                c_dict["scan_id"] = None
-                c_dict["findings"] = []
-
-        annotated.append(c_dict)
-
-    # Append any scanned commits for this PR not present in raw_commits (e.g. earlier failed commit)
-    for sc in all_scans_for_pr:
-        sc_sha = (sc.commit_sha or "").lower()
-        if sc_sha and sc_sha not in known_shas and sc_sha[:7] not in known_shas:
-            sc_findings = [serialize_pr_finding(f) for f in sc.findings]
-            sc_status = "neutral"
-            if sc.scan_result == "passed":
-                sc_status = "success"
-            elif sc.scan_result in ("failed", "error"):
-                sc_status = "failure"
-            elif sc.scan_status == "running":
-                sc_status = "in_progress"
-
-            annotated.append({
-                "sha": sc.commit_sha[:7],
-                "full_sha": sc.commit_sha,
-                "message": f"Historical Commit {sc.commit_sha[:7]} (Scanned by Secura)",
-                "author": sc.pr_author or repo.owner,
-                "author_avatar": None,
-                "date": sc.created_at.isoformat() if sc.created_at else None,
-                "html_url": f"https://github.com/{repo.full_name}/commit/{sc.commit_sha}",
-                "scan_result": sc.scan_result,
-                "scan_status": sc.scan_status,
-                "check_run_status": sc_status,
-                "total_findings": sc.total_findings,
-                "critical_findings": sc.critical_count,
-                "high_findings": sc.high_count,
-                "score": sc.score,
-                "scan_id": sc.id,
-                "findings": sc_findings,
-                "is_historical": True,
-            })
+    annotated = annotate_pr_commits(
+        raw_commits=raw_commits,
+        scans_by_sha=scans_by_sha,
+        all_scans_for_pr=all_scans_for_pr,
+        fallback_scan=scan,
+        default_owner=repo.owner,
+        repo_full_name=repo.full_name,
+    )
 
     if scan and annotated:
         try:
@@ -805,12 +729,5 @@ def get_pull_request_detail(
     if not scan:
         raise HTTPException(status_code=404, detail=f"No scan record found for PR #{pull_number}")
 
-    all_scans_for_pr = (
-        db.query(Scan)
-        .filter(Scan.repository_id == repo.id, Scan.pull_number == pull_number)
-        .order_by(Scan.created_at.desc())
-        .all()
-    )
-
-    owner, repo_name = repo.full_name.split("/", 1) if "/" in repo.full_name else (repo.owner, repo.name)
+    all_scans_for_pr, owner, _ = _get_pr_scans_and_owner(db, repo, pull_number)
     return build_annotated_pr_data(db, scan, repo.full_name, owner, all_scans_for_pr)
