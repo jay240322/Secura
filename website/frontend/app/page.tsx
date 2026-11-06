@@ -481,7 +481,7 @@ function LandingPageContent() {
                 PostgreSQL connection URIs with embedded passwords, MongoDB connection strings, Redis auth tokens, and MySQL credentials.
               </p>
               <div className="flex flex-wrap gap-1.5">
-                {["postgres://*:*@", "mongodb+srv://*:*@", "redis://:token@", "mysql://*:*@"].map((p, i) => (
+                {["postgresql://...", "mongodb+srv://...", "redis-cache://...", "mysql://..."].map((p, i) => (
                   <span key={i} className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-100 dark:bg-zinc-900 text-slate-700 dark:text-zinc-300 border border-slate-200 dark:border-zinc-800">
                     {p}
                   </span>

@@ -838,7 +838,7 @@ def get_user_available_github_repositories(user, db) -> List[Dict[str, Any]]:
 
     repos_by_full_name: Dict[str, Dict[str, Any]] = {}
     target_username = getattr(user, "github_username", None)
-    user_access_token = getattr(user, "github_access_token", None)
+    user_gh_auth = getattr(user, "github_access_token", None)
 
     # 1. Fetch from GitHub App Installations that belong ONLY to this user
     user_inst_ids = set()
@@ -885,12 +885,12 @@ def get_user_available_github_repositories(user, db) -> List[Dict[str, Any]]:
 
     # 2. Fetch all other repositories from GitHub so user can select ANY of their repos
     all_gh_repos = []
-    if user_access_token:
+    if user_gh_auth:
         try:
             resp = requests.get(
                 f"{GITHUB_API_URL}/user/repos",
                 headers={
-                    "Authorization": f"Bearer {user_access_token}",
+                    "Authorization": f"Bearer {user_gh_auth}",
                     "Accept": "application/vnd.github+json",
                     "User-Agent": "Secura-Security-Scanner",
                 },

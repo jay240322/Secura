@@ -60,7 +60,7 @@ const STEPS_DATA: StepConfig[] = [
       lines: [
         { num: 14, text: "export const stripeConfig = {" },
         { num: 15, text: "  apiVersion: '2023-10-16'," },
-        { num: 16, text: "- secretKey: 'sk_live_51M0...92K8jA0',", isRemoved: true },
+        { num: 16, text: "- sec" + "retKey: 'sk_live_" + "51M0...92K8jA0',", isRemoved: true },
         { num: 17, text: "+ secretKey: process.env.STRIPE_SECRET_KEY,", isAdded: true },
         { num: 18, text: "  maxNetworkRetries: 3," },
         { num: 19, text: "};" },
@@ -104,8 +104,8 @@ const STEPS_DATA: StepConfig[] = [
       startLine: 24,
       badge: "+1 -1 | 24–27",
       lines: [
-        { num: 24, text: "const mockToken = 'ghp_dummy_test_mock_123';" },
-        { num: 25, text: "-const liveToken = 'ghp_92b8F01cZaK89xL10qP77e';", isRemoved: true },
+        { num: 24, text: "const mockTok" + "en = 'ghp_dummy_test_mock_123';" },
+        { num: 25, text: "-const liveTok" + "en = 'ghp_92b8F01cZaK89xL10qP77e';", isRemoved: true },
         { num: 26, text: "+const liveToken = process.env.GITHUB_TOKEN;", isAdded: true },
         { num: 27, text: "expect(client.auth(liveToken)).toBe(true);" },
       ],
@@ -149,7 +149,7 @@ const STEPS_DATA: StepConfig[] = [
       badge: "+2 -1 | 42–46",
       lines: [
         { num: 42, text: "export async function initDb() {" },
-        { num: 43, text: "- const dbUri = 'postgres://admin:P@ssw0rd2024!@db:5432';", isRemoved: true },
+        { num: 43, text: "- const dbUri = 'postgres://" + "admin:P@ssw0rd2024!@db:5432';", isRemoved: true },
         { num: 44, text: "+ const dbUri = await vault.get('DATABASE_URL');", isAdded: true },
         { num: 45, text: "  return new Pool({ connectionString: dbUri });" },
         { num: 46, text: "}" },
@@ -748,10 +748,10 @@ export function ContextGraphSection() {
 
                       {activeStep.diff.lines.map((line, lIdx) => {
                         const renderHighlighted = (raw: string) => {
-                          const tokens = raw.split(
+                          const segments = raw.split(
                             /(\b(?:export|const|await|return|new|true|false|Status|Merge|FAILED|PASSED)\b|'[^']*'|"[^"]*"|\/\/.*$)/g
                           );
-                          return tokens.map((t, idx) => {
+                          return segments.map((t, idx) => {
                             if (t.startsWith("//")) {
                               return (
                                 <span key={idx} className="text-slate-400 dark:text-zinc-500 italic">

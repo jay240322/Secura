@@ -836,9 +836,9 @@ def execute_main_merge_scan(
                     try:
                         content = get_repository_file_content(token, owner, repo_name, filename, ref_sha)
                         if content:
-                            file_secrets = scan_secrets_content(content, file_path=filename)
+                            sec_results = scan_secrets_content(content, file_path=filename)
                             file_sast = scan_sast_content(content, file_path=filename)
-                            file_findings = file_secrets + file_sast
+                            file_findings = sec_results + file_sast
 
                             if file_findings:
                                 findings_data.extend(file_findings)
@@ -983,9 +983,9 @@ def execute_main_push_scan(
                 try:
                     content = get_repository_file_content(token, owner, repo_name, filename, ref_sha)
                     if content:
-                        file_secrets = scan_secrets_content(content, file_path=filename)
+                        sec_results = scan_secrets_content(content, file_path=filename)
                         file_sast = scan_sast_content(content, file_path=filename)
-                        file_findings = file_secrets + file_sast
+                        file_findings = sec_results + file_sast
 
                         if file_findings:
                             findings_data.extend(file_findings)

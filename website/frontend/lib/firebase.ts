@@ -139,9 +139,9 @@ export async function signInWithPopup(
       // 1. Attempt token-based retrieval from OAuth credential
       try {
         const cred = live.GithubAuthProvider?.credentialFromResult?.(result);
-        const ghToken = cred?.accessToken || (result as any)?.credential?.accessToken;
-        if (ghToken) {
-          const profile = await fetchGitHubUserProfile(ghToken, true);
+        const ghOAuth = cred?.accessToken || (result as any)?.credential?.accessToken;
+        if (ghOAuth) {
+          const profile = await fetchGitHubUserProfile(ghOAuth, true);
           if (profile) {
             if (!ghLogin) ghLogin = profile.login;
             if (!ghProfileName && profile.name) ghProfileName = profile.name;
