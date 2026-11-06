@@ -70,13 +70,6 @@ def list_findings(
         )
 
     findings = query.order_by(Finding.created_at.desc()).offset(skip).limit(limit).all()
-    if not findings and not repository_id and not scan_id:
-        fallback_q = db.query(Finding)
-        if severity:
-            fallback_q = fallback_q.filter(Finding.severity == severity.upper())
-        if status:
-            fallback_q = fallback_q.filter(Finding.status == status.lower())
-        findings = fallback_q.order_by(Finding.created_at.desc()).offset(skip).limit(limit).all()
     return [to_finding_response(f) for f in findings]
 
 

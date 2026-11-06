@@ -33,9 +33,26 @@ export default function PullRequestsPage() {
   const [loading, setLoading] = useState(true);
   const [syncLoading, setSyncLoading] = useState(false);
   const [scanningMap, setScanningMap] = useState<Record<string, boolean>>({});
+  const [loadingCommits, setLoadingCommits] = useState<Record<string, boolean>>({});
   const [feedback, setFeedback] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
+
+  const handleRefreshCommits = async (pr: PullRequest) => {
+    setLoadingCommits((prev) => ({ ...prev, [pr.id]: true }));
+    try {
+      const commits = await api.getPullRequestCommits(pr.repositoryId, pr.number);
+      if (commits && commits.length > 0) {
+        setPullRequests((prev) =>
+          prev.map((item) => (item.id === pr.id ? { ...item, commits } : item))
+        );
+      }
+    } catch (e) {
+      console.error("Failed to fetch PR commits:", e);
+    } finally {
+      setLoadingCommits((prev) => ({ ...prev, [pr.id]: false }));
+    }
+  };
 
   const loadData = async (repoId?: string, state?: string) => {
     try {
@@ -376,6 +393,8 @@ export default function PullRequestsPage() {
                   pr={pr}
                   onScan={handleScanPR}
                   isScanning={Boolean(scanningMap[pr.id])}
+                  onRefreshCommits={handleRefreshCommits}
+                  isCommitsLoading={Boolean(loadingCommits[pr.id])}
                   showRepoName={true}
                 />
               ))}

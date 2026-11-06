@@ -30,7 +30,31 @@ async def lifespan(app: FastAPI):
         logger.info("Initializing Secura database tables...")
         try:
             Base.metadata.create_all(bind=engine)
-            logger.info("Secura database tables checked.")
+            # Startup profile sanitization: clean any noreply email strings from user names
+            from app.core.database import SessionLocal
+            from app.models.user import User
+            with SessionLocal() as db:
+                users = db.query(User).all()
+                for u in users:
+                    dirty = False
+                    if u.email and "@users.noreply.github.com" in u.email:
+                        gh_handle = u.email.split("@")[0].replace("@", "").strip()
+                        if not u.github_username:
+                            u.github_username = gh_handle
+                            dirty = True
+                        if not u.provider or u.provider == "local":
+                            u.provider = "github"
+                            dirty = True
+                    if u.name and ("@users.noreply.github.com" in u.name or "@" in u.name):
+                        clean_n = u.github_username or (u.email.split("@")[0] if u.email else "Developer")
+                        u.name = clean_n.replace("@", "")
+                        dirty = True
+                    if u.github_username and not u.avatar_url:
+                        u.avatar_url = f"https://github.com/{u.github_username}.png"
+                        dirty = True
+                    if dirty:
+                        db.commit()
+            logger.info("Secura database tables and user records verified.")
         except Exception as e:
             logger.warning(f"Database table initialization warning: {e}")
     logger.info("Secura backend ready.")

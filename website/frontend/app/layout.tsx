@@ -55,7 +55,7 @@ export default function RootLayout({
           }}
         />
       </head>
-      <body className="min-h-full bg-slate-50 dark:bg-black text-slate-900 dark:text-zinc-100 selection:bg-[#EDE9E6] selection:text-[#281C59] dark:selection:bg-zinc-800 dark:selection:text-zinc-200" suppressHydrationWarning>
+      <body className="min-h-full bg-slate-50 dark:bg-[#111113] text-slate-900 dark:text-zinc-100 selection:bg-[#EDE9E6] selection:text-[#281C59] dark:selection:bg-zinc-800 dark:selection:text-zinc-200" suppressHydrationWarning>
         <ThemeProvider>
           <Suspense fallback={null}>
             <GlobalLoaderProvider>

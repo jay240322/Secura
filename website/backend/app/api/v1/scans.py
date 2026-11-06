@@ -54,8 +54,6 @@ def list_scans(
         query = query.filter(Scan.repository_id == repository_id)
 
     scans = query.order_by(Scan.created_at.desc()).offset(skip).limit(limit).all()
-    if not scans and not repository_id:
-        scans = db.query(Scan).order_by(Scan.created_at.desc()).offset(skip).limit(limit).all()
     return [to_scan_response(s) for s in scans]
 
 

@@ -4,6 +4,7 @@ from typing import Optional
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
@@ -92,6 +93,47 @@ def login(payload: UserLogin, db: Session = Depends(get_db)):
     )
 
 
+def sanitize_user_display_name(
+    name: Optional[str],
+    email: str,
+    github_username: Optional[str] = None,
+    provider: Optional[str] = None,
+) -> str:
+    """
+    Ensure user display name is NEVER a noreply email address.
+    Returns the real profile name, clean GitHub handle, or Google display name.
+    """
+    if name:
+        clean = name.strip()
+        if "@users.noreply.github.com" in clean:
+            clean = clean.split("@")[0].replace("@", "").strip()
+        elif "@" in clean and (provider == "github" or github_username):
+            clean = github_username or clean.split("@")[0].strip()
+        if clean and "@" not in clean:
+            return clean
+
+    # Priority 2: clean github username
+    if github_username:
+        clean_gh = github_username.strip().lstrip("@")
+        if "@" in clean_gh:
+            clean_gh = clean_gh.split("@")[0]
+        if clean_gh:
+            return clean_gh
+
+    # Priority 3: extract handle from noreply email
+    if "@users.noreply.github.com" in email:
+        handle = email.split("@")[0].strip().replace("@", "")
+        if handle:
+            return handle
+
+    # Priority 4: email prefix or default
+    if "@" in email:
+        prefix = email.split("@")[0].strip()
+        return prefix.capitalize() if prefix else "Developer"
+
+    return "Developer"
+
+
 @router.post("/oauth", response_model=TokenResponse)
 def oauth_sign_in(payload: OAuthLogin, db: Session = Depends(get_db)):
     """Sign in or register using an OAuth provider (GitHub or Google)."""
@@ -102,29 +144,58 @@ def oauth_sign_in(payload: OAuthLogin, db: Session = Depends(get_db)):
             detail="Valid email is required for OAuth login.",
         )
 
+    provider_lower = payload.provider.strip().lower()
+    gh_handle = payload.provider_id.strip().lstrip("@") if payload.provider_id else None
+    if not gh_handle and provider_lower == "github" and "@users.noreply.github.com" in email_clean:
+        gh_handle = email_clean.split("@")[0].replace("@", "")
+
+    clean_name = sanitize_user_display_name(
+        payload.name,
+        email_clean,
+        github_username=gh_handle,
+        provider=provider_lower,
+    )
+
+    avatar = payload.avatar_url
+    if not avatar and provider_lower == "github" and gh_handle:
+        avatar = f"https://github.com/{gh_handle}.png"
+
     try:
         user = db.query(User).filter(User.email == email_clean).first()
+        if not user and gh_handle:
+            user = db.query(User).filter(User.github_username == gh_handle).first()
+
         if not user:
             user = User(
                 email=email_clean,
-                name=payload.name or email_clean.split("@")[0].capitalize(),
-                avatar_url=payload.avatar_url,
-                provider=payload.provider.lower(),
-                github_username=payload.provider_id if payload.provider.lower() == "github" else None,
+                name=clean_name,
+                avatar_url=avatar,
+                provider=provider_lower,
+                github_username=gh_handle if provider_lower == "github" else None,
                 is_active=True,
             )
             db.add(user)
             db.commit()
             db.refresh(user)
         else:
-            if payload.avatar_url and not user.avatar_url:
-                user.avatar_url = payload.avatar_url
-            if payload.name and not user.name:
-                user.name = payload.name
-            if payload.provider.lower() == "github" and payload.provider_id:
-                user.github_username = payload.provider_id
+            user.name = clean_name
+            user.provider = provider_lower
+            if avatar:
+                user.avatar_url = avatar
+            elif not user.avatar_url and gh_handle:
+                user.avatar_url = f"https://github.com/{gh_handle}.png"
+
+            if provider_lower == "github" and gh_handle:
+                user.github_username = gh_handle
             db.commit()
             db.refresh(user)
+
+        if gh_handle and provider_lower == "github":
+            from app.models.installation import GitHubInstallation
+            from app.models.repository import Repository
+            db.query(GitHubInstallation).filter(func.lower(GitHubInstallation.account_name) == gh_handle.lower()).update({GitHubInstallation.user_id: user.id}, synchronize_session=False)
+            db.query(Repository).filter(func.lower(Repository.owner) == gh_handle.lower()).update({Repository.user_id: user.id}, synchronize_session=False)
+            db.commit()
     except Exception as exc:
         db.rollback()
         raise HTTPException(
@@ -149,8 +220,34 @@ def oauth_sign_in(payload: OAuthLogin, db: Session = Depends(get_db)):
 
 
 @router.get("/me", response_model=UserResponse)
-def get_me(current_user: User = Depends(get_current_user)):
+def get_me(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Retrieve currently authenticated user profile."""
+    dirty = False
+    clean_name = sanitize_user_display_name(
+        current_user.name,
+        current_user.email,
+        github_username=current_user.github_username,
+        provider=current_user.provider,
+    )
+    if clean_name != current_user.name:
+        current_user.name = clean_name
+        dirty = True
+
+    if not current_user.github_username and "@users.noreply.github.com" in current_user.email:
+        current_user.github_username = current_user.email.split("@")[0].replace("@", "")
+        dirty = True
+
+    if not current_user.avatar_url and current_user.github_username:
+        current_user.avatar_url = f"https://github.com/{current_user.github_username}.png"
+        dirty = True
+
+    if dirty:
+        try:
+            db.commit()
+            db.refresh(current_user)
+        except Exception:
+            db.rollback()
+
     return UserResponse.model_validate(current_user)
 
 
@@ -182,7 +279,7 @@ def get_github_oauth_url(redirect_uri: Optional[str] = None):
     url = (
         f"https://github.com/login/oauth/authorize"
         f"?client_id={settings.GITHUB_CLIENT_ID}"
-        f"&scope=read:user,user:email"
+        f"&scope=read:user,user:email,repo"
         f"&redirect_uri={target_redirect}"
     )
     return {"url": url, "client_id": settings.GITHUB_CLIENT_ID}
@@ -284,11 +381,19 @@ async def github_oauth_callback(payload: dict, db: Session = Depends(get_db)):
         if not user and clean_email:
             user = db.query(User).filter(User.email == clean_email).first()
 
+        clean_name = sanitize_user_display_name(
+            gh_user.get("name"),
+            clean_email,
+            github_username=gh_login,
+            provider="github",
+        )
+        avatar = gh_user.get("avatar_url") or (f"https://github.com/{gh_login}.png" if gh_login else None)
+
         if not user:
             user = User(
                 email=clean_email,
-                name=gh_user.get("name") or gh_login,
-                avatar_url=gh_user.get("avatar_url"),
+                name=clean_name,
+                avatar_url=avatar,
                 github_username=gh_login,
                 github_id=gh_id_str,
                 github_access_token=gh_access_token,
@@ -300,15 +405,22 @@ async def github_oauth_callback(payload: dict, db: Session = Depends(get_db)):
             db.refresh(user)
         else:
             user.github_username = gh_login
+            user.name = clean_name
+            user.provider = "github"
             if gh_id_str:
                 user.github_id = gh_id_str
             user.github_access_token = gh_access_token
-            if gh_user.get("avatar_url"):
-                user.avatar_url = gh_user["avatar_url"]
-            if gh_user.get("name") and not user.name:
-                user.name = gh_user["name"]
+            if avatar:
+                user.avatar_url = avatar
             db.commit()
             db.refresh(user)
+
+        if gh_login:
+            from app.models.installation import GitHubInstallation
+            from app.models.repository import Repository
+            db.query(GitHubInstallation).filter(func.lower(GitHubInstallation.account_name) == gh_login.lower()).update({GitHubInstallation.user_id: user.id}, synchronize_session=False)
+            db.query(Repository).filter(func.lower(Repository.owner) == gh_login.lower()).update({Repository.user_id: user.id}, synchronize_session=False)
+            db.commit()
     except Exception as db_err:
         db.rollback()
         raise HTTPException(

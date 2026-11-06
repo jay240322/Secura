@@ -376,22 +376,26 @@ def get_pull_request_commits(
 
 
 
+def _app_jwt_get(url: str, app_jwt: str, timeout: int = 10) -> Optional[requests.Response]:
+    return requests.get(
+        url,
+        headers={
+            "Authorization": f"Bearer {app_jwt}",
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+            "User-Agent": "Secura-Security-Scanner",
+        },
+        timeout=timeout,
+    )
+
+
 def get_repository_installation_id(owner: str, repo: str) -> Optional[int]:
     """Find the GitHub App installation ID for a specific repository if installed."""
     try:
         app_jwt = create_app_jwt()
         url = f"{GITHUB_API_URL}/repos/{owner}/{repo}/installation"
-        response = requests.get(
-            url,
-            headers={
-                "Authorization": f"Bearer {app_jwt}",
-                "Accept": "application/vnd.github+json",
-                "X-GitHub-Api-Version": "2022-11-28",
-                "User-Agent": "Secura-Security-Scanner",
-            },
-            timeout=10,
-        )
-        if response.ok:
+        response = _app_jwt_get(url, app_jwt)
+        if response and response.ok:
             data = response.json()
             return data.get("id")
         return None
@@ -437,34 +441,16 @@ def get_user_installation(username: str) -> Optional[Dict[str, Any]]:
         # First try GET /users/{username}/installation
         url = f"{GITHUB_API_URL}/users/{username}/installation"
         log_debug(f"GET {url} with App JWT...")
-        response = requests.get(
-            url,
-            headers={
-                "Authorization": f"Bearer {app_jwt}",
-                "Accept": "application/vnd.github+json",
-                "X-GitHub-Api-Version": "2022-11-28",
-                "User-Agent": "Secura-Security-Scanner",
-            },
-            timeout=10,
-        )
-        log_debug(f"GET {url} response: status={response.status_code}, body={response.text[:200]}")
-        if response.ok:
+        response = _app_jwt_get(url, app_jwt)
+        log_debug(f"GET {url} response: status={response.status_code if response else 'None'}, body={response.text[:200] if response else ''}")
+        if response and response.ok:
             return response.json()
         # Also try GET /orgs/{username}/installation
         org_url = f"{GITHUB_API_URL}/orgs/{username}/installation"
         log_debug(f"GET {org_url} with App JWT...")
-        org_resp = requests.get(
-            org_url,
-            headers={
-                "Authorization": f"Bearer {app_jwt}",
-                "Accept": "application/vnd.github+json",
-                "X-GitHub-Api-Version": "2022-11-28",
-                "User-Agent": "Secura-Security-Scanner",
-            },
-            timeout=10,
-        )
-        log_debug(f"GET {org_url} response: status={org_resp.status_code}, body={org_resp.text[:200]}")
-        if org_resp.ok:
+        org_resp = _app_jwt_get(org_url, app_jwt)
+        log_debug(f"GET {org_url} response: status={org_resp.status_code if org_resp else 'None'}, body={org_resp.text[:200] if org_resp else ''}")
+        if org_resp and org_resp.ok:
             return org_resp.json()
         return None
     except Exception as exc:
@@ -479,48 +465,67 @@ def add_repository_to_github_app_installation(
     user_access_token: Optional[str] = None,
 ) -> bool:
     """
-    Attempt to programmatically add a repository to the GitHub App installation
+    Programmatically add a repository to the GitHub App installation
     via GitHub REST API: PUT /user/installations/{installation_id}/repositories/{repository_id}.
-    Requires user OAuth access token with repo/admin access.
+    Tries user OAuth token first, then GitHub App installation token.
     """
-    if not user_access_token or not installation_id or not repository_id:
+    if not installation_id or not repository_id:
         return False
 
     url = f"{GITHUB_API_URL}/user/installations/{installation_id}/repositories/{repository_id}"
-    try:
-        response = requests.put(
-            url,
-            headers={
-                "Authorization": f"Bearer {user_access_token}",
-                "Accept": "application/vnd.github+json",
-                "X-GitHub-Api-Version": "2022-11-28",
-                "User-Agent": "Secura-Security-Scanner",
-            },
-            timeout=10,
-        )
-        if response.status_code in (200, 204):
-            logger.info(
-                "Successfully added repo %s to GitHub installation %s via user token",
-                repository_id,
-                installation_id,
+
+    # 1. Try with user OAuth token if present
+    if user_access_token:
+        try:
+            log_debug(f"PUT {url} with user OAuth token...")
+            response = requests.put(
+                url,
+                headers={
+                    "Authorization": f"Bearer {user_access_token}",
+                    "Accept": "application/vnd.github+json",
+                    "X-GitHub-Api-Version": "2022-11-28",
+                    "User-Agent": "Secura-Security-Scanner",
+                },
+                timeout=12,
             )
-            return True
-        logger.warning(
-            "GitHub returned %s when adding repo %s to installation %s: %s",
-            response.status_code,
-            repository_id,
-            installation_id,
-            response.text[:200],
-        )
-        return False
+            log_debug(f"PUT {url} (user token) response: status={response.status_code}, body={response.text[:200]}")
+            if response.status_code in (200, 204, 304):
+                logger.info(
+                    "Successfully added repo %s to GitHub installation %s via user token",
+                    repository_id,
+                    installation_id,
+                )
+                return True
+        except Exception as exc:
+            logger.warning("Failed to add repo %s with user token: %s", repository_id, exc)
+
+    # 2. Try with installation access token
+    try:
+        inst_token = create_installation_access_token(installation_id)
+        if inst_token:
+            log_debug(f"PUT {url} with installation token...")
+            response = requests.put(
+                url,
+                headers={
+                    "Authorization": f"Bearer {inst_token}",
+                    "Accept": "application/vnd.github+json",
+                    "X-GitHub-Api-Version": "2022-11-28",
+                    "User-Agent": "Secura-Security-Scanner",
+                },
+                timeout=12,
+            )
+            log_debug(f"PUT {url} (inst token) response: status={response.status_code}, body={response.text[:200]}")
+            if response.status_code in (200, 204, 304):
+                logger.info(
+                    "Successfully added repo %s to GitHub installation %s via installation token",
+                    repository_id,
+                    installation_id,
+                )
+                return True
     except Exception as exc:
-        logger.warning(
-            "Failed to add repo %s to installation %s: %s",
-            repository_id,
-            installation_id,
-            exc,
-        )
-        return False
+        logger.warning("Failed to add repo %s with inst token: %s", repository_id, exc)
+
+    return False
 
 
 def get_app_installations() -> List[Dict[str, Any]]:
@@ -580,25 +585,32 @@ def sync_github_app_repositories(db, user, force: bool = False) -> List[Any]:
 
     _last_sync_times[user_key] = now
 
-    target_gh_user = user.github_username or "jay240322"
+    target_gh_user = getattr(user, "github_username", None)
+    if not target_gh_user:
+        log_debug(f"User {getattr(user, 'email', 'unknown')} has no linked github_username, skipping sync.")
+        return db.query(Repository).filter(Repository.user_id == user.id).all() if user else []
+
     log_debug(f"=== sync_github_app_repositories called for user={user.email}, github_username={target_gh_user} ===")
     installations_by_id: Dict[int, Dict[str, Any]] = {}
 
-    # 1. Discover installations via GitHub App JWT
-    app_insts = get_app_installations()
-    for inst in app_insts:
-        iid = inst.get("id")
-        if iid:
-            installations_by_id[iid] = inst
-
-    # 2. Check user installation via App JWT
+    # 1. Discover installations via GitHub App JWT that belong to target_gh_user
     user_inst = get_user_installation(target_gh_user)
     if user_inst and user_inst.get("id"):
         installations_by_id[user_inst["id"]] = user_inst
 
-    # 3. Check existing GitHubInstallation records in DB as fallback
-    db_installations = db.query(GitHubInstallation).all()
-    for db_inst in db_installations:
+    app_insts = get_app_installations()
+    for inst in app_insts:
+        iid = inst.get("id")
+        acct = inst.get("account", {}).get("login", "")
+        if iid and acct.lower() == target_gh_user.lower():
+            installations_by_id[iid] = inst
+
+    # 2. Check existing GitHubInstallation records in DB for this user
+    user_db_insts = db.query(GitHubInstallation).filter(
+        (GitHubInstallation.user_id == user.id)
+        | (func.lower(GitHubInstallation.account_name) == target_gh_user.lower())
+    ).all()
+    for db_inst in user_db_insts:
         if db_inst.github_installation_id and db_inst.github_installation_id not in installations_by_id:
             installations_by_id[db_inst.github_installation_id] = {
                 "id": db_inst.github_installation_id,
@@ -608,12 +620,26 @@ def sync_github_app_repositories(db, user, force: bool = False) -> List[Any]:
                 },
             }
 
-    # If still no installations discovered, add known installation fallback
-    if not installations_by_id:
-        installations_by_id[176767223] = {
-            "id": 176767223,
-            "account": {"login": target_gh_user, "avatar_url": None},
-        }
+    # 3. Query user installations if github_access_token exists
+    user_tok = getattr(user, "github_access_token", None)
+    if user_tok:
+        try:
+            resp = requests.get(
+                f"{GITHUB_API_URL}/user/installations",
+                headers={
+                    "Authorization": f"Bearer {user_tok}",
+                    "Accept": "application/vnd.github+json",
+                    "User-Agent": "Secura-Security-Scanner",
+                },
+                timeout=10,
+            )
+            if resp.status_code == 200:
+                for inst in resp.json().get("installations", []):
+                    iid = inst.get("id")
+                    if iid:
+                        installations_by_id[iid] = inst
+        except Exception as err:
+            log_debug(f"Could not query /user/installations: {err}")
 
     synced_repos = []
 
@@ -622,35 +648,50 @@ def sync_github_app_repositories(db, user, force: bool = False) -> List[Any]:
         account_name = account.get("login") or target_gh_user
         avatar_url = account.get("avatar_url", "")
 
-        # Auto-link github_username and avatar if user doesn't have one
+        # Auto-link avatar if user doesn't have one
         try:
-            if not user.github_username and account_name:
-                user.github_username = account_name
             if not user.avatar_url and avatar_url:
                 user.avatar_url = avatar_url
-            db.commit()
+                db.commit()
         except Exception:
             db.rollback()
 
-        # Create or update installation record for this user
+        # Create or update installation record strictly for this user
         inst_record = (
             db.query(GitHubInstallation)
-            .filter(GitHubInstallation.github_installation_id == inst_id)
+            .filter(
+                GitHubInstallation.github_installation_id == inst_id,
+                GitHubInstallation.user_id == user.id,
+            )
             .first()
         )
         try:
             if not inst_record:
-                inst_record = GitHubInstallation(
-                    user_id=user.id,
-                    github_installation_id=inst_id,
-                    account_name=account_name,
-                    account_avatar_url=avatar_url,
+                existing_inst = (
+                    db.query(GitHubInstallation)
+                    .filter(GitHubInstallation.github_installation_id == inst_id)
+                    .first()
                 )
-                db.add(inst_record)
-                db.commit()
-                db.refresh(inst_record)
+                if existing_inst and (not existing_inst.user_id or (existing_inst.account_name and existing_inst.account_name.lower() == target_gh_user.lower())):
+                    existing_inst.user_id = user.id
+                    if account_name:
+                        existing_inst.account_name = account_name
+                    if avatar_url:
+                        existing_inst.account_avatar_url = avatar_url
+                    db.commit()
+                    db.refresh(existing_inst)
+                    inst_record = existing_inst
+                else:
+                    inst_record = GitHubInstallation(
+                        user_id=user.id,
+                        github_installation_id=inst_id,
+                        account_name=account_name,
+                        account_avatar_url=avatar_url,
+                    )
+                    db.add(inst_record)
+                    db.commit()
+                    db.refresh(inst_record)
             else:
-                inst_record.user_id = user.id
                 if account_name:
                     inst_record.account_name = account_name
                 if avatar_url:
@@ -662,7 +703,10 @@ def sync_github_app_repositories(db, user, force: bool = False) -> List[Any]:
             logger.warning("Error saving installation %s: %s", inst_id, e)
             inst_record = (
                 db.query(GitHubInstallation)
-                .filter(GitHubInstallation.github_installation_id == inst_id)
+                .filter(
+                    GitHubInstallation.github_installation_id == inst_id,
+                    GitHubInstallation.user_id == user.id,
+                )
                 .first()
             )
 
@@ -684,17 +728,19 @@ def sync_github_app_repositories(db, user, force: bool = False) -> List[Any]:
             html_url = r.get("html_url") or f"https://github.com/{full_name}"
 
             try:
-                # Query existing repository case-insensitively or by github_repo_id
+                # Query existing repository for this user
                 existing_repo = (
                     db.query(Repository)
                     .filter(
-                        (func.lower(Repository.full_name) == full_name.lower())
-                        | (Repository.github_repo_id == repo_id if repo_id else False)
+                        Repository.user_id == user.id,
+                        (
+                            (func.lower(Repository.full_name) == full_name.lower())
+                            | (Repository.github_repo_id == repo_id if repo_id else False)
+                        )
                     )
                     .first()
                 )
                 if existing_repo:
-                    existing_repo.user_id = user.id
                     existing_repo.installation_id = inst_record.id
                     if repo_id:
                         existing_repo.github_repo_id = repo_id
@@ -709,49 +755,41 @@ def sync_github_app_repositories(db, user, force: bool = False) -> List[Any]:
                     db.refresh(existing_repo)
                     synced_repos.append(existing_repo)
                 else:
-                    new_repo = Repository(
-                        installation_id=inst_record.id,
-                        user_id=user.id,
-                        github_repo_id=repo_id or (abs(hash(full_name)) % 1000000000),
-                        name=name,
-                        full_name=full_name,
-                        owner=owner,
-                        default_branch=default_branch,
-                        is_private=is_private,
-                        is_monitored=True,
-                        html_url=html_url,
+                    other_repo = (
+                        db.query(Repository)
+                        .filter(
+                            (func.lower(Repository.full_name) == full_name.lower())
+                            | (Repository.github_repo_id == repo_id if repo_id else False)
+                        )
+                        .first()
                     )
-                    db.add(new_repo)
-                    db.commit()
-                    db.refresh(new_repo)
-                    synced_repos.append(new_repo)
+                    if other_repo and owner.lower() == target_gh_user.lower():
+                        other_repo.user_id = user.id
+                        other_repo.installation_id = inst_record.id
+                        other_repo.is_monitored = True
+                        db.commit()
+                        db.refresh(other_repo)
+                        synced_repos.append(other_repo)
+                    elif not other_repo:
+                        new_repo = Repository(
+                            installation_id=inst_record.id,
+                            user_id=user.id,
+                            github_repo_id=repo_id or (abs(hash(full_name)) % 1000000000),
+                            name=name,
+                            full_name=full_name,
+                            owner=owner,
+                            default_branch=default_branch,
+                            is_private=is_private,
+                            is_monitored=True,
+                            html_url=html_url,
+                        )
+                        db.add(new_repo)
+                        db.commit()
+                        db.refresh(new_repo)
+                        synced_repos.append(new_repo)
             except Exception as exc:
                 db.rollback()
                 logger.warning("Error saving repository %s: %s", full_name, exc)
-
-    # Reassign all repos under all installations of user to current user
-    try:
-        user_inst_ids = [
-            i.id for i in db.query(GitHubInstallation).filter(GitHubInstallation.user_id == user.id).all()
-        ]
-        if user_inst_ids:
-            db.query(Repository).filter(Repository.installation_id.in_(user_inst_ids)).update(
-                {Repository.user_id: user.id},
-                synchronize_session=False,
-            )
-            db.commit()
-    except Exception:
-        db.rollback()
-
-    # Also reassign all existing repositories in DB to current user so they are never lost
-    try:
-        all_repos = db.query(Repository).all()
-        for r in all_repos:
-            if r.user_id != user.id:
-                r.user_id = user.id
-        db.commit()
-    except Exception:
-        db.rollback()
 
     # Fast-sync pull requests only for newly discovered repositories with 0 PRs in DB
     try:
@@ -771,10 +809,11 @@ def sync_github_app_repositories(db, user, force: bool = False) -> List[Any]:
 def get_user_available_github_repositories(user, db) -> List[Dict[str, Any]]:
     """
     Fetch all repositories accessible via GitHub App installations for this user,
-    plus any public repos for their GitHub username, annotated with whether they are
-    already monitored in Secura.
+    plus any repositories accessible to the user on GitHub, annotated with whether they are
+    already monitored in Secura. Strictly scoped to the authenticated user.
     """
     from app.models.repository import Repository
+    from app.models.installation import GitHubInstallation
 
     existing_repos = db.query(Repository).filter(Repository.user_id == user.id).all()
     existing_full_names = {
@@ -784,15 +823,32 @@ def get_user_available_github_repositories(user, db) -> List[Dict[str, Any]]:
     }
 
     repos_by_full_name: Dict[str, Dict[str, Any]] = {}
+    target_username = getattr(user, "github_username", None)
+    user_gh_auth = getattr(user, "github_access_token", None)
 
-    # 1. Fetch from GitHub App Installations
-    installations = get_app_installations()
+    # 1. Fetch from GitHub App Installations that belong ONLY to this user
+    user_inst_ids = set()
+    if target_username:
+        u_inst = get_user_installation(target_username)
+        if u_inst and u_inst.get("id"):
+            user_inst_ids.add((u_inst["id"], u_inst.get("account", {}).get("login", target_username)))
 
-    for inst_data in installations:
-        inst_id = inst_data.get("id")
-        account = inst_data.get("account", {})
-        account_name = account.get("login", "")
+        for inst in get_app_installations():
+            iid = inst.get("id")
+            acct = inst.get("account", {}).get("login", "")
+            if iid and acct.lower() == target_username.lower():
+                user_inst_ids.add((iid, acct))
 
+    # Also check user's installations in DB
+    db_insts = db.query(GitHubInstallation).filter(GitHubInstallation.user_id == user.id).all()
+    for dbi in db_insts:
+        if dbi.github_installation_id:
+            user_inst_ids.add((dbi.github_installation_id, dbi.account_name or (target_username or "")))
+
+    primary_installation_id = None
+    for inst_id, account_name in user_inst_ids:
+        if not primary_installation_id:
+            primary_installation_id = inst_id
         gh_repos = get_installation_repositories(inst_id)
         for r in gh_repos:
             fn = r.get("full_name")
@@ -810,16 +866,29 @@ def get_user_available_github_repositories(user, db) -> List[Dict[str, Any]]:
                 "description": r.get("description") or "",
                 "installation_id": inst_id,
                 "already_monitored": fn_key in existing_full_names,
+                "in_github_app": True,
             }
 
-    # 2. Also query public repos from api.github.com/users/{username}/repos if username is known
-    target_username = user.github_username
-    if not target_username and installations:
-        target_username = installations[0].get("account", {}).get("login")
-    if not target_username:
-        target_username = "jay240322"
+    # 2. Fetch all other repositories from GitHub so user can select ANY of their repos
+    all_gh_repos = []
+    if user_gh_auth:
+        try:
+            resp = requests.get(
+                f"{GITHUB_API_URL}/user/repos",
+                headers={
+                    "Authorization": f"Bearer {user_gh_auth}",
+                    "Accept": "application/vnd.github+json",
+                    "User-Agent": "Secura-Security-Scanner",
+                },
+                params={"per_page": 100, "sort": "updated", "affiliation": "owner,collaborator,organization_member"},
+                timeout=12,
+            )
+            if resp.ok:
+                all_gh_repos = resp.json()
+        except Exception as exc:
+            logger.debug("Failed to fetch user repos with token: %s", exc)
 
-    if target_username:
+    if not all_gh_repos and target_username:
         try:
             resp = requests.get(
                 f"{GITHUB_API_URL}/users/{target_username}/repos",
@@ -828,29 +897,39 @@ def get_user_available_github_repositories(user, db) -> List[Dict[str, Any]]:
                     "User-Agent": "Secura-Security-Scanner",
                 },
                 params={"per_page": 100, "sort": "updated"},
-                timeout=10,
+                timeout=12,
             )
-            if resp.status_code == 200:
-                for r in resp.json():
-                    fn = r.get("full_name")
-                    if not fn:
-                        continue
-                    fn_key = fn.lower()
-                    if fn_key not in repos_by_full_name:
-                        repos_by_full_name[fn_key] = {
-                            "github_repo_id": r.get("id"),
-                            "name": r.get("name") or fn.split("/")[-1],
-                            "full_name": fn,
-                            "owner": r.get("owner", {}).get("login", target_username),
-                            "default_branch": r.get("default_branch", "main"),
-                            "is_private": bool(r.get("private", False)),
-                            "html_url": r.get("html_url") or f"https://github.com/{fn}",
-                            "description": r.get("description") or "",
-                            "installation_id": None,
-                            "already_monitored": fn_key in existing_full_names,
-                        }
+            if resp.ok:
+                all_gh_repos = resp.json()
         except Exception as exc:
-            logger.warning("Could not fetch user public repos from GitHub: %s", exc)
+            logger.debug("Failed to fetch public repos for user %s: %s", target_username, exc)
 
-    return list(repos_by_full_name.values())
+    for r in all_gh_repos:
+        fn = r.get("full_name")
+        if not fn:
+            continue
+        fn_key = fn.lower()
+        if fn_key in repos_by_full_name:
+            repos_by_full_name[fn_key]["in_github_app"] = True
+            continue
+
+        owner_login = r.get("owner", {}).get("login", target_username or "")
+        repos_by_full_name[fn_key] = {
+            "github_repo_id": r.get("id"),
+            "name": r.get("name") or fn.split("/")[-1],
+            "full_name": fn,
+            "owner": owner_login,
+            "default_branch": r.get("default_branch", "main"),
+            "is_private": bool(r.get("private", False)),
+            "html_url": r.get("html_url") or f"https://github.com/{fn}",
+            "description": r.get("description") or "",
+            "installation_id": primary_installation_id,
+            "already_monitored": fn_key in existing_full_names,
+            "in_github_app": False,
+        }
+
+    # Sort: Monitored first, then by in_github_app, then alphabetically
+    result_list = list(repos_by_full_name.values())
+    result_list.sort(key=lambda x: (not x["already_monitored"], not x.get("in_github_app", False), x["name"].lower()))
+    return result_list
 

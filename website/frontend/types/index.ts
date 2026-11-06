@@ -37,6 +37,7 @@ export interface Repository {
   openFindings: number;
   criticalFindings: number;
   highFindings: number;
+  score?: number;
   isMonitored: boolean;
   htmlUrl: string;
   githubRepoId?: number;
@@ -53,8 +54,9 @@ export interface AvailableRepository {
   isPrivate: boolean;
   htmlUrl: string;
   description?: string;
-  installationId?: number;
+  installationId?: number | string | null;
   alreadyMonitored: boolean;
+  inGithubApp?: boolean;
 }
 
 // ─── Scan ──────────────────────────────────────────────────────────────────
@@ -88,6 +90,16 @@ export interface PRCommit {
   authorAvatar?: string | null;
   date?: string | null;
   htmlUrl?: string;
+  scanResult?: "passed" | "failed" | "error" | null;
+  scanStatus?: string;
+  checkRunStatus?: "success" | "failure" | "in_progress" | "neutral";
+  totalFindings?: number;
+  criticalFindings?: number;
+  highFindings?: number;
+  score?: number;
+  scanId?: string;
+  findings?: PRFinding[];
+  isHistorical?: boolean;
 }
 
 export interface PRFinding {
@@ -100,6 +112,27 @@ export interface PRFinding {
   status?: string;
   risk?: string;
   recommendation?: string;
+  commitSha?: string;
+  scanId?: string;
+  isResolved?: boolean;
+}
+
+export interface PRScanRun {
+  id: string;
+  commitSha: string;
+  fullCommitSha?: string;
+  branch?: string;
+  scanStatus: string;
+  scanResult: "passed" | "failed" | "error" | null;
+  checkRunStatus: "success" | "failure" | "in_progress" | "neutral";
+  totalFindings: number;
+  criticalFindings: number;
+  highFindings: number;
+  mediumFindings?: number;
+  lowFindings?: number;
+  score?: number;
+  createdAt?: string | null;
+  findings: PRFinding[];
 }
 
 export interface PullRequest {
@@ -125,6 +158,9 @@ export interface PullRequest {
   htmlUrl: string;
   findings?: PRFinding[];
   commits?: PRCommit[];
+  scanRuns?: PRScanRun[];
+  historicalFindings?: PRFinding[];
+  hasResolvedViolations?: boolean;
 }
 
 // ─── Dashboard ─────────────────────────────────────────────────────────────

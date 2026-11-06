@@ -37,17 +37,6 @@ def get_insights(
     - Transparent Security Posture Score
     """
     user_repos = db.query(Repository).filter(Repository.user_id == current_user.id).all()
-    if not user_repos:
-        all_repos = db.query(Repository).all()
-        for r in all_repos:
-            if r.user_id != current_user.id:
-                r.user_id = current_user.id
-        if all_repos:
-            try:
-                db.commit()
-            except Exception:
-                db.rollback()
-            user_repos = all_repos
     repo_ids = [r.id for r in user_repos]
 
     if not repo_ids:

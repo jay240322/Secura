@@ -49,6 +49,10 @@ def enrich_repository_response(repo: Repository, db: Session) -> RepositoryRespo
 
     critical_count = sum(1 for f in open_findings if f.severity == "CRITICAL")
     high_count = sum(1 for f in open_findings if f.severity == "HIGH")
+    med_count = sum(1 for f in open_findings if f.severity == "MEDIUM")
+    low_count = sum(1 for f in open_findings if f.severity == "LOW")
+
+    repo_score = max(0, 100 - (critical_count * 30 + high_count * 20 + med_count * 10 + low_count * 5))
 
     fn = repo.full_name or repo.name or "repository"
     owner = repo.owner or (fn.split("/")[0] if "/" in fn else "owner")
@@ -75,6 +79,11 @@ def enrich_repository_response(repo: Repository, db: Session) -> RepositoryRespo
         else "https://github.com/apps/secura-security-scanner"
     )
 
+    computed_status = (
+        "failed" if (critical_count > 0 or high_count > 0)
+        else (latest_scan.scan_result if latest_scan else ("failed" if len(open_findings) > 0 else "passed"))
+    )
+
     return RepositoryResponse(
         id=repo.id,
         installation_id=repo.installation_id or "installation-manual",
@@ -91,26 +100,19 @@ def enrich_repository_response(repo: Repository, db: Session) -> RepositoryRespo
         open_findings_count=len(open_findings),
         critical_findings_count=critical_count,
         high_findings_count=high_count,
-        last_scan_status=latest_scan.scan_result if latest_scan else "passed",
+        open_findings=len(open_findings),
+        critical_findings=critical_count,
+        high_findings=high_count,
+        score=repo_score,
+        last_scan_status=computed_status,
         last_scan_at=latest_scan.created_at if latest_scan else None,
         created_at=repo.created_at or datetime.datetime.now(datetime.timezone.utc),
     )
 
 
 def get_user_repositories_safe(db: Session, current_user: User) -> List[Repository]:
-    """Retrieve all repositories for current user, fixing ownership if needed."""
-    all_db_repos = db.query(Repository).all()
-    for r in all_db_repos:
-        if r.user_id != current_user.id:
-            r.user_id = current_user.id
-    if all_db_repos:
-        try:
-            db.commit()
-        except Exception:
-            db.rollback()
-
-    repos = db.query(Repository).filter(Repository.user_id == current_user.id).all()
-    return repos if repos else all_db_repos
+    """Retrieve all monitored repositories for current user strictly isolated by user_id."""
+    return db.query(Repository).filter(Repository.user_id == current_user.id).all()
 
 
 def create_or_link_repository(
@@ -154,62 +156,106 @@ def create_or_link_repository(
     if found_inst_id:
         installation = (
             db.query(GitHubInstallation)
-            .filter(GitHubInstallation.github_installation_id == found_inst_id)
+            .filter(
+                GitHubInstallation.github_installation_id == found_inst_id,
+                GitHubInstallation.user_id == current_user.id,
+            )
             .first()
         )
         if not installation:
-            installation = GitHubInstallation(
-                user_id=current_user.id,
-                github_installation_id=found_inst_id,
-                account_name=owner,
-                account_avatar_url=current_user.avatar_url,
+            existing_inst = (
+                db.query(GitHubInstallation)
+                .filter(GitHubInstallation.github_installation_id == found_inst_id)
+                .first()
             )
-            db.add(installation)
-            db.commit()
-            db.refresh(installation)
+            if existing_inst and (existing_inst.user_id == current_user.id or (current_user.github_username and existing_inst.account_name.lower() == current_user.github_username.lower())):
+                existing_inst.user_id = current_user.id
+                installation = existing_inst
+                db.commit()
+            elif current_user.github_username and owner.lower() == current_user.github_username.lower():
+                installation = GitHubInstallation(
+                    user_id=current_user.id,
+                    github_installation_id=found_inst_id,
+                    account_name=owner,
+                    account_avatar_url=current_user.avatar_url,
+                )
+                db.add(installation)
+                db.commit()
+                db.refresh(installation)
 
     if not installation:
-        installation = (
+        any_user_inst = (
             db.query(GitHubInstallation)
-            .filter(
-                (GitHubInstallation.user_id == current_user.id)
-                | (func.lower(GitHubInstallation.account_name) == owner.lower())
-            )
+            .filter(GitHubInstallation.user_id == current_user.id)
             .first()
         )
+        if any_user_inst:
+            installation = any_user_inst
+        elif current_user.github_username:
+            u_inst = get_user_installation(current_user.github_username)
+            if u_inst and u_inst.get("id"):
+                installation = GitHubInstallation(
+                    user_id=current_user.id,
+                    github_installation_id=u_inst["id"],
+                    account_name=current_user.github_username,
+                    account_avatar_url=current_user.avatar_url,
+                )
+                db.add(installation)
+                db.commit()
+                db.refresh(installation)
 
-    if not installation:
-        installation = GitHubInstallation(
-            user_id=current_user.id,
-            github_installation_id=abs(hash(current_user.id)) % 10000000,
-            account_name=owner,
-            account_avatar_url=current_user.avatar_url,
+    # Without installing the GitHub App on account, user cannot add repos
+    if not installation or not installation.github_installation_id:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "The Secura GitHub App is not installed on your GitHub account. "
+                "Please install the Secura GitHub App first to connect repositories."
+            ),
         )
-        db.add(installation)
-        db.commit()
-        db.refresh(installation)
 
+    # Automatically add the repository to the GitHub App installation on GitHub
     if installation and installation.github_installation_id and real_repo_id:
         user_tok = getattr(current_user, "github_access_token", None)
-        if not user_tok:
-            u_tok = db.query(User).filter(User.github_access_token.isnot(None)).first()
-            if u_tok:
-                user_tok = u_tok.github_access_token
-        if user_tok:
-            add_repository_to_github_app_installation(
-                installation.github_installation_id,
-                real_repo_id,
-                user_tok,
-            )
+        add_repository_to_github_app_installation(
+            installation.github_installation_id,
+            real_repo_id,
+            user_tok,
+        )
 
+    # First check if the repository is already registered to current_user
     existing = (
         db.query(Repository)
         .filter(
-            (func.lower(Repository.full_name) == clean_full_name.lower())
-            | (Repository.github_repo_id == real_repo_id if real_repo_id else False)
+            Repository.user_id == current_user.id,
+            (
+                (func.lower(Repository.full_name) == clean_full_name.lower())
+                | (Repository.github_repo_id == real_repo_id if real_repo_id else False)
+            ),
         )
         .first()
     )
+
+    if not existing:
+        # Check if repo exists under another user to prevent UNIQUE constraint violation
+        other_repo = (
+            db.query(Repository)
+            .filter(
+                (func.lower(Repository.full_name) == clean_full_name.lower())
+                | (Repository.github_repo_id == real_repo_id if real_repo_id else False)
+            )
+            .first()
+        )
+        if other_repo:
+            # Only allow claim if current user is the verified owner of the GitHub repository
+            if current_user.github_username and owner.lower() == current_user.github_username.lower():
+                other_repo.user_id = current_user.id
+                existing = other_repo
+            else:
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"Repository {clean_full_name} is already linked to another account.",
+                )
 
     if existing:
         existing.is_monitored = is_monitored
@@ -254,8 +300,8 @@ def list_repositories(
     """List all monitored repositories for current user. Fast DB lookup without blocking."""
     repos = get_user_repositories_safe(db, current_user)
 
-    # Only sync with GitHub if DB has 0 repositories
-    if not repos:
+    # Only sync with GitHub if DB has 0 repositories and user has a GitHub username linked
+    if not repos and current_user.github_username:
         try:
             sync_github_app_repositories(db, current_user, force=False)
             repos = get_user_repositories_safe(db, current_user)
@@ -334,6 +380,12 @@ def bulk_add_repositories(
     """Add multiple selected repositories to monitoring at once and link with GitHub App."""
     results = []
     for item in payload.repositories:
+        inst_id_val = None
+        if item.installation_id:
+            try:
+                inst_id_val = int(item.installation_id)
+            except (ValueError, TypeError):
+                inst_id_val = None
         repo = create_or_link_repository(
             db=db,
             current_user=current_user,
@@ -343,7 +395,7 @@ def bulk_add_repositories(
             is_private=item.is_private,
             html_url=item.html_url,
             is_monitored=True,
-            installation_id=item.installation_id,
+            installation_id=inst_id_val,
         )
         results.append(enrich_repository_response(repo, db))
     return results
@@ -357,6 +409,12 @@ def add_repository(
     current_user: User = Depends(get_current_user),
 ):
     """Add a new repository for pull request monitoring and link with GitHub App."""
+    inst_id_val = None
+    if payload.installation_id:
+        try:
+            inst_id_val = int(payload.installation_id)
+        except (ValueError, TypeError):
+            inst_id_val = None
     repo = create_or_link_repository(
         db=db,
         current_user=current_user,
@@ -366,6 +424,7 @@ def add_repository(
         is_private=payload.is_private,
         html_url=payload.html_url,
         is_monitored=payload.is_monitored,
+        installation_id=inst_id_val,
     )
     return enrich_repository_response(repo, db)
 

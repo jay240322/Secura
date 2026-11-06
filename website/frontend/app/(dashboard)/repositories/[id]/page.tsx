@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils";
 import type { Repository, PullRequest, Finding } from "@/types";
 import { PullRequestRow } from "@/components/pull-requests/pull-request-row";
 import Loader from "@/components/ui/loader";
+import { DeleteRepoModal } from "@/components/repositories/delete-repo-modal";
 import {
   ArrowLeft,
   ExternalLink,
@@ -227,6 +228,7 @@ function RepositoryDetailContent() {
   const openFindings = findings.filter((f) => f.status === "open");
   const criticalFindings = openFindings.filter((f) => f.severity === "CRITICAL");
   const highFindings = openFindings.filter((f) => f.severity === "HIGH");
+  const solvedFindings = findings.filter((f) => f.status === "resolved" || f.status === "solved");
 
   return (
     <div className="relative">
@@ -406,7 +408,6 @@ function RepositoryDetailContent() {
                       <span>Public</span>
                     </span>
                   )}
-                  <StatusBadge status={repo.lastScanStatus} />
                 </div>
 
                 <h1 className="text-xl sm:text-2xl font-bold text-[#281C59] dark:text-zinc-100 truncate">
@@ -520,7 +521,10 @@ function RepositoryDetailContent() {
                 <div>
                   <CardTitle className="text-sm font-semibold flex items-center gap-2 text-slate-900 dark:text-zinc-100">
                     <ShieldAlert className="h-4 w-4 text-orange-500" />
-                    <span>Security Findings in {repo.fullName} ({openFindings.length} open)</span>
+                    <span>
+                      Security Findings in {repo.fullName} ({openFindings.length} open
+                      {solvedFindings.length > 0 ? ` · ${solvedFindings.length} solved` : ""})
+                    </span>
                   </CardTitle>
                   <p className="text-xs text-slate-500 dark:text-zinc-400 mt-0.5">
                     Catalog of detected vulnerabilities across all scans for this repository.
@@ -535,17 +539,17 @@ function RepositoryDetailContent() {
                 </Link>
               </CardHeader>
               <CardContent className="pt-2">
-                {openFindings.length === 0 ? (
+                {findings.length === 0 ? (
                   <div className="py-12 text-center text-slate-500 dark:text-zinc-400 flex flex-col items-center">
                     <ShieldCheck className="h-10 w-10 mb-2 text-emerald-600 dark:text-emerald-400" />
-                    <p className="text-sm font-semibold text-slate-900 dark:text-zinc-100">Zero Open Vulnerabilities</p>
+                    <p className="text-sm font-semibold text-slate-900 dark:text-zinc-100">Zero Security Vulnerabilities</p>
                     <p className="text-xs text-slate-500 dark:text-zinc-400 mt-1">
                       All scanned code and pull requests for {repo.name} are clean. No exposed credentials detected.
                     </p>
                   </div>
                 ) : (
                   <div className="divide-y divide-slate-100 dark:divide-zinc-800/80">
-                    {openFindings.map((finding) => (
+                    {findings.map((finding) => (
                       <Link
                         key={finding.id}
                         href={`/findings/${finding.id}`}
@@ -631,49 +635,13 @@ function RepositoryDetailContent() {
       </div>
 
       {/* ─── Delete Repository Confirmation Modal ────────────────────────── */}
-      {showDeleteModal && repo && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 dark:bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="relative w-full max-w-md rounded-2xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-6 shadow-2xl space-y-4 text-slate-900 dark:text-zinc-100">
-            <div className="flex items-start gap-3.5">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-rose-100 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-900/60 text-rose-600 dark:text-rose-400">
-                <Trash2 className="h-5 w-5" />
-              </div>
-              <div className="min-w-0">
-                <h3 className="text-base font-bold text-slate-900 dark:text-zinc-100">
-                  Delete Repository
-                </h3>
-                <p className="text-xs text-slate-500 dark:text-zinc-400 mt-1 leading-relaxed">
-                  Are you sure you want to delete <strong className="text-slate-800 dark:text-zinc-200 font-semibold">{repo.fullName}</strong>?
-                  This will remove the repository container, pull request security monitoring, and all associated findings from Secura.
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100 dark:border-zinc-800/80">
-              <button
-                type="button"
-                onClick={() => setShowDeleteModal(false)}
-                className="rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-2 text-xs font-semibold text-slate-700 dark:text-zinc-300 hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors shadow-xs"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={deleting}
-                onClick={handleConfirmRemove}
-                className="flex items-center gap-1.5 rounded-xl bg-rose-600 px-4 py-2 text-xs font-semibold text-white shadow-xs hover:bg-rose-500 transition-all disabled:opacity-50"
-              >
-                {deleting ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <Trash2 className="h-3.5 w-3.5" />
-                )}
-                <span>Delete</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <DeleteRepoModal
+        isOpen={Boolean(showDeleteModal && repo)}
+        repoFullName={repo?.fullName || ""}
+        loading={deleting}
+        onClose={() => setShowDeleteModal(false)}
+        onConfirm={handleConfirmRemove}
+      />
     </div>
   );
 }

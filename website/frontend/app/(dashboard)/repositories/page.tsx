@@ -2,7 +2,6 @@
 
 import { useEffect, useState, useMemo, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
-import { StatusBadge } from "@/components/ui/status-badge";
 import { api } from "@/lib/api-client";
 import type { Repository, AvailableRepository, User } from "@/types";
 import {
@@ -30,6 +29,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import Loader from "@/components/ui/loader";
+import { DeleteRepoModal } from "@/components/repositories/delete-repo-modal";
 
 function formatRelative(dateStr: string | null): string {
   if (!dateStr) return "Never";
@@ -74,8 +74,6 @@ function RepoCard({
                 </>
               )}
             </span>
-
-            <StatusBadge status={repo.lastScanStatus} />
           </div>
 
           {/* Shifted to upperside: GitHub Link & Delete Button */}
@@ -159,13 +157,6 @@ function RepositoriesContent() {
   const [availableSearch, setAvailableSearch] = useState("");
   const [selectedFullNames, setSelectedFullNames] = useState<Set<string>>(new Set());
   const [bulkAddLoading, setBulkAddLoading] = useState(false);
-  const [showManualForm, setShowManualForm] = useState(false);
-
-  // Manual fallback input
-  const [newRepoFullName, setNewRepoFullName] = useState("");
-  const [newRepoBranch, setNewRepoBranch] = useState("main");
-  const [newRepoIsPrivate, setNewRepoIsPrivate] = useState(false);
-  const [addLoading, setAddLoading] = useState(false);
   const [addFeedback, setAddFeedback] = useState<string | null>(null);
 
   const loadAvailableRepos = async () => {
@@ -183,7 +174,6 @@ function RepositoriesContent() {
 
   const handleOpenAddModal = () => {
     setShowAddModal(true);
-    setShowManualForm(false);
     setSelectedFullNames(new Set());
     void loadAvailableRepos();
   };
@@ -211,13 +201,14 @@ function RepositoriesContent() {
         isMonitored: true,
         htmlUrl: repo.htmlUrl,
         githubRepoId: repo.githubRepoId,
+        installationId: repo.installationId,
       });
       if (res.success && res.repository) {
         setRepos((prev) => [res.repository!, ...prev.filter((r) => r.fullName !== repo.fullName)]);
         setAvailableRepos((prev) =>
           prev.map((r) => (r.fullName === repo.fullName ? { ...r, alreadyMonitored: true } : r))
         );
-        setSyncFeedback(`Added "${repo.fullName}" to Secura! Pull Request security protection active.`);
+        setSyncFeedback(`Added "${repo.fullName}" to Secura and synchronized with GitHub App!`);
         setTimeout(() => setSyncFeedback(null), 4000);
       } else {
         setAddFeedback(res.error || "Failed to add repository.");
@@ -244,7 +235,7 @@ function RepositoriesContent() {
         );
         setSelectedFullNames(new Set());
         setShowAddModal(false);
-        setSyncFeedback(`Added ${res.repositories.length} repositories to Secura! Pull Request security protection active.`);
+        setSyncFeedback(`Added ${res.repositories.length} repositories to Secura and synchronized with GitHub App!`);
         setTimeout(() => setSyncFeedback(null), 4000);
       } else {
         setAddFeedback(res.error || "Failed to add selected repositories.");
@@ -390,38 +381,6 @@ function RepositoriesContent() {
       void handleRefresh();
     } finally {
       setDeleteLoading(false);
-    }
-  };
-
-  const handleAddRepository = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newRepoFullName.trim()) return;
-
-    setAddLoading(true);
-    setAddFeedback(null);
-
-    try {
-      const res = await api.addRepository({
-        fullName: newRepoFullName.trim(),
-        defaultBranch: newRepoBranch.trim() || "main",
-        isPrivate: newRepoIsPrivate,
-        isMonitored: true,
-      });
-
-      if (res.success && res.repository) {
-        setRepos((prev) => [res.repository!, ...prev.filter((r) => r.fullName !== res.repository!.fullName)]);
-        setNewRepoFullName("");
-        setShowAddModal(false);
-        setShowManualForm(false);
-        setSyncFeedback(`Added "${res.repository.fullName}" to Secura! Linked with GitHub App.`);
-        setTimeout(() => setSyncFeedback(null), 5000);
-      } else {
-        setAddFeedback(res.error || "Failed to add repository.");
-      }
-    } catch {
-      setAddFeedback("Network error. Please try again.");
-    } finally {
-      setAddLoading(false);
     }
   };
 
@@ -604,7 +563,7 @@ function RepositoriesContent() {
                 <div>
                   <h3 className="text-base font-semibold text-slate-900 dark:text-zinc-100">Select Repositories to Monitor</h3>
                   <p className="text-xs text-slate-500 dark:text-zinc-400 mt-0.5">
-                    Choose repositories accessible from GitHub to add to Secura.
+                    Select any repository from your GitHub account. It will be added to Secura and automatically selected in the GitHub App.
                   </p>
                 </div>
               </div>
@@ -658,21 +617,36 @@ function RepositoriesContent() {
                   <span>Loading available repositories from GitHub...</span>
                 </div>
               ) : availableRepos.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-slate-300 dark:border-zinc-700 p-8 text-center bg-slate-50/50 dark:bg-zinc-900/40">
-                  <GitBranch className="h-8 w-8 text-slate-400 dark:text-zinc-500 mx-auto mb-2" />
-                  <p className="text-sm font-semibold text-slate-800 dark:text-zinc-200">No repositories available</p>
-                  <p className="text-xs text-slate-500 dark:text-zinc-400 mt-1 max-w-sm mx-auto">
-                    Ensure the Secura GitHub App is installed on your GitHub account with access to your repositories.
+                <div className="rounded-2xl border border-dashed border-slate-300 dark:border-zinc-800 p-8 text-center bg-slate-50/70 dark:bg-zinc-900/40 my-4">
+                  <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50 dark:bg-blue-950/50 border border-blue-200 dark:border-blue-900/60 text-blue-600 dark:text-blue-400 mb-3 shadow-xs">
+                    <ShieldCheck className="h-6 w-6" />
+                  </div>
+                  <h4 className="text-sm font-semibold text-slate-900 dark:text-zinc-100">
+                    GitHub App Installation Required
+                  </h4>
+                  <p className="text-xs text-slate-500 dark:text-zinc-400 mt-1.5 max-w-md mx-auto leading-relaxed">
+                    Repositories cannot be added directly without granting access through the official Secura GitHub App. Please install the GitHub App and select the repositories you wish to protect.
                   </p>
-                  <a
-                    href={githubConfigureUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2 text-xs font-semibold text-white shadow-xs hover:bg-blue-500 transition-all mt-4"
-                  >
-                    <span>Grant Access on GitHub</span>
-                    <ExternalLink className="h-3 w-3" />
-                  </a>
+                  <div className="flex flex-wrap items-center justify-center gap-2.5 mt-5">
+                    <a
+                      href={githubConfigureUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-2 rounded-xl bg-blue-600 hover:bg-blue-500 px-4 py-2.5 text-xs font-semibold text-white shadow-xs transition-all"
+                    >
+                      <span>Install GitHub App & Select Repos</span>
+                      <ExternalLink className="h-3.5 w-3.5" />
+                    </a>
+                    <button
+                      type="button"
+                      onClick={loadAvailableRepos}
+                      disabled={availableLoading}
+                      className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3.5 py-2.5 text-xs font-medium text-slate-700 dark:text-zinc-300 hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors shadow-xs"
+                    >
+                      <RefreshCcw className={`h-3.5 w-3.5 ${availableLoading ? "animate-spin" : ""}`} />
+                      <span>Reload Repositories</span>
+                    </button>
+                  </div>
                 </div>
               ) : (
                 (() => {
@@ -731,7 +705,7 @@ function RepositoriesContent() {
 
                           {/* Repo Details */}
                           <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-2 mb-0.5">
+                            <div className="flex items-center gap-2 mb-0.5 flex-wrap">
                               {repo.isPrivate ? (
                                 <Lock className="h-3 w-3 text-slate-400 dark:text-zinc-500" />
                               ) : (
@@ -750,6 +724,17 @@ function RepositoriesContent() {
                               ) : (
                                 <span className="text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 font-medium border border-blue-200 dark:border-blue-900/40">
                                   Public
+                                </span>
+                              )}
+                              {repo.inGithubApp ? (
+                                <span className="inline-flex items-center gap-1 rounded bg-emerald-50 dark:bg-emerald-950/40 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/60">
+                                  <CheckCircle2 className="h-2.5 w-2.5" />
+                                  <span>In GitHub App</span>
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 rounded bg-indigo-50 dark:bg-indigo-950/40 px-1.5 py-0.5 text-[10px] font-medium text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800/60">
+                                  <ShieldCheck className="h-2.5 w-2.5" />
+                                  <span>Auto-Selects in GitHub App</span>
                                 </span>
                               )}
                             </div>
@@ -796,13 +781,15 @@ function RepositoriesContent() {
                 <span>
                   {selectedFullNames.size} {selectedFullNames.size === 1 ? "repository" : "repositories"} selected
                 </span>
-                <button
-                  type="button"
-                  onClick={() => setShowManualForm(!showManualForm)}
-                  className="text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline"
+                <a
+                  href={githubConfigureUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline"
                 >
-                  {showManualForm ? "Hide manual entry" : "Enter name manually"}
-                </button>
+                  <span>Grant more repositories on GitHub</span>
+                  <ExternalLink className="h-3 w-3" />
+                </a>
               </div>
 
               <div className="flex items-center gap-2 w-full sm:w-auto">
@@ -828,65 +815,6 @@ function RepositoriesContent() {
                 </button>
               </div>
             </div>
-
-            {/* Optional Manual Entry Drawer */}
-            {showManualForm && (
-              <form
-                onSubmit={handleAddRepository}
-                className="border-t border-slate-100 dark:border-zinc-800/80 p-4 bg-slate-50/50 dark:bg-zinc-900/50 space-y-3"
-              >
-                <div className="grid sm:grid-cols-3 gap-3">
-                  <div className="sm:col-span-2">
-                    <label htmlFor="new-repo-fullname-input" className="block text-[11px] font-medium text-slate-600 dark:text-zinc-400 mb-1">
-                      Repository Full Name (owner/repo)
-                    </label>
-                    <input
-                      id="new-repo-fullname-input"
-                      type="text"
-                      required
-                      value={newRepoFullName}
-                      onChange={(e) => setNewRepoFullName(e.target.value)}
-                      placeholder="e.g. organization/repository"
-                      className="w-full rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 py-2 text-xs text-slate-900 dark:text-zinc-100 placeholder:text-slate-400 dark:placeholder:text-zinc-500 focus:border-blue-500 focus:outline-none shadow-xs"
-                    />
-                  </div>
-                  <div>
-                    <label htmlFor="new-repo-branch-input" className="block text-[11px] font-medium text-slate-600 dark:text-zinc-400 mb-1">Branch</label>
-                    <input
-                      id="new-repo-branch-input"
-                      type="text"
-                      value={newRepoBranch}
-                      onChange={(e) => setNewRepoBranch(e.target.value)}
-                      placeholder="main"
-                      className="w-full rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 py-2 text-xs text-slate-900 dark:text-zinc-100 placeholder:text-slate-400 dark:placeholder:text-zinc-500 focus:border-blue-500 focus:outline-none shadow-xs"
-                    />
-                  </div>
-                </div>
-                <div className="flex items-center justify-between">
-                  <label className="flex items-center gap-2 text-xs text-slate-700 dark:text-zinc-300 cursor-pointer font-medium">
-                    <input
-                      type="checkbox"
-                      checked={newRepoIsPrivate}
-                      onChange={(e) => setNewRepoIsPrivate(e.target.checked)}
-                      className="rounded border-slate-300 dark:border-zinc-700 text-blue-600 focus:ring-blue-500 bg-white dark:bg-zinc-900"
-                    />
-                    <span>Private Repository</span>
-                  </label>
-                  <button
-                    type="submit"
-                    disabled={addLoading}
-                    className="flex items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2 text-xs font-semibold text-white hover:bg-blue-500 transition-colors disabled:opacity-50 shadow-xs"
-                  >
-                    {addLoading ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    ) : (
-                      <Plus className="h-3.5 w-3.5" />
-                    )}
-                    <span>Add Repository</span>
-                  </button>
-                </div>
-              </form>
-            )}
           </div>
         </div>
       )}
@@ -913,9 +841,9 @@ function RepositoriesContent() {
         {filteredRepos.length === 0 ? (
           <div className="rounded-xl border border-slate-200/80 dark:border-zinc-800/80 bg-white/90 dark:bg-zinc-950/90 p-12 text-center shadow-xs my-auto">
             <GitBranch className="h-8 w-8 text-slate-400 dark:text-zinc-600 mx-auto mb-2.5" />
-            <h3 className="text-sm font-semibold text-slate-800 dark:text-zinc-200">No repositories found</h3>
-            <p className="text-xs text-slate-500 dark:text-zinc-400 mt-1 max-w-sm mx-auto">
-              Add a repository manually above or install the Secura GitHub App to monitor pull requests and scan for vulnerabilities.
+            <h3 className="text-sm font-semibold text-slate-800 dark:text-zinc-200">No repositories connected</h3>
+            <p className="text-xs text-slate-500 dark:text-zinc-400 mt-1 max-w-md mx-auto">
+              Install the Secura GitHub App on your GitHub account and select your repositories to enable automated pull request scanning and secret protection.
             </p>
             <div className="flex flex-wrap items-center justify-center gap-3 mt-4">
               <a
@@ -924,9 +852,16 @@ function RepositoriesContent() {
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-1.5 rounded-xl bg-[#281C59] px-4 py-2 text-xs font-semibold text-white shadow-xs hover:bg-[#281C59]/90 transition-all"
               >
-                <span>Configure on GitHub</span>
+                <span>Install GitHub App & Select Repos</span>
                 <ExternalLink className="h-3 w-3" />
               </a>
+              <button
+                onClick={handleOpenAddModal}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-2 text-xs font-semibold text-slate-700 dark:text-zinc-300 shadow-xs hover:bg-slate-50 dark:hover:bg-zinc-800 transition-all"
+              >
+                <Plus className="h-3 w-3" />
+                <span>Add Repositories</span>
+              </button>
             </div>
           </div>
         ) : (
@@ -943,51 +878,13 @@ function RepositoriesContent() {
       </div>
 
       {/* ─── Delete Repository Confirmation Modal ────────────────────────── */}
-      {repoToDelete && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 dark:bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="relative w-full max-w-md rounded-2xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-6 shadow-2xl space-y-4 text-slate-900 dark:text-zinc-100">
-            <div className="flex items-start gap-3.5">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-rose-100 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-900/60 text-rose-600 dark:text-rose-400">
-                <Trash2 className="h-5 w-5" />
-              </div>
-              <div className="min-w-0">
-                <h3 className="text-base font-bold text-slate-900 dark:text-zinc-100">
-                  Delete Repository
-                </h3>
-                <p className="text-xs text-slate-500 dark:text-zinc-400 mt-1 leading-relaxed">
-                  Are you sure you want to delete <strong className="text-slate-800 dark:text-zinc-200 font-semibold">{repoToDelete.fullName}</strong>?
-                  This will remove the repository container, pull request security monitoring, and all associated findings from Secura.
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100 dark:border-zinc-800/80">
-              <button
-                type="button"
-                onClick={() => setRepoToDelete(null)}
-                suppressHydrationWarning
-                className="rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-2 text-xs font-semibold text-slate-700 dark:text-zinc-300 hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors shadow-xs"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={deleteLoading}
-                onClick={handleConfirmDelete}
-                suppressHydrationWarning
-                className="flex items-center gap-1.5 rounded-xl bg-rose-600 px-4 py-2 text-xs font-semibold text-white shadow-xs hover:bg-rose-500 transition-all disabled:opacity-50"
-              >
-                {deleteLoading ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <Trash2 className="h-3.5 w-3.5" />
-                )}
-                <span>Delete</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <DeleteRepoModal
+        isOpen={Boolean(repoToDelete)}
+        repoFullName={repoToDelete?.fullName || ""}
+        loading={deleteLoading}
+        onClose={() => setRepoToDelete(null)}
+        onConfirm={handleConfirmDelete}
+      />
     </div>
   );
 }

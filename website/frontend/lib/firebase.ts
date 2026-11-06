@@ -70,6 +70,9 @@ async function getLiveFirebase() {
       auth: liveAuth,
       googleProvider: liveGoogle,
       githubProvider: liveGithub,
+      GithubAuthProvider: authModule.GithubAuthProvider,
+      GoogleAuthProvider: authModule.GoogleAuthProvider,
+      getAdditionalUserInfo: authModule.getAdditionalUserInfo,
       signInWithPopup: authModule.signInWithPopup,
       ["signInWithEmailAndPassword"]: authModule.signInWithEmailAndPassword,
       ["createUserWithEmailAndPassword"]: authModule.createUserWithEmailAndPassword,
@@ -117,48 +120,116 @@ export async function signInWithPopup(
     const liveProvider = isGithub ? live.githubProvider : live.googleProvider;
     const result = await live.signInWithPopup(live.auth, liveProvider);
 
-    let ghInfo: { login?: string; htmlUrl?: string; publicRepos?: number } = {};
+    let additionalInfo: any = null;
+    try {
+      if (typeof live.getAdditionalUserInfo === "function") {
+        additionalInfo = live.getAdditionalUserInfo(result);
+      }
+    } catch (e) {
+      console.warn("Could not retrieve getAdditionalUserInfo:", e);
+    }
 
     if (isGithub) {
+      let ghLogin: string | undefined = additionalInfo?.username || (additionalInfo?.profile as any)?.login;
+      let ghProfileName: string | undefined = (additionalInfo?.profile as any)?.name;
+      let ghAvatar: string | undefined = (additionalInfo?.profile as any)?.avatar_url;
+      let ghHtmlUrl: string | undefined = (additionalInfo?.profile as any)?.html_url;
+      let ghPublicRepos: number | undefined = (additionalInfo?.profile as any)?.public_repos;
+
+      // 1. Attempt token-based retrieval from OAuth credential
       try {
-        // Attempt to extract GitHub access token from Firebase credential
-        const authCredential = (result as any)?.credential;
-        const ghAuthVal = authCredential?.accessToken;
-        if (ghAuthVal) {
-          const profile = await fetchGitHubUserProfile(ghAuthVal, true);
+        const cred = live.GithubAuthProvider?.credentialFromResult?.(result);
+        const ghOAuth = cred?.accessToken || (result as any)?.credential?.accessToken;
+        if (ghOAuth) {
+          const profile = await fetchGitHubUserProfile(ghOAuth, true);
           if (profile) {
-            ghInfo = {
-              login: profile.login,
-              htmlUrl: profile.htmlUrl,
-              publicRepos: profile.publicRepos,
-            };
+            if (!ghLogin) ghLogin = profile.login;
+            if (!ghProfileName && profile.name) ghProfileName = profile.name;
+            if (!ghAvatar && profile.avatarUrl) ghAvatar = profile.avatarUrl;
+            if (!ghHtmlUrl && profile.htmlUrl) ghHtmlUrl = profile.htmlUrl;
+            if (ghPublicRepos === undefined) ghPublicRepos = profile.publicRepos;
           }
         }
       } catch (e) {
         console.warn("Could not fetch extra GitHub OAuth metadata:", e);
       }
 
-      // Fallback screenName if token fetch wasn't available
-      if (!ghInfo.login) {
+      // 2. Fallback screenName extraction
+      if (!ghLogin) {
         const screenName =
           (result as any)?._tokenResponse?.screenName ||
           (result as any)?.reloadUserInfo?.screenName;
         if (screenName) {
-          ghInfo.login = screenName;
-          ghInfo.htmlUrl = `https://github.com/${screenName}`;
+          ghLogin = screenName;
         }
       }
+
+      // 3. Fallback from noreply email: "jay240322@users.noreply.github.com" -> "jay240322"
+      if (!ghLogin && result.user.email?.includes("@users.noreply.github.com")) {
+        ghLogin = result.user.email.split("@")[0].replace(/^@/, "");
+      }
+
+      // 4. Fetch public profile by username if name or avatar is still missing
+      if (ghLogin && (!ghProfileName || !ghAvatar)) {
+        try {
+          const pubProfile = await fetchGitHubUserProfile(ghLogin, false);
+          if (pubProfile) {
+            if (!ghProfileName && pubProfile.name) ghProfileName = pubProfile.name;
+            if (!ghAvatar && pubProfile.avatarUrl) ghAvatar = pubProfile.avatarUrl;
+            if (!ghHtmlUrl) ghHtmlUrl = pubProfile.htmlUrl;
+            if (ghPublicRepos === undefined) ghPublicRepos = pubProfile.publicRepos;
+          }
+        } catch {}
+      }
+
+      // 5. Clean up display name: NEVER show noreply email!
+      let resolvedName = ghProfileName;
+      if (!resolvedName || resolvedName.includes("@users.noreply.github.com") || resolvedName.includes("@")) {
+        const rawDisplay = result.user.displayName;
+        if (rawDisplay && !rawDisplay.includes("@users.noreply.github.com") && !rawDisplay.includes("@")) {
+          resolvedName = rawDisplay;
+        } else {
+          resolvedName = ghLogin || "Developer";
+        }
+      }
+
+      const finalAvatar = ghAvatar || (ghLogin ? `https://github.com/${ghLogin}.png` : result.user.photoURL);
+
+      return {
+        user: {
+          uid: result.user.uid,
+          email: result.user.email,
+          displayName: resolvedName,
+          photoURL: finalAvatar,
+          githubUsername: ghLogin,
+          githubProfileUrl: ghHtmlUrl || (ghLogin ? `https://github.com/${ghLogin}` : undefined),
+          githubReposCount: ghPublicRepos,
+        },
+      };
+    }
+
+    // Google Provider flow: extract real Google Profile Name & Picture
+    let googleName = result.user.displayName;
+    const addProfile = additionalInfo?.profile as any;
+    if (!googleName && addProfile?.name) {
+      googleName = addProfile.name;
+    }
+    if (!googleName && result.user.email) {
+      const emailPrefix = result.user.email.split("@")[0];
+      googleName = emailPrefix.charAt(0).toUpperCase() + emailPrefix.slice(1);
+    }
+
+    let googlePhoto = result.user.photoURL;
+    if (!googlePhoto && addProfile?.picture) {
+      googlePhoto = addProfile.picture;
     }
 
     return {
       user: {
         uid: result.user.uid,
         email: result.user.email,
-        displayName: result.user.displayName,
-        photoURL: result.user.photoURL,
-        githubUsername: ghInfo.login,
-        githubProfileUrl: ghInfo.htmlUrl,
-        githubReposCount: ghInfo.publicRepos,
+        displayName: googleName || "Google User",
+        photoURL: googlePhoto,
       },
     };
   }

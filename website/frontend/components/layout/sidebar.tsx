@@ -39,7 +39,7 @@ export function Sidebar() {
   return (
     <aside
       className={cn(
-        "relative flex flex-col h-screen border-r border-slate-200/80 dark:border-zinc-800/80 bg-white dark:bg-zinc-950 backdrop-blur-md transition-all duration-300 shrink-0 z-20 select-none",
+        "relative flex flex-col h-screen border-r border-slate-200/80 dark:border-zinc-800/80 bg-white dark:bg-[#111113] backdrop-blur-md transition-all duration-300 shrink-0 z-20 select-none",
         collapsed ? "w-16 min-w-[4rem]" : "w-60 min-w-[15rem]"
       )}
     >

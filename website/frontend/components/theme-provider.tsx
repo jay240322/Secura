@@ -1,13 +1,13 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState } from "react";
+import React, { createContext, useContext, useEffect, useState } from "react";
 
 export type Theme = "light" | "dark";
 
 interface ThemeContextType {
   theme: Theme;
-  setTheme: (theme: Theme) => void;
-  toggleTheme: () => void;
+  setTheme: (theme: Theme, event?: React.MouseEvent | MouseEvent) => void;
+  toggleTheme: (event?: React.MouseEvent | MouseEvent) => void;
 }
 
 const ThemeContext = createContext<ThemeContextType>({
@@ -36,22 +36,77 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  const setTheme = (newTheme: Theme) => {
-    setThemeState(newTheme);
-    try {
-      localStorage.setItem("secura_theme", newTheme);
-      if (newTheme === "dark") {
-        document.documentElement.classList.add("dark");
-      } else {
-        document.documentElement.classList.remove("dark");
+  const setThemeWithBurst = (nextTheme: Theme, event?: React.MouseEvent | MouseEvent) => {
+    const applyTheme = () => {
+      setThemeState(nextTheme);
+      try {
+        localStorage.setItem("secura_theme", nextTheme);
+        if (nextTheme === "dark") {
+          document.documentElement.classList.add("dark");
+        } else {
+          document.documentElement.classList.remove("dark");
+        }
+      } catch {
+        // ignore
       }
-    } catch {
-      // ignore
+    };
+
+    // If browser supports View Transitions API, animate circular burst from click coordinates
+    if (
+      typeof document !== "undefined" &&
+      "startViewTransition" in document &&
+      !window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    ) {
+      const x = event?.clientX ?? (typeof window !== "undefined" ? window.innerWidth - 40 : 0);
+      const y = event?.clientY ?? 40;
+      const endRadius =
+        typeof window !== "undefined"
+          ? Math.hypot(
+              Math.max(x, window.innerWidth - x),
+              Math.max(y, window.innerHeight - y)
+            )
+          : 1000;
+
+      const transition = (document as unknown as { startViewTransition: (cb: () => void) => { ready: Promise<void> } }).startViewTransition(() => {
+        applyTheme();
+      });
+
+      void transition.ready
+        .then(() => {
+          const clipPath = [
+            `circle(0px at ${x}px ${y}px)`,
+            `circle(${endRadius}px at ${x}px ${y}px)`,
+          ];
+          document.documentElement.animate(
+            {
+              clipPath: clipPath,
+            },
+            {
+              duration: 320,
+              easing: "cubic-bezier(0.22, 1, 0.36, 1)",
+              pseudoElement: "::view-transition-new(root)",
+            }
+          );
+        })
+        .catch(() => {
+          // View transition animation failed or was skipped
+        });
+    } else {
+      // Instant synchronous apply for maximum speed
+      applyTheme();
     }
   };
 
-  const toggleTheme = () => {
-    setTheme(theme === "light" ? "dark" : "light");
+  const setTheme = (newTheme: Theme, event?: React.MouseEvent | MouseEvent) => {
+    setThemeWithBurst(newTheme, event);
+  };
+
+  const toggleTheme = (event?: React.MouseEvent | MouseEvent) => {
+    const isDark =
+      typeof document !== "undefined"
+        ? document.documentElement.classList.contains("dark")
+        : theme === "dark";
+    setThemeWithBurst(isDark ? "light" : "dark", event);
   };
 
   return (
@@ -64,4 +119,3 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 export function useTheme() {
   return useContext(ThemeContext);
 }
-

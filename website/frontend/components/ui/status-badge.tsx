@@ -25,7 +25,12 @@ const STATUS_CONFIG: Record<string, { label: string; className: string; dotColor
     dotColor: "bg-slate-400",
   },
   resolved: {
-    label: "Resolved",
+    label: "Solved",
+    className: "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-600/20 dark:bg-emerald-950/40 dark:text-emerald-400 dark:ring-emerald-800/40",
+    dotColor: "bg-emerald-500",
+  },
+  solved: {
+    label: "Solved",
     className: "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-600/20 dark:bg-emerald-950/40 dark:text-emerald-400 dark:ring-emerald-800/40",
     dotColor: "bg-emerald-500",
   },
