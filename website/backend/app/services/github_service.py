@@ -301,16 +301,12 @@ def get_open_pull_requests(
     return get_repository_pull_requests(installation_id, owner, repo, state="open")
 
 
-def get_pull_request_commits(
+def _get_github_auth_headers(
     installation_id: Optional[int],
     owner: str,
     repo: str,
-    pull_number: int,
-) -> List[Dict[str, Any]]:
-    """
-    Fetch all commits associated with a GitHub Pull Request.
-    Tries GitHub App installation token first, with automatic fallback to public API.
-    """
+) -> Dict[str, str]:
+    """Obtain standard headers for GitHub API requests with auto-discovery of installation tokens."""
     token = None
     if installation_id:
         try:
@@ -318,7 +314,6 @@ def get_pull_request_commits(
         except Exception as exc:
             logger.warning("Could not obtain installation token for %s: %s", installation_id, exc)
 
-    # If no installation token yet, try looking up installation via App JWT
     if not token:
         try:
             app_jwt = create_app_jwt()
@@ -346,7 +341,20 @@ def get_pull_request_commits(
     }
     if token:
         headers["Authorization"] = f"Bearer {token}"
+    return headers
 
+
+def get_pull_request_commits(
+    installation_id: Optional[int],
+    owner: str,
+    repo: str,
+    pull_number: int,
+) -> List[Dict[str, Any]]:
+    """
+    Fetch all commits associated with a GitHub Pull Request.
+    Tries GitHub App installation token first, with automatic fallback to public API.
+    """
+    headers = _get_github_auth_headers(installation_id, owner, repo)
     url = f"{GITHUB_API_URL}/repos/{owner}/{repo}/pulls/{pull_number}/commits"
     try:
         response = requests.get(
@@ -431,41 +439,7 @@ def get_commit_check_runs(
     Fetch GitHub Check Runs and annotations for a specific commit SHA.
     Enables retrieving detections made by GitHub Actions or GitHub App for historical commits.
     """
-    token = None
-    if installation_id:
-        try:
-            token = create_installation_token(installation_id)
-        except Exception as exc:
-            logger.warning("Could not obtain installation token for %s: %s", installation_id, exc)
-
-    if not token:
-        try:
-            app_jwt = create_app_jwt()
-            inst_resp = requests.get(
-                f"{GITHUB_API_URL}/repos/{owner}/{repo}/installation",
-                headers={
-                    "Authorization": f"Bearer {app_jwt}",
-                    "Accept": "application/vnd.github+json",
-                    "X-GitHub-Api-Version": "2022-11-28",
-                    "User-Agent": "Secura-Security-Scanner",
-                },
-                timeout=10,
-            )
-            if inst_resp.ok:
-                found_id = inst_resp.json().get("id")
-                if found_id:
-                    token = create_installation_token(found_id)
-        except Exception as inst_err:
-            logger.debug("Could not auto-discover installation for %s/%s: %s", owner, repo, inst_err)
-
-    headers = {
-        "Accept": "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2022-11-28",
-        "User-Agent": "Secura-Security-Scanner",
-    }
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
-
+    headers = _get_github_auth_headers(installation_id, owner, repo)
     url = f"{GITHUB_API_URL}/repos/{owner}/{repo}/commits/{commit_sha}/check-runs"
     try:
         response = requests.get(url, headers=headers, params={"per_page": 50}, timeout=15)

@@ -19,6 +19,7 @@ import {
   Legend,
 } from "recharts";
 import { CheckCircle2, ShieldCheck } from "lucide-react";
+import { ChartTooltip } from "@/components/ui/chart-tooltip";
 
 const SEV_COLORS: Record<string, string> = {
   CRITICAL: "#ef4444",
@@ -26,30 +27,6 @@ const SEV_COLORS: Record<string, string> = {
   MEDIUM: "#eab308",
   LOW: "#3b82f6",
 };
-
-function ChartTooltip({
-  active,
-  payload,
-  label,
-}: {
-  active?: boolean;
-  payload?: { name: string; value: number; color: string }[];
-  label?: string;
-}) {
-  if (!active || !payload?.length) return null;
-  return (
-    <div className="rounded-xl border border-slate-200 bg-white/95 px-3 py-2 text-xs shadow-xl backdrop-blur-xl dark:border-zinc-800 dark:bg-zinc-950/95">
-      <p className="mb-1.5 font-semibold text-slate-800 dark:text-zinc-100">{label}</p>
-      {payload.map((p) => (
-        <div key={p.name} className="flex items-center gap-2">
-          <span className="h-2 w-2 rounded-full" style={{ background: p.color }} />
-          <span className="text-slate-500 dark:text-zinc-400 capitalize">{p.name}:</span>
-          <span className="text-slate-900 dark:text-zinc-100 font-medium">{p.value}</span>
-        </div>
-      ))}
-    </div>
-  );
-}
 
 export default function InsightsPage() {
   const [securityScore, setSecurityScore] = useState(100);

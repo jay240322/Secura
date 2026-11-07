@@ -33,6 +33,88 @@ logger = logging.getLogger("secura.repositories")
 router = APIRouter(prefix="/repositories", tags=["Repositories"])
 
 
+def _format_repo_response(
+    repo: Repository,
+    critical_count: int,
+    high_count: int,
+    med_count: int,
+    low_count: int,
+    total_open: int,
+    inst_id: Optional[int],
+    latest_scan: Optional[Scan] = None,
+) -> RepositoryResponse:
+    """Format a consistent RepositoryResponse across single and batch enrichment."""
+    repo_score = max(0, 100 - (critical_count * 30 + high_count * 20 + med_count * 10 + low_count * 5))
+    fn = repo.full_name or repo.name or "repository"
+    owner = repo.owner or (fn.split("/")[0] if "/" in fn else "owner")
+    name = repo.name or (fn.split("/")[-1] if "/" in fn else fn)
+
+    app_url = (
+        f"https://github.com/settings/installations/{inst_id}"
+        if inst_id
+        else "https://github.com/apps/secura-security-scanner"
+    )
+
+    computed_status = (
+        "failed" if (critical_count > 0 or high_count > 0)
+        else (latest_scan.scan_result if latest_scan else ("failed" if total_open > 0 else "passed"))
+    )
+
+    return RepositoryResponse(
+        id=repo.id,
+        installation_id=repo.installation_id or "installation-manual",
+        github_installation_id=inst_id,
+        github_app_url=app_url,
+        github_repo_id=repo.github_repo_id,
+        name=name,
+        full_name=fn,
+        owner=owner,
+        default_branch=repo.default_branch or "main",
+        is_private=bool(repo.is_private),
+        is_monitored=bool(repo.is_monitored),
+        html_url=repo.html_url or f"https://github.com/{fn}",
+        open_findings_count=total_open,
+        critical_findings_count=critical_count,
+        high_findings_count=high_count,
+        open_findings=total_open,
+        critical_findings=critical_count,
+        high_findings=high_count,
+        score=repo_score,
+        last_scan_status=computed_status,
+        last_scan_at=latest_scan.created_at if latest_scan else None,
+        created_at=repo.created_at or datetime.datetime.now(datetime.timezone.utc),
+    )
+
+
+def _get_user_repo_or_404(db: Session, current_user: User, repository_id: str) -> Repository:
+    """Consistently lookup a user's repository by id/name/slug or raise 404."""
+    gh_user = current_user.github_username.lower() if current_user.github_username else None
+    user_ids = [current_user.id]
+    if gh_user:
+        same_users = db.query(User.id).filter(func.lower(User.github_username) == gh_user).all()
+        user_ids = list(set([u[0] for u in same_users] + [current_user.id]))
+
+    clean_id = repository_id.strip()
+    repo = (
+        db.query(Repository)
+        .filter(
+            or_(
+                Repository.id == clean_id,
+                func.lower(Repository.name) == clean_id.lower(),
+                func.lower(Repository.full_name) == clean_id.lower(),
+            ),
+            or_(
+                Repository.user_id.in_(user_ids),
+                (func.lower(Repository.owner) == gh_user) if gh_user else False,
+            ),
+        )
+        .first()
+    )
+    if not repo:
+        raise HTTPException(status_code=404, detail="Repository not found")
+    return repo
+
+
 def enrich_repository_response(repo: Repository, db: Session) -> RepositoryResponse:
     latest_scan = (
         db.query(Scan)
@@ -52,11 +134,8 @@ def enrich_repository_response(repo: Repository, db: Session) -> RepositoryRespo
     med_count = sum(1 for f in open_findings if f.severity == "MEDIUM")
     low_count = sum(1 for f in open_findings if f.severity == "LOW")
 
-    repo_score = max(0, 100 - (critical_count * 30 + high_count * 20 + med_count * 10 + low_count * 5))
-
     fn = repo.full_name or repo.name or "repository"
     owner = repo.owner or (fn.split("/")[0] if "/" in fn else "owner")
-    name = repo.name or (fn.split("/")[-1] if "/" in fn else fn)
 
     inst_id = None
     if repo.installation and repo.installation.github_installation_id:
@@ -73,40 +152,15 @@ def enrich_repository_response(repo: Repository, db: Session) -> RepositoryRespo
         if inst:
             inst_id = inst.github_installation_id
 
-    app_url = (
-        f"https://github.com/settings/installations/{inst_id}"
-        if inst_id
-        else "https://github.com/apps/secura-security-scanner"
-    )
-
-    computed_status = (
-        "failed" if (critical_count > 0 or high_count > 0)
-        else (latest_scan.scan_result if latest_scan else ("failed" if len(open_findings) > 0 else "passed"))
-    )
-
-    return RepositoryResponse(
-        id=repo.id,
-        installation_id=repo.installation_id or "installation-manual",
-        github_installation_id=inst_id,
-        github_app_url=app_url,
-        github_repo_id=repo.github_repo_id,
-        name=name,
-        full_name=fn,
-        owner=owner,
-        default_branch=repo.default_branch or "main",
-        is_private=bool(repo.is_private),
-        is_monitored=bool(repo.is_monitored),
-        html_url=repo.html_url or f"https://github.com/{fn}",
-        open_findings_count=len(open_findings),
-        critical_findings_count=critical_count,
-        high_findings_count=high_count,
-        open_findings=len(open_findings),
-        critical_findings=critical_count,
-        high_findings=high_count,
-        score=repo_score,
-        last_scan_status=computed_status,
-        last_scan_at=latest_scan.created_at if latest_scan else None,
-        created_at=repo.created_at or datetime.datetime.now(datetime.timezone.utc),
+    return _format_repo_response(
+        repo=repo,
+        critical_count=critical_count,
+        high_count=high_count,
+        med_count=med_count,
+        low_count=low_count,
+        total_open=len(open_findings),
+        inst_id=inst_id,
+        latest_scan=latest_scan,
     )
 
 
@@ -186,11 +240,6 @@ def enrich_repositories_batch(repos: List[Repository], db: Session) -> List[Repo
         low_count = counts["LOW"]
         total_open = counts["total"]
 
-        repo_score = max(0, 100 - (critical_count * 30 + high_count * 20 + med_count * 10 + low_count * 5))
-        fn = repo.full_name or repo.name or "repository"
-        owner = repo.owner or (fn.split("/")[0] if "/" in fn else "owner")
-        name = repo.name or (fn.split("/")[-1] if "/" in fn else fn)
-
         inst_id = None
         if repo.installation and repo.installation.github_installation_id:
             inst_id = repo.installation.github_installation_id
@@ -199,41 +248,16 @@ def enrich_repositories_batch(repos: List[Repository], db: Session) -> List[Repo
         elif owner.lower() in inst_by_owner:
             inst_id = inst_by_owner[owner.lower()].github_installation_id
 
-        app_url = (
-            f"https://github.com/settings/installations/{inst_id}"
-            if inst_id
-            else "https://github.com/apps/secura-security-scanner"
-        )
-
-        computed_status = (
-            "failed" if (critical_count > 0 or high_count > 0)
-            else (latest_scan.scan_result if latest_scan else ("failed" if total_open > 0 else "passed"))
-        )
-
         results.append(
-            RepositoryResponse(
-                id=repo.id,
-                installation_id=repo.installation_id or "installation-manual",
-                github_installation_id=inst_id,
-                github_app_url=app_url,
-                github_repo_id=repo.github_repo_id,
-                name=name,
-                full_name=fn,
-                owner=owner,
-                default_branch=repo.default_branch or "main",
-                is_private=bool(repo.is_private),
-                is_monitored=bool(repo.is_monitored),
-                html_url=repo.html_url or f"https://github.com/{fn}",
-                open_findings_count=total_open,
-                critical_findings_count=critical_count,
-                high_findings_count=high_count,
-                open_findings=total_open,
-                critical_findings=critical_count,
-                high_findings=high_count,
-                score=repo_score,
-                last_scan_status=computed_status,
-                last_scan_at=latest_scan.created_at if latest_scan else None,
-                created_at=repo.created_at or datetime.datetime.now(datetime.timezone.utc),
+            _format_repo_response(
+                repo=repo,
+                critical_count=critical_count,
+                high_count=high_count,
+                med_count=med_count,
+                low_count=low_count,
+                total_open=total_open,
+                inst_id=inst_id,
+                latest_scan=latest_scan,
             )
         )
     return results
@@ -587,31 +611,7 @@ def get_repository_overview(
     from app.api.v1.pull_requests import list_pull_requests
     from app.api.v1.findings import list_findings
 
-    gh_user = current_user.github_username.lower() if current_user.github_username else None
-    user_ids = [current_user.id]
-    if gh_user:
-        same_users = db.query(User.id).filter(func.lower(User.github_username) == gh_user).all()
-        user_ids = list(set([u[0] for u in same_users] + [current_user.id]))
-
-    clean_id = repository_id.strip()
-    repo = (
-        db.query(Repository)
-        .filter(
-            or_(
-                Repository.id == clean_id,
-                func.lower(Repository.name) == clean_id.lower(),
-                func.lower(Repository.full_name) == clean_id.lower(),
-            ),
-            or_(
-                Repository.user_id.in_(user_ids),
-                (func.lower(Repository.owner) == gh_user) if gh_user else False,
-            ),
-        )
-        .first()
-    )
-    if not repo:
-        raise HTTPException(status_code=404, detail="Repository not found")
-
+    repo = _get_user_repo_or_404(db, current_user, repository_id)
     repo_resp = enrich_repository_response(repo, db)
     prs_resp = list_pull_requests(repository_id=repo.id, state=None, db=db, current_user=current_user)
     findings_resp = list_findings(repository_id=repo.id, scan_id=None, severity=None, status=None, search=None, skip=0, limit=100, db=db, current_user=current_user)
@@ -630,30 +630,7 @@ def get_repository(
     current_user: User = Depends(get_current_user),
 ):
     """Get single repository details by ID, slug, or repository name."""
-    gh_user = current_user.github_username.lower() if current_user.github_username else None
-    user_ids = [current_user.id]
-    if gh_user:
-        same_users = db.query(User.id).filter(func.lower(User.github_username) == gh_user).all()
-        user_ids = list(set([u[0] for u in same_users] + [current_user.id]))
-
-    clean_id = repository_id.strip()
-    repo = (
-        db.query(Repository)
-        .filter(
-            or_(
-                Repository.id == clean_id,
-                func.lower(Repository.name) == clean_id.lower(),
-                func.lower(Repository.full_name) == clean_id.lower(),
-            ),
-            or_(
-                Repository.user_id.in_(user_ids),
-                (func.lower(Repository.owner) == gh_user) if gh_user else False,
-            ),
-        )
-        .first()
-    )
-    if not repo:
-        raise HTTPException(status_code=404, detail="Repository not found")
+    repo = _get_user_repo_or_404(db, current_user, repository_id)
     return enrich_repository_response(repo, db)
 
 
@@ -665,30 +642,7 @@ def update_repository(
     current_user: User = Depends(get_current_user),
 ):
     """Update repository settings (monitoring status, default branch)."""
-    gh_user = current_user.github_username.lower() if current_user.github_username else None
-    user_ids = [current_user.id]
-    if gh_user:
-        same_users = db.query(User.id).filter(func.lower(User.github_username) == gh_user).all()
-        user_ids = list(set([u[0] for u in same_users] + [current_user.id]))
-
-    clean_id = repository_id.strip()
-    repo = (
-        db.query(Repository)
-        .filter(
-            or_(
-                Repository.id == clean_id,
-                func.lower(Repository.name) == clean_id.lower(),
-                func.lower(Repository.full_name) == clean_id.lower(),
-            ),
-            or_(
-                Repository.user_id.in_(user_ids),
-                (func.lower(Repository.owner) == gh_user) if gh_user else False,
-            ),
-        )
-        .first()
-    )
-    if not repo:
-        raise HTTPException(status_code=404, detail="Repository not found")
+    repo = _get_user_repo_or_404(db, current_user, repository_id)
 
     if payload.is_monitored is not None:
         repo.is_monitored = payload.is_monitored
@@ -707,30 +661,7 @@ def remove_repository(
     current_user: User = Depends(get_current_user),
 ):
     """Remove a repository from monitoring."""
-    gh_user = current_user.github_username.lower() if current_user.github_username else None
-    user_ids = [current_user.id]
-    if gh_user:
-        same_users = db.query(User.id).filter(func.lower(User.github_username) == gh_user).all()
-        user_ids = list(set([u[0] for u in same_users] + [current_user.id]))
-
-    clean_id = repository_id.strip()
-    repo = (
-        db.query(Repository)
-        .filter(
-            or_(
-                Repository.id == clean_id,
-                func.lower(Repository.name) == clean_id.lower(),
-                func.lower(Repository.full_name) == clean_id.lower(),
-            ),
-            or_(
-                Repository.user_id.in_(user_ids),
-                (func.lower(Repository.owner) == gh_user) if gh_user else False,
-            ),
-        )
-        .first()
-    )
-    if not repo:
-        raise HTTPException(status_code=404, detail="Repository not found")
+    repo = _get_user_repo_or_404(db, current_user, repository_id)
     db.delete(repo)
     db.commit()
 
@@ -743,30 +674,7 @@ def trigger_manual_scan(
     current_user: User = Depends(get_current_user),
 ):
     """Trigger an asynchronous security scan on a repository."""
-    gh_user = current_user.github_username.lower() if current_user.github_username else None
-    user_ids = [current_user.id]
-    if gh_user:
-        same_users = db.query(User.id).filter(func.lower(User.github_username) == gh_user).all()
-        user_ids = list(set([u[0] for u in same_users] + [current_user.id]))
-
-    clean_id = repository_id.strip()
-    repo = (
-        db.query(Repository)
-        .filter(
-            or_(
-                Repository.id == clean_id,
-                func.lower(Repository.name) == clean_id.lower(),
-                func.lower(Repository.full_name) == clean_id.lower(),
-            ),
-            or_(
-                Repository.user_id.in_(user_ids),
-                (func.lower(Repository.owner) == gh_user) if gh_user else False,
-            ),
-        )
-        .first()
-    )
-    if not repo:
-        raise HTTPException(status_code=404, detail="Repository not found")
+    repo = _get_user_repo_or_404(db, current_user, repository_id)
 
     scan = Scan(
         repository_id=repo.id,

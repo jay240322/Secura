@@ -10,6 +10,7 @@ import { api } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 import type { Repository, PullRequest, Finding } from "@/types";
 import { PullRequestRow } from "@/components/pull-requests/pull-request-row";
+import { FindingRow } from "@/components/findings/finding-row";
 import Loader from "@/components/ui/loader";
 import { DeleteRepoModal } from "@/components/repositories/delete-repo-modal";
 import {
@@ -573,66 +574,9 @@ function RepositoryDetailContent() {
                   </div>
                 ) : (
                   <div className="divide-y divide-slate-100 dark:divide-zinc-800/80">
-                    {findings.map((finding) => {
-                      const isResolved = finding.status === "resolved" || finding.status === "solved" || Boolean(finding.isResolved);
-                      const detectedSha = finding.detectedInCommit || (finding.commitSha ? finding.commitSha.slice(0, 7) : null);
-                      const resolvedSha = finding.resolvedInCommit;
-
-                      return (
-                        <Link
-                          key={finding.id}
-                          href={`/findings/${finding.id}`}
-                          className="flex items-start gap-3 py-3.5 hover:bg-slate-50/70 dark:hover:bg-zinc-900/60 px-2 rounded-lg transition-colors group"
-                        >
-                          <SeverityBadge severity={finding.severity} />
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-2 mb-0.5 flex-wrap">
-                              <span className="text-sm font-semibold text-slate-900 dark:text-zinc-100 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
-                                {finding.type}
-                              </span>
-                              <StatusBadge status={isResolved ? "resolved" : finding.status} />
-                              <span className="text-[10px] text-slate-600 dark:text-zinc-400 font-mono bg-slate-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded border border-slate-200 dark:border-zinc-700">
-                                {finding.ruleId}
-                              </span>
-                              {isResolved ? (
-                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 flex items-center gap-1">
-                                  <Check className="h-2.5 w-2.5" />
-                                  <span>Solved in commit {resolvedSha || "latest commit"}</span>
-                                </span>
-                              ) : detectedSha ? (
-                                <span className="text-[10px] font-mono font-bold bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 px-1.5 py-0.5 rounded border border-rose-200 dark:border-rose-900/40">
-                                  Commit {detectedSha}
-                                </span>
-                              ) : null}
-                              {finding.pullNumber && (
-                                <span className="text-[10px] font-mono font-semibold bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 px-1.5 py-0.5 rounded border border-blue-200 dark:border-blue-900/40">
-                                  PR #{finding.pullNumber}
-                                </span>
-                              )}
-                            </div>
-                            <p className="text-xs text-slate-500 dark:text-zinc-400 font-mono">
-                              {finding.filePath}:{finding.lineNumber}
-                            </p>
-                            {isResolved && (
-                              <p className="text-[11px] text-emerald-700 dark:text-emerald-400 flex items-center gap-1 font-mono mt-1">
-                                <Check className="h-3 w-3 shrink-0" />
-                                <span>
-                                  Detected in commit <code className="font-bold text-rose-600 dark:text-rose-400">{detectedSha || "prior commit"}</code> → Solved in commit <code className="font-bold text-emerald-600 dark:text-emerald-400">{resolvedSha || "latest commit"}</code>
-                                </span>
-                              </p>
-                            )}
-                            {finding.recommendation && !isResolved && (
-                              <p className="text-xs text-slate-600 dark:text-zinc-400 truncate mt-0.5">
-                                {finding.recommendation}
-                              </p>
-                            )}
-                          </div>
-                          <span className="text-xs text-slate-400 dark:text-zinc-500 self-center" suppressHydrationWarning>
-                            {new Date(finding.firstDetected).toLocaleDateString()}
-                          </span>
-                        </Link>
-                      );
-                    })}
+                    {findings.map((finding) => (
+                      <FindingRow key={finding.id} finding={finding} showDate />
+                    ))}
                   </div>
                 )}
               </CardContent>

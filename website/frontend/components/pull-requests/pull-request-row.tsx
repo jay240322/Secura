@@ -529,6 +529,28 @@ export function PullRequestRow({
                     const findingsCount = commitFindings.length || commit.totalFindings || (isFailed ? 1 : 0);
                     const canToggle = isFailed || commit.isResolved || commitFindings.length > 0;
 
+                    const commitDetails = (
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-medium text-slate-900 dark:text-white leading-snug break-words group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+                          {commit.message}
+                        </p>
+                        <p className="text-[11px] text-slate-500 dark:text-zinc-400 font-mono mt-0.5 flex items-center gap-2 flex-wrap">
+                          <span>@{commit.author}</span>
+                          {commit.date && (
+                            <>
+                              <span>·</span>
+                              <span>{new Date(commit.date).toLocaleDateString()}</span>
+                            </>
+                          )}
+                          {commit.isHistorical && (
+                            <span className="bg-slate-100 dark:bg-zinc-900 text-slate-600 dark:text-zinc-400 px-1.5 py-0.2 rounded text-[10px]">
+                              Scanned Commit
+                            </span>
+                          )}
+                        </p>
+                      </div>
+                    );
+
                     return (
                       <div
                         key={commit.fullSha || commit.sha || idx}
@@ -551,50 +573,14 @@ export function PullRequestRow({
                               <span className="font-mono text-[11px] font-bold text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/40 px-2 py-0.5 rounded-lg border border-blue-200 dark:border-blue-900/40 shrink-0 mt-0.5">
                                 {commit.sha}
                               </span>
-                              <div className="min-w-0 flex-1">
-                                <p className="text-xs font-medium text-slate-900 dark:text-white leading-snug break-words group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
-                                  {commit.message}
-                                </p>
-                                <p className="text-[11px] text-slate-500 dark:text-zinc-400 font-mono mt-0.5 flex items-center gap-2 flex-wrap">
-                                  <span>@{commit.author}</span>
-                                  {commit.date && (
-                                    <>
-                                      <span>·</span>
-                                      <span>{new Date(commit.date).toLocaleDateString()}</span>
-                                    </>
-                                  )}
-                                  {commit.isHistorical && (
-                                    <span className="bg-slate-100 dark:bg-zinc-900 text-slate-600 dark:text-zinc-400 px-1.5 py-0.2 rounded text-[10px]">
-                                      Scanned Commit
-                                    </span>
-                                  )}
-                                </p>
-                              </div>
+                              {commitDetails}
                             </button>
                           ) : (
                             <div className="flex items-start gap-2.5 min-w-0 flex-1">
                               <span className="font-mono text-[11px] font-bold text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/40 px-2 py-0.5 rounded-lg border border-blue-200 dark:border-blue-900/40 shrink-0 mt-0.5">
                                 {commit.sha}
                               </span>
-                              <div className="min-w-0 flex-1">
-                                <p className="text-xs font-medium text-slate-900 dark:text-white leading-snug break-words">
-                                  {commit.message}
-                                </p>
-                                <p className="text-[11px] text-slate-500 dark:text-zinc-400 font-mono mt-0.5 flex items-center gap-2 flex-wrap">
-                                  <span>@{commit.author}</span>
-                                  {commit.date && (
-                                    <>
-                                      <span>·</span>
-                                      <span>{new Date(commit.date).toLocaleDateString()}</span>
-                                    </>
-                                  )}
-                                  {commit.isHistorical && (
-                                    <span className="bg-slate-100 dark:bg-zinc-900 text-slate-600 dark:text-zinc-400 px-1.5 py-0.2 rounded text-[10px]">
-                                      Scanned Commit
-                                    </span>
-                                  )}
-                                </p>
-                              </div>
+                              {commitDetails}
                             </div>
                           )}
 

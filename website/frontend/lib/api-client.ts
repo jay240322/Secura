@@ -274,6 +274,32 @@ function mapBackendFindingItem(f: any): PRFinding {
   };
 }
 
+function mapBackendPRCommit(c: any): PRCommit {
+  return {
+    sha: String(c.sha || "HEAD"),
+    fullSha: c.full_sha ? String(c.full_sha) : (c.sha ? String(c.sha) : undefined),
+    message: String(c.message || "Commit update"),
+    author: String(c.author || "developer"),
+    authorAvatar: c.author_avatar ? String(c.author_avatar) : null,
+    date: c.date ? String(c.date) : null,
+    htmlUrl: c.html_url ? String(c.html_url) : undefined,
+    scanResult: (c.scan_result as any) ?? null,
+    scanStatus: c.scan_status ? String(c.scan_status) : undefined,
+    checkRunStatus: (c.check_run_status as any) || (c.scan_result === "passed" ? "success" : (c.scan_result ? "failure" : "neutral")),
+    totalFindings: Number(c.total_findings ?? 0),
+    criticalFindings: Number(c.critical_findings ?? 0),
+    highFindings: Number(c.high_findings ?? 0),
+    score: c.score !== undefined ? Number(c.score) : undefined,
+    scanId: c.scan_id ? String(c.scan_id) : undefined,
+    findings: Array.isArray(c.findings) ? c.findings.map(mapBackendFindingItem) : [],
+    isHistorical: Boolean(c.is_historical),
+    isHead: Boolean(c.is_head ?? c.isHead),
+    isResolved: Boolean(c.is_resolved ?? c.isResolved),
+    resolvesPriorViolations: Boolean(c.resolves_prior_violations ?? c.resolvesPriorViolations),
+    resolvedInCommit: c.resolved_in_commit ? String(c.resolved_in_commit) : (c.resolvedInCommit ? String(c.resolvedInCommit) : undefined),
+  };
+}
+
 function mapBackendPullRequest(p: Record<string, unknown>): PullRequest {
   const findingsRaw = Array.isArray(p.findings) ? p.findings : [];
   const commitsRaw = Array.isArray(p.commits) ? p.commits : [];
@@ -305,29 +331,7 @@ function mapBackendPullRequest(p: Record<string, unknown>): PullRequest {
     createdAt: String(p.created_at || p.createdAt || new Date().toISOString()),
     htmlUrl: String(p.html_url || p.htmlUrl || "https://github.com"),
     findings: findingsRaw.map(mapBackendFindingItem),
-    commits: commitsRaw.map((c: any) => ({
-      sha: String(c.sha || "HEAD"),
-      fullSha: c.full_sha ? String(c.full_sha) : (c.sha ? String(c.sha) : undefined),
-      message: String(c.message || "Commit update"),
-      author: String(c.author || "developer"),
-      authorAvatar: c.author_avatar ? String(c.author_avatar) : null,
-      date: c.date ? String(c.date) : null,
-      htmlUrl: c.html_url ? String(c.html_url) : undefined,
-      scanResult: (c.scan_result as any) ?? null,
-      scanStatus: c.scan_status ? String(c.scan_status) : undefined,
-      checkRunStatus: (c.check_run_status as any) || (c.scan_result === "passed" ? "success" : (c.scan_result ? "failure" : "neutral")),
-      totalFindings: Number(c.total_findings ?? 0),
-      criticalFindings: Number(c.critical_findings ?? 0),
-      highFindings: Number(c.high_findings ?? 0),
-      score: c.score !== undefined ? Number(c.score) : undefined,
-      scanId: c.scan_id ? String(c.scan_id) : undefined,
-      findings: Array.isArray(c.findings) ? c.findings.map(mapBackendFindingItem) : [],
-      isHistorical: Boolean(c.is_historical),
-      isHead: Boolean(c.is_head),
-      isResolved: Boolean(c.is_resolved),
-      resolvesPriorViolations: Boolean(c.resolves_prior_violations),
-      resolvedInCommit: c.resolved_in_commit ? String(c.resolved_in_commit) : undefined,
-    })),
+    commits: commitsRaw.map(mapBackendPRCommit),
     scanRuns: scanRunsRaw.map((r: any) => ({
       id: String(r.id || ""),
       commitSha: String(r.commit_sha || "HEAD"),
@@ -743,29 +747,7 @@ class ApiClient {
       if (!res.ok) return [];
       const data = await res.json();
       if (!Array.isArray(data)) return [];
-      return data.map((c: any) => ({
-        sha: String(c.sha || "HEAD"),
-        fullSha: c.full_sha ? String(c.full_sha) : undefined,
-        message: String(c.message || "Commit update"),
-        author: String(c.author || "developer"),
-        authorAvatar: c.author_avatar ? String(c.author_avatar) : null,
-        date: c.date ? String(c.date) : null,
-        htmlUrl: c.html_url ? String(c.html_url) : undefined,
-        scanResult: (c.scan_result as any) ?? null,
-        scanStatus: c.scan_status ? String(c.scan_status) : undefined,
-        checkRunStatus: (c.check_run_status as any) || (c.scan_result === "passed" ? "success" : (c.scan_result ? "failure" : "neutral")),
-        totalFindings: Number(c.total_findings ?? 0),
-        criticalFindings: Number(c.critical_findings ?? 0),
-        highFindings: Number(c.high_findings ?? 0),
-        score: c.score !== undefined ? Number(c.score) : undefined,
-        scanId: c.scan_id ? String(c.scan_id) : undefined,
-        findings: Array.isArray(c.findings) ? c.findings.map(mapBackendFindingItem) : [],
-        isHistorical: Boolean(c.is_historical),
-        isHead: Boolean(c.is_head ?? c.isHead),
-        isResolved: Boolean(c.is_resolved ?? c.isResolved),
-        resolvesPriorViolations: Boolean(c.resolves_prior_violations ?? c.resolvesPriorViolations),
-        resolvedInCommit: c.resolved_in_commit ? String(c.resolved_in_commit) : (c.resolvedInCommit ? String(c.resolvedInCommit) : undefined),
-      }));
+      return data.map(mapBackendPRCommit);
     } catch {
       return [];
     }

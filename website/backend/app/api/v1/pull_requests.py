@@ -116,6 +116,28 @@ def serialize_pr_scan_info(sc: Scan) -> Dict[str, Any]:
     }
 
 
+def _index_scans_by_sha(all_scans: List[Scan]) -> Dict[str, Dict[str, Any]]:
+    """Index scans by both full and short commit SHAs, prioritizing failed or higher finding counts."""
+    scans_by_sha: Dict[str, Dict[str, Any]] = {}
+    for sc in all_scans:
+        sc_info = serialize_pr_scan_info(sc)
+        sha_val = (sc.commit_sha or "").lower()
+        if not sha_val:
+            continue
+        for k in (sha_val, sha_val[:7]):
+            if k not in scans_by_sha:
+                scans_by_sha[k] = sc_info
+            else:
+                existing = scans_by_sha[k]
+                if (sc_info["total_findings"] > existing["total_findings"]) or (
+                    sc_info["scan_result"] == "failed" and existing["scan_result"] != "failed"
+                ):
+                    scans_by_sha[k] = sc_info
+        if len(sha_val) >= 12:
+            scans_by_sha[sha_val[:12]] = scans_by_sha[sha_val[:7]]
+    return scans_by_sha
+
+
 def enrich_and_resolve_pr_commits(
     raw_commits: List[Dict[str, Any]],
     scans_by_sha: Dict[str, Dict[str, Any]],
@@ -539,26 +561,8 @@ def build_annotated_pr_data(
         raw_commits.sort(key=lambda cm: cm.get("date") or "")
 
     # Build scan runs list & map by commit sha (prioritizing scans with findings)
-    scan_runs_list = []
-    scans_by_sha: Dict[str, Dict[str, Any]] = {}
-
-    for sc in all_scans_for_pr:
-        sc_info = serialize_pr_scan_info(sc)
-        scan_runs_list.append(sc_info)
-
-        sha_val = (sc.commit_sha or "").lower()
-        if sha_val:
-            for k in (sha_val, sha_val[:7]):
-                if k not in scans_by_sha:
-                    scans_by_sha[k] = sc_info
-                else:
-                    existing = scans_by_sha[k]
-                    if (sc_info["total_findings"] > existing["total_findings"]) or (
-                        sc_info["scan_result"] == "failed" and existing["scan_result"] != "failed"
-                    ):
-                        scans_by_sha[k] = sc_info
-            if len(sha_val) >= 12:
-                scans_by_sha[sha_val[:12]] = scans_by_sha[sha_val[:7]]
+    scan_runs_list = [serialize_pr_scan_info(sc) for sc in all_scans_for_pr]
+    scans_by_sha = _index_scans_by_sha(all_scans_for_pr)
 
     # Also match repository scans matching any commit sha in raw_commits (e.g. pushed before PR was created)
     pr_commit_shas = {
@@ -812,9 +816,11 @@ def get_pr_commits(
         for c in raw_commits if c.get("sha") or c.get("full_sha")
     }
 
-    if scan and scan.pr_commits_json:
+    def _merge_commits_from_json(json_str: Optional[str]):
+        if not json_str:
+            return
         try:
-            p = json.loads(scan.pr_commits_json)
+            p = json.loads(json_str)
             if isinstance(p, list):
                 for item in p:
                     if isinstance(item, dict):
@@ -825,19 +831,11 @@ def get_pr_commits(
         except Exception:
             pass
 
+    if scan and scan.pr_commits_json:
+        _merge_commits_from_json(scan.pr_commits_json)
+
     for sc in all_scans_for_pr:
-        if sc.pr_commits_json:
-            try:
-                p = json.loads(sc.pr_commits_json)
-                if isinstance(p, list):
-                    for item in p:
-                        if isinstance(item, dict):
-                            s_sha = (item.get("sha") or item.get("full_sha") or "").lower()[:7]
-                            if s_sha and s_sha not in seen_shas:
-                                seen_shas.add(s_sha)
-                                raw_commits.append(item)
-            except Exception:
-                pass
+        _merge_commits_from_json(sc.pr_commits_json)
 
     if raw_commits:
         raw_commits.sort(key=lambda cm: cm.get("date") or "")
@@ -857,22 +855,7 @@ def get_pr_commits(
         ]
 
     # Map scans by sha (including any repo scans for commits in this PR)
-    scans_by_sha = {}
-    for sc in all_scans_for_pr:
-        sc_info = serialize_pr_scan_info(sc)
-        sha_val = (sc.commit_sha or "").lower()
-        if sha_val:
-            for k in (sha_val, sha_val[:7]):
-                if k not in scans_by_sha:
-                    scans_by_sha[k] = sc_info
-                else:
-                    existing = scans_by_sha[k]
-                    if (sc_info["total_findings"] > existing["total_findings"]) or (
-                        sc_info["scan_result"] == "failed" and existing["scan_result"] != "failed"
-                    ):
-                        scans_by_sha[k] = sc_info
-            if len(sha_val) >= 12:
-                scans_by_sha[sha_val[:12]] = scans_by_sha[sha_val[:7]]
+    scans_by_sha = _index_scans_by_sha(all_scans_for_pr)
 
     # Also check repo scans for commits matching raw_commits (e.g. pushed before PR was created)
     pr_shas = {
