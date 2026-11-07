@@ -92,13 +92,13 @@ def create_app_jwt() -> str:
     return encoded_jwt
 
 
-_INSTALLATION_TOKENS_CACHE: Dict[int, Any] = {}
+_INSTALL_CACHE: Dict[int, Any] = {}
 
 
 def create_installation_token(installation_id: int) -> str:
     """Exchange an App JWT for an installation access token (cached for efficiency)."""
     now = time.time()
-    cached = _INSTALLATION_TOKENS_CACHE.get(installation_id)
+    cached = _INSTALL_CACHE.get(installation_id)
     if cached:
         tok_val, exp_time = cached
         if now < exp_time - 120:  # 2 minute buffer
@@ -133,7 +133,7 @@ def create_installation_token(installation_id: int) -> str:
         raise RuntimeError("GitHub did not return an installation access token")
 
     # Cache token for 50 minutes (GitHub tokens last 60 minutes)
-    _INSTALLATION_TOKENS_CACHE[installation_id] = (access_token, now + 3000)
+    _INSTALL_CACHE[installation_id] = (access_token, now + 3000)
     return access_token
 
 
@@ -388,6 +388,39 @@ def get_pull_request_commits(
         return []
 
 
+def _make_check_run_finding(
+    f_id: str,
+    rule_id: str,
+    f_path: str,
+    line_no: int = 1,
+    severity: str = "HIGH",
+    risk: Optional[str] = None,
+    remediation: Optional[str] = None,
+    commit_sha: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Helper to build standardized finding dictionaries without code duplication."""
+    clean_rule = rule_id.strip() if rule_id else "SECRET"
+    clean_path = f_path.strip().strip("`") if f_path else "unknown"
+    upper_sev = (severity or "HIGH").upper()
+    valid_sev = upper_sev if upper_sev in ("CRITICAL", "HIGH", "MEDIUM", "LOW") else "HIGH"
+
+    return {
+        "id": f_id,
+        "rule_id": clean_rule,
+        "finding_type": "Secret",
+        "severity": valid_sev,
+        "file_path": clean_path,
+        "line_number": line_no,
+        "status": "open",
+        "risk": risk or f"Exposed {clean_rule} credential detected in source code",
+        "recommendation": remediation or "Remove secret from source code and revoke compromised credentials",
+        "commit_sha": commit_sha,
+        "detected_in_commit": commit_sha[:7] if commit_sha else None,
+        "is_resolved": False,
+        "resolved_in_commit": None,
+    }
+
+
 def get_commit_check_runs(
     installation_id: Optional[int],
     owner: str,
@@ -458,113 +491,106 @@ def get_commit_check_runs(
                             ann_title = ann.get("title") or "SECRET_DETECTED"
                             ann_path = ann.get("path") or "unknown"
                             ann_line = ann.get("start_line") or 1
-                            findings.append({
-                                "id": f"cr-{run_id}-{ann_line}-{ann_title}",
-                                "rule_id": ann_title,
-                                "finding_type": "Secret",
-                                "severity": sev,
-                                "file_path": ann_path,
-                                "line_number": ann_line,
-                                "status": "open",
-                                "risk": raw_msg.split("\n")[0] if raw_msg else "Detected sensitive secret in source code",
-                                "recommendation": (
-                                    raw_msg.split("Remediation:")[-1].strip()
-                                    if "Remediation:" in raw_msg
-                                    else "Remove secret from source code and revoke compromised credentials"
-                                ),
-                                "commit_sha": commit_sha,
-                                "detected_in_commit": commit_sha[:7] if commit_sha else None,
-                                "is_resolved": False,
-                                "resolved_in_commit": None,
-                            })
+                            remed = (
+                                raw_msg.split("Remediation:")[-1].strip()
+                                if "Remediation:" in raw_msg
+                                else "Remove secret from source code and revoke compromised credentials"
+                            )
+                            findings.append(_make_check_run_finding(
+                                f_id=f"cr-{run_id}-{ann_line}-{ann_title}",
+                                rule_id=ann_title,
+                                f_path=ann_path,
+                                line_no=ann_line,
+                                severity=sev,
+                                risk=raw_msg.split("\n")[0] if raw_msg else "Detected sensitive secret in source code",
+                                remediation=remed,
+                                commit_sha=commit_sha,
+                            ))
                 except Exception as ann_err:
                     logger.debug("Failed to fetch annotations for check run %s: %s", run_id, ann_err)
 
                 # Fallback: Parse findings directly from check run markdown summary or text
                 if not findings and cr.get("conclusion") == "failure":
                     summary_text = (output.get("summary") or "") + "\n" + (output.get("text") or "")
-                    import re
+                    lines = [ln.strip() for ln in summary_text.splitlines() if ln.strip()]
 
                     # Pattern 1: Secura list format: **[CRITICAL] AWS Access Key** in `app/config.py:12`
-                    matches = re.findall(r"\*\*\[([A-Z]+)\]\s+([^*]+)\*\*\s+in\s+`?([^:`\n\s]+)(?::(\d+))?`?", summary_text)
-                    for idx, (sev, rule, path, line_str) in enumerate(matches, 1):
-                        line_num = int(line_str) if line_str else 1
-                        findings.append({
-                            "id": f"cr-parsed-{run_id}-{idx}-{rule.strip()}",
-                            "rule_id": rule.strip(),
-                            "finding_type": "Secret",
-                            "severity": sev.upper() if sev.upper() in ("CRITICAL", "HIGH", "MEDIUM", "LOW") else "HIGH",
-                            "file_path": path.strip().strip("`"),
-                            "line_number": line_num,
-                            "status": "open",
-                            "risk": f"Exposed {rule.strip()} credential detected in source code",
-                            "recommendation": "Remove secret from source code and revoke compromised credentials",
-                            "commit_sha": commit_sha,
-                            "detected_in_commit": commit_sha[:7] if commit_sha else None,
-                            "is_resolved": False,
-                            "resolved_in_commit": None,
-                        })
+                    for line in lines:
+                        if line.startswith("**[") and "** in " in line:
+                            prefix, _, target = line.partition("** in ")
+                            if prefix.startswith("**[") and "]" in prefix:
+                                sev_str, _, rule_name = prefix[3:].partition("]")
+                                target = target.strip().strip("`")
+                                path_part, _, line_part = target.rpartition(":")
+                                line_no = int(line_part) if line_part.isdigit() else 1
+                                file_target = path_part if line_part.isdigit() else target
+                                rule_clean = rule_name.strip()
+                                findings.append(_make_check_run_finding(
+                                    f_id=f"cr-parsed-{run_id}-{len(findings) + 1}-{rule_clean}",
+                                    rule_id=rule_clean,
+                                    f_path=file_target,
+                                    line_no=line_no,
+                                    severity=sev_str.strip(),
+                                    commit_sha=commit_sha,
+                                ))
 
                     # Pattern 2: Table format: | CRITICAL | AWS Access Key | app/config.py:12 |
                     if not findings:
-                        table_matches = re.findall(r"\|\s*(CRITICAL|HIGH|MEDIUM|LOW)\s*\|\s*([^|]+)\s*\|\s*`?([^:`|\n\s]+)(?::(\d+))?`?\s*\|", summary_text, re.IGNORECASE)
-                        for idx, (sev, rule, path, line_str) in enumerate(table_matches, 1):
-                            line_num = int(line_str) if line_str else 1
-                            findings.append({
-                                "id": f"cr-table-{run_id}-{idx}-{rule.strip()}",
-                                "rule_id": rule.strip(),
-                                "finding_type": "Secret",
-                                "severity": sev.upper(),
-                                "file_path": path.strip().strip("`"),
-                                "line_number": line_num,
-                                "status": "open",
-                                "risk": f"Exposed {rule.strip()} credential detected in source code",
-                                "recommendation": "Remove secret from source code and revoke compromised credentials",
-                                "commit_sha": commit_sha,
-                                "detected_in_commit": commit_sha[:7] if commit_sha else None,
-                                "is_resolved": False,
-                                "resolved_in_commit": None,
-                            })
+                        for line in lines:
+                            if line.startswith("|") and line.endswith("|"):
+                                parts = [p.strip() for p in line.split("|")[1:-1]]
+                                if len(parts) >= 3 and parts[0].upper() in ("CRITICAL", "HIGH", "MEDIUM", "LOW"):
+                                    sev_str = parts[0].upper()
+                                    rule_clean = parts[1]
+                                    target = parts[2].strip("`")
+                                    path_part, _, line_part = target.rpartition(":")
+                                    line_no = int(line_part) if line_part.isdigit() else 1
+                                    file_target = path_part if line_part.isdigit() else target
+                                    findings.append(_make_check_run_finding(
+                                        f_id=f"cr-table-{run_id}-{len(findings) + 1}-{rule_clean}",
+                                        rule_id=rule_clean,
+                                        f_path=file_target,
+                                        line_no=line_no,
+                                        severity=sev_str,
+                                        commit_sha=commit_sha,
+                                    ))
 
-                    # Pattern 3: Gitleaks/Trufflehog key-value pattern
+                    # Pattern 3: Key-value pattern (e.g. Rule: AWS Access Key ... File: app/config.py:12)
                     if not findings:
-                        gl_matches = re.findall(r"(?:Rule|Detector|SecretType):\s*([^\n]+).*?File:\s*([^\n:]+)(?::(\d+))?", summary_text, re.DOTALL | re.IGNORECASE)
-                        for idx, (rule, path, line_str) in enumerate(gl_matches, 1):
-                            line_num = int(line_str) if line_str else 1
-                            findings.append({
-                                "id": f"cr-tool-{run_id}-{idx}-{rule.strip()[:30]}",
-                                "rule_id": rule.strip()[:40],
-                                "finding_type": "Secret",
-                                "severity": "CRITICAL",
-                                "file_path": path.strip().strip("`"),
-                                "line_number": line_num,
-                                "status": "open",
-                                "risk": f"Exposed {rule.strip()[:40]} detected in source code",
-                                "recommendation": "Remove credential or secret from source code and revoke compromised credentials",
-                                "commit_sha": commit_sha,
-                                "detected_in_commit": commit_sha[:7] if commit_sha else None,
-                                "is_resolved": False,
-                                "resolved_in_commit": None,
-                            })
+                        cur_rule = None
+                        for line in lines:
+                            lower = line.lower()
+                            if lower.startswith(("rule:", "detector:", "secrettype:")):
+                                _, _, val = line.partition(":")
+                                cur_rule = val.strip()[:40]
+                            elif lower.startswith("file:") and cur_rule:
+                                _, _, val = line.partition(":")
+                                target = val.strip().strip("`")
+                                path_part, _, line_part = target.rpartition(":")
+                                line_no = int(line_part) if line_part.isdigit() else 1
+                                file_target = path_part if line_part.isdigit() else target
+                                findings.append(_make_check_run_finding(
+                                    f_id=f"cr-tool-{run_id}-{len(findings) + 1}-{cur_rule}",
+                                    rule_id=cur_rule,
+                                    f_path=file_target,
+                                    line_no=line_no,
+                                    severity="CRITICAL",
+                                    commit_sha=commit_sha,
+                                ))
+                                cur_rule = None
 
                     # Fallback for failed check run
                     if not findings:
                         fallback_title = output.get("title") or cr.get("name") or "Security Gate: Blocked"
-                        findings.append({
-                            "id": f"cr-fallback-{run_id}",
-                            "rule_id": "SECRET_DETECTED",
-                            "finding_type": "Secret",
-                            "severity": "CRITICAL",
-                            "file_path": "security-gate",
-                            "line_number": 1,
-                            "status": "open",
-                            "risk": fallback_title,
-                            "recommendation": "Remove credential or secret from source code and revoke compromised credentials",
-                            "commit_sha": commit_sha,
-                            "detected_in_commit": commit_sha[:7] if commit_sha else None,
-                            "is_resolved": False,
-                            "resolved_in_commit": None,
-                        })
+                        findings.append(_make_check_run_finding(
+                            f_id=f"cr-fallback-{run_id}",
+                            rule_id="SECRET_DETECTED",
+                            f_path="security-gate",
+                            line_no=1,
+                            severity="CRITICAL",
+                            risk=fallback_title,
+                            commit_sha=commit_sha,
+                        ))
 
             runs.append({
                 "id": cr.get("id"),

@@ -77,6 +77,107 @@ export function StateBadge({ state }: { state?: PullRequest["state"] }) {
   );
 }
 
+export function PRFindingItem({
+  finding,
+  isResolved = false,
+  resolvedInCommit,
+  detectedInCommit,
+  remediateUrl,
+}: {
+  finding: PRFinding;
+  isResolved?: boolean;
+  resolvedInCommit?: string | null;
+  detectedInCommit?: string | null;
+  remediateUrl?: string | null;
+}) {
+  const sev = (finding.severity || "HIGH").toUpperCase();
+  const sevClass =
+    sev === "CRITICAL"
+      ? "bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300 border-rose-200 dark:border-rose-900/40"
+      : sev === "HIGH"
+      ? "bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 border-amber-200 dark:border-amber-900/40"
+      : "bg-yellow-50 text-yellow-700 dark:bg-yellow-950/40 dark:text-yellow-300 border-yellow-200 dark:border-yellow-900/40";
+
+  return (
+    <div
+      className={`rounded-xl border p-3 text-xs shadow-2xs space-y-2 transition-colors ${
+        isResolved
+          ? "border-emerald-200/80 dark:border-emerald-950/60 bg-white dark:bg-zinc-950"
+          : "border-slate-200/80 dark:border-zinc-800 bg-white dark:bg-zinc-900/60"
+      }`}
+    >
+      <div className="flex items-center gap-2 flex-wrap justify-between">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="font-mono text-[10px] font-bold text-slate-800 dark:text-zinc-200 bg-slate-100 dark:bg-zinc-900 px-2 py-0.5 rounded border border-slate-200 dark:border-zinc-800">
+            {finding.ruleId || "SECRET"}
+          </span>
+          <span className="font-semibold text-slate-900 dark:text-white">
+            {finding.findingType || "Secret"}
+          </span>
+          <span className={`text-[10px] uppercase font-bold px-1.5 py-0.5 rounded-md border ${sevClass}`}>
+            {sev}
+          </span>
+          {isResolved ? (
+            <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 flex items-center gap-1">
+              <Check className="h-2.5 w-2.5" />
+              <span>Solved</span>
+            </span>
+          ) : (
+            <span className="text-[10px] uppercase font-bold px-1.5 py-0.5 rounded-md bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300">
+              Blocked
+            </span>
+          )}
+        </div>
+
+        {detectedInCommit && resolvedInCommit && (
+          <span className="text-[11px] font-mono text-slate-600 dark:text-zinc-400 bg-slate-50 dark:bg-zinc-900 px-2 py-0.5 rounded border border-slate-200 dark:border-zinc-800">
+            Detected in <code className="font-bold text-rose-600 dark:text-rose-400">{detectedInCommit}</code>
+            {" → "}
+            Solved in <code className="font-bold text-emerald-600 dark:text-emerald-400">{resolvedInCommit}</code>
+          </span>
+        )}
+      </div>
+
+      <p className="text-[11px] font-mono text-slate-600 dark:text-zinc-400 flex items-center gap-1.5">
+        <FileCode2 className="h-3.5 w-3.5 text-slate-400 dark:text-zinc-500 shrink-0" />
+        <span className="text-slate-800 dark:text-zinc-200 font-semibold">{finding.filePath}</span>
+        <span>:</span>
+        <span className="text-blue-600 dark:text-blue-400">Line {finding.lineNumber}</span>
+      </p>
+
+      {finding.risk && (
+        <p className="text-[11px] text-slate-600 dark:text-zinc-400">
+          <strong className="text-slate-800 dark:text-zinc-200">Risk:</strong> {finding.risk}
+        </p>
+      )}
+
+      {isResolved ? (
+        <p className="text-[11px] text-emerald-700 dark:text-emerald-400 flex items-center gap-1 font-medium bg-emerald-50 dark:bg-emerald-950/40 px-2 py-1 rounded border border-emerald-200 dark:border-emerald-900/40">
+          <Check className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
+          <span>
+            Secret removed in commit <code className="font-bold">{resolvedInCommit || "latest"}</code> and verified safe by Secura scanner.
+          </span>
+        </p>
+      ) : finding.recommendation ? (
+        <div className="flex items-center justify-between gap-2 flex-wrap pt-0.5">
+          <p className="text-[11px] text-rose-700 dark:text-rose-400 flex items-center gap-1 font-medium bg-rose-50 dark:bg-rose-950/40 px-2 py-1 rounded border border-rose-200 dark:border-rose-900/40">
+            <AlertTriangle className="h-3.5 w-3.5 text-rose-600 shrink-0" />
+            <span>Remediation: {finding.recommendation}</span>
+          </p>
+          {remediateUrl && (
+            <Link
+              href={remediateUrl}
+              className="px-3 py-1 text-[11px] font-medium rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 hover:bg-slate-100 dark:hover:bg-zinc-800 text-slate-700 dark:text-zinc-300 hover:text-slate-900 dark:hover:text-white transition-colors"
+            >
+              Remediate →
+            </Link>
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export interface PullRequestRowProps {
   pr: PullRequest;
   onScan: (pr: PullRequest) => Promise<void>;
@@ -156,7 +257,7 @@ export function PullRequestRow({
                 <ExternalLink className="h-3.5 w-3.5 opacity-50 shrink-0" />
               </a>
               <StateBadge state={pr.state} />
-              {pr.checkRunStatus && pr.checkRunStatus !== "success" && pr.checkRunStatus !== "passed" && (
+              {pr.checkRunStatus && pr.checkRunStatus !== "success" && (
                 <StatusBadge status={pr.checkRunStatus} />
               )}
 
@@ -426,6 +527,7 @@ export function PullRequestRow({
                     }
 
                     const findingsCount = commitFindings.length || commit.totalFindings || (isFailed ? 1 : 0);
+                    const canToggle = isFailed || commit.isResolved || commitFindings.length > 0;
 
                     return (
                       <div
@@ -438,42 +540,66 @@ export function PullRequestRow({
                             : "border-slate-200/80 dark:border-zinc-800 bg-white dark:bg-zinc-900/60"
                         }`}
                       >
-                        <div
-                          onClick={() => (isFailed || commit.isResolved || commitFindings.length > 0) && toggleCommitFindings(commit.sha)}
-                          className={`p-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 ${
-                            (isFailed || commit.isResolved || commitFindings.length > 0) ? "cursor-pointer select-none" : ""
-                          }`}
-                        >
-                          <div className="flex items-start gap-2.5 min-w-0 flex-1">
-                            <span className="font-mono text-[11px] font-bold text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/40 px-2 py-0.5 rounded-lg border border-blue-200 dark:border-blue-900/40 shrink-0 mt-0.5">
-                              {commit.sha}
-                            </span>
-                            <div className="min-w-0 flex-1">
-                              <p className="text-xs font-medium text-slate-900 dark:text-white leading-snug break-words">
-                                {commit.message}
-                              </p>
-                              <p className="text-[11px] text-slate-500 dark:text-zinc-400 font-mono mt-0.5 flex items-center gap-2 flex-wrap">
-                                <span>@{commit.author}</span>
-                                {commit.date && (
-                                  <>
-                                    <span>·</span>
-                                    <span>{new Date(commit.date).toLocaleDateString()}</span>
-                                  </>
-                                )}
-                                {commit.isHistorical && (
-                                  <span className="bg-slate-100 dark:bg-zinc-900 text-slate-600 dark:text-zinc-400 px-1.5 py-0.2 rounded text-[10px]">
-                                    Scanned Commit
-                                  </span>
-                                )}
-                              </p>
+                        <div className="p-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                          {canToggle ? (
+                            <button
+                              type="button"
+                              onClick={() => toggleCommitFindings(commit.sha)}
+                              aria-expanded={isExpandedCommit}
+                              className="flex items-start gap-2.5 min-w-0 flex-1 text-left bg-transparent border-0 p-0 cursor-pointer focus:outline-hidden group"
+                            >
+                              <span className="font-mono text-[11px] font-bold text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/40 px-2 py-0.5 rounded-lg border border-blue-200 dark:border-blue-900/40 shrink-0 mt-0.5">
+                                {commit.sha}
+                              </span>
+                              <div className="min-w-0 flex-1">
+                                <p className="text-xs font-medium text-slate-900 dark:text-white leading-snug break-words group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+                                  {commit.message}
+                                </p>
+                                <p className="text-[11px] text-slate-500 dark:text-zinc-400 font-mono mt-0.5 flex items-center gap-2 flex-wrap">
+                                  <span>@{commit.author}</span>
+                                  {commit.date && (
+                                    <>
+                                      <span>·</span>
+                                      <span>{new Date(commit.date).toLocaleDateString()}</span>
+                                    </>
+                                  )}
+                                  {commit.isHistorical && (
+                                    <span className="bg-slate-100 dark:bg-zinc-900 text-slate-600 dark:text-zinc-400 px-1.5 py-0.2 rounded text-[10px]">
+                                      Scanned Commit
+                                    </span>
+                                  )}
+                                </p>
+                              </div>
+                            </button>
+                          ) : (
+                            <div className="flex items-start gap-2.5 min-w-0 flex-1">
+                              <span className="font-mono text-[11px] font-bold text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/40 px-2 py-0.5 rounded-lg border border-blue-200 dark:border-blue-900/40 shrink-0 mt-0.5">
+                                {commit.sha}
+                              </span>
+                              <div className="min-w-0 flex-1">
+                                <p className="text-xs font-medium text-slate-900 dark:text-white leading-snug break-words">
+                                  {commit.message}
+                                </p>
+                                <p className="text-[11px] text-slate-500 dark:text-zinc-400 font-mono mt-0.5 flex items-center gap-2 flex-wrap">
+                                  <span>@{commit.author}</span>
+                                  {commit.date && (
+                                    <>
+                                      <span>·</span>
+                                      <span>{new Date(commit.date).toLocaleDateString()}</span>
+                                    </>
+                                  )}
+                                  {commit.isHistorical && (
+                                    <span className="bg-slate-100 dark:bg-zinc-900 text-slate-600 dark:text-zinc-400 px-1.5 py-0.2 rounded text-[10px]">
+                                      Scanned Commit
+                                    </span>
+                                  )}
+                                </p>
+                              </div>
                             </div>
-                          </div>
+                          )}
 
                           {/* Per-Commit Status & Actions */}
-                          <div
-                            onClick={(e) => e.stopPropagation()}
-                            className="flex items-center gap-2 shrink-0 self-end sm:self-center"
-                          >
+                          <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
                             {/* Secura Scan Status Badge for this Commit */}
                             {isFailed ? (
                               <div className="flex items-center gap-1.5 flex-wrap justify-end">
@@ -490,10 +616,9 @@ export function PullRequestRow({
                                   </span>
                                 )}
                                 <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    toggleCommitFindings(commit.sha);
-                                  }}
+                                  type="button"
+                                  onClick={() => toggleCommitFindings(commit.sha)}
+                                  aria-expanded={isExpandedCommit}
                                   className="text-[11px] font-semibold text-rose-700 dark:text-rose-300 hover:underline flex items-center gap-0.5 cursor-pointer ml-1"
                                 >
                                   <span>{isExpandedCommit ? "Hide" : "View"} Secrets ({findingsCount})</span>
@@ -539,66 +664,19 @@ export function PullRequestRow({
                               {(commit.isResolved || (isResolvedInHead && !commit.isHead)) && (
                                 <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-950 px-2.5 py-0.5 rounded-full border border-emerald-300 dark:border-emerald-700 shadow-2xs">
                                   <Check className="h-3 w-3" />
-                                  <span>Solved: Removed in commit <code className="font-mono">{commit.resolvedInCommit || pr.commitSha.slice(0, 7)}</code></span>
+                                  <span>Solved: Removed in commit <code className="font-mono">{commit.resolvedInCommit || pr.commitSha?.slice(0, 7)}</code></span>
                                 </span>
                               )}
                             </div>
 
                             {commitFindings.length > 0 ? (
                               commitFindings.map((finding) => (
-                                <div
+                                <PRFindingItem
                                   key={finding.id}
-                                  className="rounded-lg border border-rose-200/80 dark:border-rose-900/50 bg-white dark:bg-zinc-950 p-2.5 text-xs shadow-2xs space-y-1.5"
-                                >
-                                  <div className="flex items-center gap-2 flex-wrap mb-1">
-                                    <span className="font-mono text-[10px] font-bold text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-950/40 px-1.5 py-0.5 rounded border border-rose-200 dark:border-rose-900/40">
-                                      {finding.ruleId || "SECRET"}
-                                    </span>
-                                    <span className="font-semibold text-slate-900 dark:text-white">
-                                      {finding.findingType || "Secret"}
-                                    </span>
-                                    <span
-                                      className={`text-[10px] uppercase font-bold px-1.5 py-0.5 rounded-md ${
-                                        finding.severity === "CRITICAL"
-                                          ? "bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300"
-                                          : "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300"
-                                      }`}
-                                    >
-                                      {finding.severity}
-                                    </span>
-                                    {(commit.isResolved || (isResolvedInHead && !commit.isHead) || finding.isResolved) ? (
-                                      <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 flex items-center gap-1">
-                                        <Check className="h-2.5 w-2.5" />
-                                        <span>Solved in commit {finding.resolvedInCommit || commit.resolvedInCommit || pr.commitSha.slice(0, 7)}</span>
-                                      </span>
-                                    ) : (
-                                      <span className="text-[10px] uppercase font-bold px-1.5 py-0.5 rounded-md bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300">
-                                        Blocked
-                                      </span>
-                                    )}
-                                  </div>
-                                  <p className="text-[11px] font-mono text-slate-600 dark:text-zinc-400 flex items-center gap-1">
-                                    <FileCode2 className="h-3 w-3 text-slate-400 shrink-0" />
-                                    <span className="font-semibold text-slate-800 dark:text-zinc-200">{finding.filePath}</span>
-                                    <span>: Line {finding.lineNumber}</span>
-                                  </p>
-                                  {finding.risk && (
-                                    <p className="text-[11px] text-slate-600 dark:text-zinc-400">
-                                      <strong>Risk:</strong> {finding.risk}
-                                    </p>
-                                  )}
-                                  {(commit.isResolved || (isResolvedInHead && !commit.isHead) || finding.isResolved) ? (
-                                    <p className="text-[11px] text-emerald-700 dark:text-emerald-400 flex items-center gap-1 font-semibold bg-emerald-50 dark:bg-emerald-950/40 px-2 py-1 rounded border border-emerald-200 dark:border-emerald-900/40">
-                                      <Check className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
-                                      <span>Solved: Removed in commit <code className="font-bold">{finding.resolvedInCommit || commit.resolvedInCommit || pr.commitSha.slice(0, 7)}</code> and verified safe by Secura scanner.</span>
-                                    </p>
-                                  ) : finding.recommendation ? (
-                                    <p className="text-[11px] text-rose-700 dark:text-rose-400 flex items-center gap-1 font-medium bg-rose-50 dark:bg-rose-950/40 px-2 py-1 rounded border border-rose-200 dark:border-rose-900/40">
-                                      <AlertTriangle className="h-3.5 w-3.5 text-rose-600 shrink-0" />
-                                      <span>Remediation: {finding.recommendation}</span>
-                                    </p>
-                                  ) : null}
-                                </div>
+                                  finding={finding}
+                                  isResolved={commit.isResolved || (isResolvedInHead && !commit.isHead) || finding.isResolved}
+                                  resolvedInCommit={finding.resolvedInCommit || commit.resolvedInCommit || pr.commitSha?.slice(0, 7)}
+                                />
                               ))
                             ) : (
                               <div className="rounded-lg border border-rose-200 dark:border-rose-900/40 bg-white dark:bg-zinc-950 p-2.5 text-xs text-slate-600 dark:text-zinc-400">
@@ -675,7 +753,9 @@ export function PullRequestRow({
 
                         {run.findings.length > 0 && (
                           <button
+                            type="button"
                             onClick={() => toggleScanRunFindings(run.id)}
+                            aria-expanded={isExpandedRun}
                             className="text-xs font-semibold text-rose-700 dark:text-rose-300 hover:underline flex items-center gap-1 shrink-0"
                           >
                             <span>{isExpandedRun ? "Hide" : "View"} {run.findings.length} findings</span>
@@ -687,30 +767,10 @@ export function PullRequestRow({
                       {isExpandedRun && run.findings.length > 0 && (
                         <div className="border-t border-rose-100 dark:border-rose-900/40 bg-rose-50/40 dark:bg-rose-950/20 p-3 space-y-2">
                           {run.findings.map((f) => (
-                            <div
+                            <PRFindingItem
                               key={f.id}
-                              className="rounded-lg border border-rose-200/80 dark:border-rose-900/50 bg-white dark:bg-zinc-950 p-2.5 text-xs shadow-2xs"
-                            >
-                              <div className="flex items-center gap-2 mb-1">
-                                <span className="font-mono text-[10px] font-bold text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-950/40 px-1.5 py-0.5 rounded border border-rose-200 dark:border-rose-900/40">
-                                  {f.ruleId}
-                                </span>
-                                <span className="font-semibold text-slate-900 dark:text-white">
-                                  {f.findingType}
-                                </span>
-                                <span className="text-[10px] uppercase font-bold text-rose-600">
-                                  {f.severity}
-                                </span>
-                              </div>
-                              <div className="text-[11px] font-mono text-slate-600 dark:text-zinc-400">
-                                <code>{f.filePath}:{f.lineNumber}</code>
-                              </div>
-                              {f.recommendation && (
-                                <div className="text-[11px] text-emerald-700 dark:text-emerald-400 mt-1">
-                                  <span className="font-semibold">Remediation:</span> {f.recommendation}
-                                </div>
-                              )}
-                            </div>
+                              finding={f}
+                            />
                           ))}
                         </div>
                       )}
@@ -762,60 +822,11 @@ export function PullRequestRow({
 
                   <div className="space-y-2">
                     {findings.map((finding) => (
-                      <div
+                      <PRFindingItem
                         key={finding.id}
-                        className="rounded-xl border border-slate-200/80 dark:border-zinc-800 bg-white dark:bg-zinc-900/60 p-3 text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 hover:border-slate-300 dark:hover:border-zinc-700 transition-colors shadow-xs"
-                      >
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2 flex-wrap mb-1">
-                            <span className="font-mono text-[11px] font-bold text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-950/40 px-2 py-0.5 rounded-lg border border-rose-200 dark:border-rose-900/40">
-                              {finding.ruleId || "SECRET"}
-                            </span>
-                            <span className="font-semibold text-slate-900 dark:text-white">
-                              {finding.findingType}
-                            </span>
-                            <span
-                              className={`text-[10px] uppercase font-bold px-1.5 py-0.5 rounded-md ${
-                                finding.severity === "CRITICAL"
-                                  ? "bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-900/40"
-                                  : finding.severity === "HIGH"
-                                  ? "bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-900/40"
-                                  : "bg-yellow-50 dark:bg-yellow-950/40 text-yellow-700 dark:text-yellow-300 border border-yellow-200 dark:border-yellow-900/40"
-                              }`}
-                            >
-                              {finding.severity}
-                            </span>
-                          </div>
-
-                          <p className="text-[11px] font-mono text-slate-600 dark:text-zinc-400 flex items-center gap-1.5">
-                            <FileCode2 className="h-3.5 w-3.5 text-slate-400 dark:text-zinc-500 shrink-0" />
-                            <span className="text-slate-800 dark:text-zinc-200 font-semibold">{finding.filePath}</span>
-                            <span>:</span>
-                            <span className="text-blue-600 dark:text-blue-400">Line {finding.lineNumber}</span>
-                          </p>
-
-                          {finding.risk && (
-                            <p className="text-[11px] text-slate-600 dark:text-zinc-400 mt-1">
-                              <strong className="text-slate-800 dark:text-zinc-200">Risk:</strong> {finding.risk}
-                            </p>
-                          )}
-
-                          {finding.recommendation && (
-                            <p className="text-[11px] text-emerald-700 dark:text-emerald-400 mt-0.5">
-                              <strong className="text-slate-800 dark:text-zinc-200">Remediation:</strong> {finding.recommendation}
-                            </p>
-                          )}
-                        </div>
-
-                        <div className="shrink-0 self-end sm:self-center">
-                          <Link
-                            href={`/findings?repo=${encodeURIComponent(pr.repository)}`}
-                            className="px-3 py-1 text-[11px] font-medium rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 hover:bg-slate-100 dark:hover:bg-zinc-800 text-slate-700 dark:text-zinc-300 hover:text-slate-900 dark:hover:text-white transition-colors"
-                          >
-                            Remediate →
-                          </Link>
-                        </div>
-                      </div>
+                        finding={finding}
+                        remediateUrl={`/findings?repo=${encodeURIComponent(pr.repository)}`}
+                      />
                     ))}
                   </div>
                 </div>
@@ -837,44 +848,13 @@ export function PullRequestRow({
                   </div>
                   <div className="space-y-2">
                     {historicalFindings.map((hf) => (
-                      <div
+                      <PRFindingItem
                         key={hf.id}
-                        className="rounded-xl border border-emerald-200/80 dark:border-emerald-950/60 bg-white dark:bg-zinc-950 p-3 text-xs shadow-2xs space-y-2"
-                      >
-                        <div className="flex items-center gap-2 flex-wrap justify-between">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-mono text-[10px] font-bold text-slate-800 dark:text-zinc-200 bg-slate-100 dark:bg-zinc-900 px-2 py-0.5 rounded border border-slate-200 dark:border-zinc-800">
-                              {hf.ruleId}
-                            </span>
-                            <span className="font-semibold text-slate-900 dark:text-white">
-                              {hf.findingType}
-                            </span>
-                            <span className="text-[10px] uppercase font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-950 px-2 py-0.5 rounded-full border border-emerald-300 dark:border-emerald-700 flex items-center gap-1">
-                              <Check className="h-2.5 w-2.5" />
-                              <span>Solved</span>
-                            </span>
-                          </div>
-                          <span className="text-[11px] font-mono text-slate-600 dark:text-zinc-400 bg-slate-50 dark:bg-zinc-900 px-2 py-0.5 rounded border border-slate-200 dark:border-zinc-800">
-                            Detected in <code className="font-bold text-rose-600 dark:text-rose-400">{hf.detectedInCommit || (hf.commitSha ? hf.commitSha.slice(0, 7) : "earlier commit")}</code>
-                            {" → "}
-                            Solved in <code className="font-bold text-emerald-600 dark:text-emerald-400">{hf.resolvedInCommit || pr.commitSha.slice(0, 7)}</code>
-                          </span>
-                        </div>
-                        <p className="text-[11px] font-mono text-slate-600 dark:text-zinc-400 flex items-center gap-1">
-                          <FileCode2 className="h-3 w-3 text-slate-400 shrink-0" />
-                          <span className="font-semibold text-slate-900 dark:text-zinc-100">{hf.filePath}</span>
-                          <span>: Line {hf.lineNumber}</span>
-                        </p>
-                        {hf.risk && (
-                          <p className="text-[11px] text-slate-600 dark:text-zinc-400">
-                            <strong className="text-slate-800 dark:text-zinc-200">Risk:</strong> {hf.risk}
-                          </p>
-                        )}
-                        <p className="text-[11px] text-emerald-700 dark:text-emerald-400 flex items-center gap-1 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-1 rounded border border-emerald-200 dark:border-emerald-900/40 font-medium">
-                          <Check className="h-3 w-3 shrink-0 text-emerald-600" />
-                          <span>Secret was removed in commit <code className="font-bold">{hf.resolvedInCommit || pr.commitSha.slice(0, 7)}</code> and verified safe by Secura scanner.</span>
-                        </p>
-                      </div>
+                        finding={hf}
+                        isResolved
+                        detectedInCommit={hf.detectedInCommit || (hf.commitSha ? hf.commitSha.slice(0, 7) : "earlier commit")}
+                        resolvedInCommit={hf.resolvedInCommit || pr.commitSha?.slice(0, 7)}
+                      />
                     ))}
                   </div>
                 </div>
