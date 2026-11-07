@@ -132,6 +132,7 @@ function DashboardContent() {
   const [isMounted, setIsMounted] = useState(false);
   const [installedBanner, setInstalledBanner] = useState(false);
   const [isLive, setIsLive] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [summary, setSummary] = useState<DashboardSummary>(DEFAULT_SUMMARY);
   const [findingsOverTime, setFindingsOverTime] = useState<FindingOverTime[]>([]);
   const [findingsBySeverity, setFindingsBySeverity] = useState<FindingBySeverity[]>([]);
@@ -190,6 +191,7 @@ function DashboardContent() {
         console.error("Dashboard data load error:", e);
       } finally {
         inFlight = false;
+        setLoading(false);
       }
     }
     void loadData();
@@ -204,6 +206,15 @@ function DashboardContent() {
       clearInterval(interval);
     };
   }, []);
+
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center py-28 text-slate-500 dark:text-zinc-400 gap-3">
+        <Loader />
+        <span className="text-xs font-medium text-slate-600 dark:text-zinc-400">Loading security command center...</span>
+      </div>
+    );
+  }
 
   const reposNeedingAttention = repos
     .filter((r) => r.criticalFindings > 0 || r.highFindings > 0 || r.openFindings > 0)

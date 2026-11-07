@@ -128,9 +128,15 @@ function LandingPageContent() {
   ];
 
   return (
-    <div className="dark min-h-screen bg-[#111113] text-zinc-100 selection:bg-zinc-800 selection:text-white">
+    <div
+      className="dark min-h-screen bg-[#141417ed] text-zinc-100 selection:bg-zinc-800 selection:text-white"
+      style={{ backgroundColor: "#141417ed" }}
+    >
       {/* ─── 1. NAVBAR ──────────────────────────────────────────────────────── */}
-      <header className="sticky top-0 z-50 w-full border-b border-zinc-800/80 bg-[#111113]/90 backdrop-blur-md">
+      <header
+        className="sticky top-0 z-50 w-full border-b border-white/10 bg-[#141417ed] backdrop-blur-md"
+        style={{ backgroundColor: "#141417ed" }}
+      >
         <div className="max-w-7xl mx-auto flex h-16 items-center justify-between px-4 sm:px-8">
           {/* Brand Logo & Name */}
           <Link href="/" className="flex items-center gap-2.5 group">
@@ -143,7 +149,7 @@ function LandingPageContent() {
               <span className="text-base font-bold tracking-tight text-white">
                 Secura
               </span>
-              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-full bg-zinc-800 text-zinc-400 font-semibold">
+              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-full bg-white/[0.06] border border-white/10 text-zinc-300 font-semibold backdrop-blur-xs">
                 v2.0
               </span>
             </div>
@@ -175,14 +181,14 @@ function LandingPageContent() {
                 href="/dashboard"
                 className="flex items-center gap-2 rounded-xl bg-[#00285B] hover:bg-[#001f44] text-white px-4 py-2 text-xs font-semibold shadow-sm transition-all"
               >
-                <span>Dashboard</span>
+                <span>Get Started</span>
                 <ArrowRight className="h-3.5 w-3.5" />
               </Link>
             ) : (
               <div className="flex items-center gap-2">
                 <Link
                   href="/login"
-                  className="hidden sm:inline-flex rounded-xl border border-zinc-800 bg-zinc-900 px-3.5 py-2 text-xs font-semibold text-zinc-300 hover:bg-zinc-800 hover:text-white transition-colors"
+                  className="hidden sm:inline-flex rounded-xl border border-white/10 bg-[#141417e6] backdrop-blur-md px-3.5 py-2 text-xs font-semibold text-zinc-300 hover:bg-white/10 hover:text-white transition-colors"
                 >
                   Sign In
                 </Link>
@@ -231,7 +237,7 @@ function LandingPageContent() {
 
             <a
               href="#demo"
-              className="w-full sm:w-auto flex items-center justify-center gap-2 rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-5 py-3.5 text-sm font-semibold text-slate-700 dark:text-zinc-300 hover:bg-[#EDE9E6] dark:hover:bg-zinc-800 hover:text-[#00285B] dark:hover:text-white transition-all shadow-2xs"
+              className="w-full sm:w-auto flex items-center justify-center gap-2 rounded-xl border border-slate-200 dark:border-white/10 bg-white/80 dark:bg-[#141417e6] backdrop-blur-md px-5 py-3.5 text-sm font-semibold text-slate-700 dark:text-zinc-300 hover:bg-white dark:hover:bg-white/10 hover:text-[#00285B] dark:hover:text-white transition-all shadow-sm"
             >
               <Terminal className="h-4 w-4 text-[#00285B] dark:text-zinc-400" />
               <span>See Live PR Review</span>
@@ -257,11 +263,11 @@ function LandingPageContent() {
 
         {/* ─── 3. INTERACTIVE PR REVIEW MOCK ────────────── */}
         <div id="demo" className="max-w-5xl mx-auto px-4 sm:px-8 mt-14 sm:mt-18">
-          <div className="rounded-2xl border border-slate-200/90 dark:border-zinc-800 bg-[#EDE9E6] dark:bg-zinc-950 p-3 sm:p-5 shadow-2xl shadow-slate-900/10 dark:shadow-black/70">
-            {/* GitHub Pull Request Mock Frame */}
-            <div className="rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 overflow-hidden shadow-xs">
+          <div className="rounded-2xl border border-slate-200/90 dark:border-white/10 bg-[#EDE9E6] dark:bg-[#141417ed] p-3 sm:p-5 shadow-2xl backdrop-blur-md">
+            {/* GitHub Pull Request Mock Frame (Child Container) */}
+            <div className="rounded-xl border border-slate-200 dark:border-white/10 bg-white/80 dark:bg-[#141417e6] backdrop-blur-md overflow-hidden shadow-lg">
               {/* Window Title Bar */}
-              <div className="flex items-center justify-between border-b border-slate-100 dark:border-zinc-800/80 px-4 py-3 bg-slate-50/70 dark:bg-zinc-900/60">
+              <div className="flex items-center justify-between border-b border-slate-100 dark:border-white/5 px-4 py-3 bg-slate-50/70 dark:bg-white/[0.03] backdrop-blur-sm">
                 <div className="flex items-center gap-2">
                   <span className="h-3 w-3 rounded-full bg-rose-400" />
                   <span className="h-3 w-3 rounded-full bg-amber-400" />
@@ -280,7 +286,7 @@ function LandingPageContent() {
               </div>
 
               {/* PR Header Info */}
-              <div className="p-4 sm:p-5 border-b border-slate-100 dark:border-zinc-800/80">
+              <div className="p-4 sm:p-5 border-b border-slate-100 dark:border-white/5">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 dark:bg-emerald-950/40 px-2.5 py-0.5 text-xs font-semibold text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/60">
@@ -306,7 +312,7 @@ function LandingPageContent() {
                     alt="Secura Bot"
                     className="h-9 w-9 rounded-xl object-cover ring-2 ring-[#00285B]/20 shrink-0"
                   />
-                  <div className="flex-1 rounded-xl border border-rose-200/80 dark:border-rose-900/60 bg-rose-50/30 dark:bg-rose-950/20 p-4 space-y-3">
+                  <div className="flex-1 rounded-xl border border-rose-200/80 dark:border-rose-900/50 bg-rose-50/30 dark:bg-rose-950/20 backdrop-blur-sm p-4 space-y-3">
                     <div className="flex items-center justify-between flex-wrap gap-2">
                       <div className="flex items-center gap-2">
                         <span className="font-bold text-xs text-slate-900 dark:text-white">
@@ -323,9 +329,9 @@ function LandingPageContent() {
                       </span>
                     </div>
 
-                    {/* Diff Preview with Caught Secret */}
-                    <div className="rounded-lg border border-slate-200 dark:border-zinc-800 bg-slate-900 text-slate-100 font-mono text-xs overflow-x-auto p-3.5 space-y-1">
-                      <div className="text-[11px] text-slate-400 pb-1 border-b border-slate-800">
+                    {/* Diff Preview with Caught Secret (Child Container) */}
+                    <div className="rounded-lg border border-slate-200 dark:border-white/10 bg-slate-900/80 dark:bg-[#141417e6] backdrop-blur-md text-slate-100 font-mono text-xs overflow-x-auto p-3.5 space-y-1">
+                      <div className="text-[11px] text-slate-400 pb-1 border-b border-slate-800 dark:border-white/10">
                         @@ src/config/stripe.ts:14,7 @@
                       </div>
                       <div className="text-slate-400">  export const stripeConfig = &#123;</div>
@@ -341,7 +347,7 @@ function LandingPageContent() {
                       <div className="text-slate-400">  &#125;;</div>
                     </div>
 
-                    {/* Remediation Box */}
+                    {/* Remediation Box (Child Container) */}
                     <div className="text-xs text-slate-700 dark:text-zinc-300 space-y-1.5">
                       <p className="font-semibold text-rose-900 dark:text-rose-300 flex items-center gap-1.5">
                         <AlertTriangle className="h-3.5 w-3.5" />
@@ -350,7 +356,7 @@ function LandingPageContent() {
                       <p className="text-[11px] leading-relaxed text-slate-600 dark:text-zinc-400">
                         A live production Stripe secret key was detected. Exposed secret keys grant full access to your Stripe account, customer charges, and bank transfers.
                       </p>
-                      <div className="rounded-lg bg-white dark:bg-zinc-900 p-2.5 border border-slate-200 dark:border-zinc-800 text-[11px] font-mono text-slate-800 dark:text-zinc-200 space-y-1">
+                      <div className="rounded-lg bg-white/80 dark:bg-[#141417e6] backdrop-blur-md p-2.5 border border-slate-200 dark:border-white/10 text-[11px] font-mono text-slate-800 dark:text-zinc-200 space-y-1">
                         <div>1. Revoke and rotate this secret key immediately in your Stripe Dashboard.</div>
                         <div>2. Add <code className="text-[#00285B] dark:text-blue-300 font-bold">STRIPE_SECRET_KEY</code> to your GitHub Repository Secrets.</div>
                         <div>3. Re-push commit to clear the Secura Security Gate.</div>
@@ -365,26 +371,26 @@ function LandingPageContent() {
       </section>
 
       {/* ─── 4. LOGO & METRICS BAR ────────────────────────────────────────── */}
-      <section className="py-12 border-y border-slate-200/80 dark:border-zinc-800/80 bg-white dark:bg-zinc-950">
+      <section className="py-12 border-y border-slate-200/80 dark:border-white/10 bg-white dark:bg-[#141417ed] backdrop-blur-md">
         <div className="max-w-7xl mx-auto px-4 sm:px-8">
           <p className="text-center text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-zinc-500 mb-8">
             Engineered for developers across popular languages, frameworks & platforms
           </p>
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-6 text-center">
-            <div className="p-4 rounded-2xl bg-[#EDE9E6]/40 dark:bg-zinc-900/40 border border-slate-200/80 dark:border-zinc-800">
+            <div className="p-4 rounded-2xl bg-[#EDE9E6]/40 dark:bg-[#141417e6] backdrop-blur-md border border-slate-200/80 dark:border-white/10 shadow-sm">
               <p className="text-3xl sm:text-4xl font-extrabold text-[#00285B] dark:text-white">500K+</p>
               <p className="text-xs text-slate-500 dark:text-zinc-400 mt-1 font-medium">PRs Inspected</p>
             </div>
-            <div className="p-4 rounded-2xl bg-[#EDE9E6]/40 dark:bg-zinc-900/40 border border-slate-200/80 dark:border-zinc-800">
+            <div className="p-4 rounded-2xl bg-[#EDE9E6]/40 dark:bg-[#141417e6] backdrop-blur-md border border-slate-200/80 dark:border-white/10 shadow-sm">
               <p className="text-3xl sm:text-4xl font-extrabold text-[#00285B] dark:text-white">100+</p>
               <p className="text-xs text-slate-500 dark:text-zinc-400 mt-1 font-medium">Secret Signatures</p>
             </div>
-            <div className="p-4 rounded-2xl bg-[#EDE9E6]/40 dark:bg-zinc-900/40 border border-slate-200/80 dark:border-zinc-800">
+            <div className="p-4 rounded-2xl bg-[#EDE9E6]/40 dark:bg-[#141417e6] backdrop-blur-md border border-slate-200/80 dark:border-white/10 shadow-sm">
               <p className="text-3xl sm:text-4xl font-extrabold text-[#00285B] dark:text-white">&lt; 1.2s</p>
               <p className="text-xs text-slate-500 dark:text-zinc-400 mt-1 font-medium">Average Gate Check</p>
             </div>
-            <div className="p-4 rounded-2xl bg-[#EDE9E6]/40 dark:bg-zinc-900/40 border border-slate-200/80 dark:border-zinc-800">
+            <div className="p-4 rounded-2xl bg-[#EDE9E6]/40 dark:bg-[#141417e6] backdrop-blur-md border border-slate-200/80 dark:border-white/10 shadow-sm">
               <p className="text-3xl sm:text-4xl font-extrabold text-[#00285B] dark:text-white">0%</p>
               <p className="text-xs text-slate-500 dark:text-zinc-400 mt-1 font-medium">Code Retained</p>
             </div>
@@ -396,7 +402,7 @@ function LandingPageContent() {
       <ContextGraphSection />
 
       {/* ─── 6. SUPPORTED SECRET CATEGORIES (Coverage Section) ─────────────── */}
-      <section id="coverage" className="py-20 sm:py-28 bg-[#EDE9E6]/25 dark:bg-zinc-950/50 border-t border-slate-200/80 dark:border-zinc-800/80">
+      <section id="coverage" className="py-20 sm:py-28 bg-[#EDE9E6]/25 dark:bg-[#141417ed] border-t border-slate-200/80 dark:border-white/10">
         <div className="max-w-7xl mx-auto px-4 sm:px-8">
           <div className="text-center max-w-2xl mx-auto mb-16">
             <span className="text-xs font-semibold uppercase tracking-wider text-[#00285B] dark:text-zinc-400 font-mono">
@@ -411,7 +417,7 @@ function LandingPageContent() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            <div className="p-6 rounded-2xl border border-slate-200/80 dark:border-zinc-800 bg-white dark:bg-[#141417]">
+            <div className="p-6 rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white/80 dark:bg-[#141417e6] backdrop-blur-md shadow-lg hover:border-white/20 transition-all">
               <div className="h-10 w-10 rounded-xl bg-amber-500/10 text-amber-500 flex items-center justify-center mb-4">
                 <CreditCard className="h-5 w-5" />
               </div>
@@ -421,14 +427,14 @@ function LandingPageContent() {
               </p>
               <div className="flex flex-wrap gap-1.5">
                 {["sk_live_*", "sq0csp-*", "access_token$production", "rk_live_*"].map((p, i) => (
-                  <span key={i} className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-100 dark:bg-zinc-900 text-slate-700 dark:text-zinc-300 border border-slate-200 dark:border-zinc-800">
+                  <span key={i} className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-100 dark:bg-white/[0.05] text-slate-700 dark:text-zinc-300 border border-slate-200 dark:border-white/10 backdrop-blur-xs">
                     {p}
                   </span>
                 ))}
               </div>
             </div>
 
-            <div className="p-6 rounded-2xl border border-slate-200/80 dark:border-zinc-800 bg-white dark:bg-[#141417]">
+            <div className="p-6 rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white/80 dark:bg-[#141417e6] backdrop-blur-md shadow-lg hover:border-white/20 transition-all">
               <div className="h-10 w-10 rounded-xl bg-sky-500/10 text-sky-500 flex items-center justify-center mb-4">
                 <Cloud className="h-5 w-5" />
               </div>
@@ -438,14 +444,14 @@ function LandingPageContent() {
               </p>
               <div className="flex flex-wrap gap-1.5">
                 {["AKIA[0-9A-Z]{16}", "gcp-service-account.json", "AccountKey=*", "dop_v1_*"].map((p, i) => (
-                  <span key={i} className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-100 dark:bg-zinc-900 text-slate-700 dark:text-zinc-300 border border-slate-200 dark:border-zinc-800">
+                  <span key={i} className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-100 dark:bg-white/[0.05] text-slate-700 dark:text-zinc-300 border border-slate-200 dark:border-white/10 backdrop-blur-xs">
                     {p}
                   </span>
                 ))}
               </div>
             </div>
 
-            <div className="p-6 rounded-2xl border border-slate-200/80 dark:border-zinc-800 bg-white dark:bg-[#141417]">
+            <div className="p-6 rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white/80 dark:bg-[#141417e6] backdrop-blur-md shadow-lg hover:border-white/20 transition-all">
               <div className="h-10 w-10 rounded-xl bg-purple-500/10 text-purple-500 flex items-center justify-center mb-4">
                 <Bot className="h-5 w-5" />
               </div>
@@ -455,14 +461,14 @@ function LandingPageContent() {
               </p>
               <div className="flex flex-wrap gap-1.5">
                 {["sk-proj-*", "sk-ant-api03-*", "hf_[a-zA-Z0-9]{34}", "r8_*"].map((p, i) => (
-                  <span key={i} className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-100 dark:bg-zinc-900 text-slate-700 dark:text-zinc-300 border border-slate-200 dark:border-zinc-800">
+                  <span key={i} className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-100 dark:bg-white/[0.05] text-slate-700 dark:text-zinc-300 border border-slate-200 dark:border-white/10 backdrop-blur-xs">
                     {p}
                   </span>
                 ))}
               </div>
             </div>
 
-            <div className="p-6 rounded-2xl border border-slate-200/80 dark:border-zinc-800 bg-white dark:bg-[#141417]">
+            <div className="p-6 rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white/80 dark:bg-[#141417e6] backdrop-blur-md shadow-lg hover:border-white/20 transition-all">
               <div className="h-10 w-10 rounded-xl bg-emerald-500/10 text-emerald-500 flex items-center justify-center mb-4">
                 <Database className="h-5 w-5" />
               </div>
@@ -472,14 +478,14 @@ function LandingPageContent() {
               </p>
               <div className="flex flex-wrap gap-1.5">
                 {["postgresql://...", "mongodb+srv://...", "redis-cache://...", "mysql://..."].map((p, i) => (
-                  <span key={i} className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-100 dark:bg-zinc-900 text-slate-700 dark:text-zinc-300 border border-slate-200 dark:border-zinc-800">
+                  <span key={i} className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-100 dark:bg-white/[0.05] text-slate-700 dark:text-zinc-300 border border-slate-200 dark:border-white/10 backdrop-blur-xs">
                     {p}
                   </span>
                 ))}
               </div>
             </div>
 
-            <div className="p-6 rounded-2xl border border-slate-200/80 dark:border-zinc-800 bg-white dark:bg-[#141417]">
+            <div className="p-6 rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white/80 dark:bg-[#141417e6] backdrop-blur-md shadow-lg hover:border-white/20 transition-all">
               <div className="h-10 w-10 rounded-xl bg-blue-500/10 text-blue-500 flex items-center justify-center mb-4">
                 <Key className="h-5 w-5" />
               </div>
@@ -489,14 +495,14 @@ function LandingPageContent() {
               </p>
               <div className="flex flex-wrap gap-1.5">
                 {["ghp_[0-9a-zA-Z]{36}", "github_pat_*", "glpat-*", "npm_*"].map((p, i) => (
-                  <span key={i} className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-100 dark:bg-zinc-900 text-slate-700 dark:text-zinc-300 border border-slate-200 dark:border-zinc-800">
+                  <span key={i} className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-100 dark:bg-white/[0.05] text-slate-700 dark:text-zinc-300 border border-slate-200 dark:border-white/10 backdrop-blur-xs">
                     {p}
                   </span>
                 ))}
               </div>
             </div>
 
-            <div className="p-6 rounded-2xl border border-slate-200/80 dark:border-zinc-800 bg-white dark:bg-[#141417]">
+            <div className="p-6 rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white/80 dark:bg-[#141417e6] backdrop-blur-md shadow-lg hover:border-white/20 transition-all">
               <div className="h-10 w-10 rounded-xl bg-rose-500/10 text-rose-500 flex items-center justify-center mb-4">
                 <Binary className="h-5 w-5" />
               </div>
@@ -506,7 +512,7 @@ function LandingPageContent() {
               </p>
               <div className="flex flex-wrap gap-1.5">
                 {["BEGIN RSA PRIVATE KEY", "BEGIN OPENSSH PRIVATE", "BEGIN PGP PRIVATE", "BEGIN EC PRIVATE"].map((p, i) => (
-                  <span key={i} className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-100 dark:bg-zinc-900 text-slate-700 dark:text-zinc-300 border border-slate-200 dark:border-zinc-800">
+                  <span key={i} className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-100 dark:bg-white/[0.05] text-slate-700 dark:text-zinc-300 border border-slate-200 dark:border-white/10 backdrop-blur-xs">
                     {p}
                   </span>
                 ))}
@@ -531,50 +537,50 @@ function LandingPageContent() {
             </p>
           </div>
 
-          <div className="rounded-2xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-[#141417] overflow-hidden shadow-sm">
+          <div className="rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white/80 dark:bg-[#141417e6] backdrop-blur-md overflow-hidden shadow-lg">
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs">
                 <thead>
-                  <tr className="border-b border-slate-200 dark:border-zinc-800 bg-slate-50/70 dark:bg-zinc-900/40">
+                  <tr className="border-b border-slate-200 dark:border-white/10 bg-slate-50/70 dark:bg-white/[0.03]">
                     <th className="py-4 px-6 font-bold text-slate-900 dark:text-white">Feature</th>
-                    <th className="py-4 px-6 font-bold text-[#00285B] dark:text-white bg-[#EDE9E6]/30 dark:bg-zinc-900/60">
+                    <th className="py-4 px-6 font-bold text-[#00285B] dark:text-white bg-[#EDE9E6]/30 dark:bg-blue-950/20">
                       Secura
                     </th>
                     <th className="py-4 px-6 font-medium text-slate-500 dark:text-zinc-400">Traditional Scanners</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-zinc-800/80">
+                <tbody className="divide-y divide-slate-100 dark:divide-white/5">
                   <tr>
                     <td className="py-4 px-6 font-semibold text-slate-900 dark:text-white">Scan Latency</td>
-                    <td className="py-4 px-6 font-bold text-emerald-600 dark:text-emerald-400 bg-[#EDE9E6]/30 dark:bg-zinc-900/60 flex items-center gap-1.5">
+                    <td className="py-4 px-6 font-bold text-emerald-600 dark:text-emerald-400 bg-[#EDE9E6]/30 dark:bg-blue-950/20 flex items-center gap-1.5">
                       <Zap className="h-3.5 w-3.5" /> &lt; 50ms In-Memory AST
                     </td>
                     <td className="py-4 px-6 text-slate-500 dark:text-zinc-400">5 to 12 minutes (Heavy CI Runner wait)</td>
                   </tr>
                   <tr>
                     <td className="py-4 px-6 font-semibold text-slate-900 dark:text-white">Code Retention Policy</td>
-                    <td className="py-4 px-6 font-bold text-emerald-600 dark:text-emerald-400 bg-[#EDE9E6]/30 dark:bg-zinc-900/60">
+                    <td className="py-4 px-6 font-bold text-emerald-600 dark:text-emerald-400 bg-[#EDE9E6]/30 dark:bg-blue-950/20">
                       0% (Inspected in-memory, never persisted)
                     </td>
                     <td className="py-4 px-6 text-slate-500 dark:text-zinc-400">Clones full repository to vendor disk</td>
                   </tr>
                   <tr>
                     <td className="py-4 px-6 font-semibold text-slate-900 dark:text-white">Test Mock Handling</td>
-                    <td className="py-4 px-6 font-bold text-emerald-600 dark:text-emerald-400 bg-[#EDE9E6]/30 dark:bg-zinc-900/60">
+                    <td className="py-4 px-6 font-bold text-emerald-600 dark:text-emerald-400 bg-[#EDE9E6]/30 dark:bg-blue-950/20">
                       Shannon Entropy Filter (Zero False Positives)
                     </td>
                     <td className="py-4 px-6 text-slate-500 dark:text-zinc-400">Spams PRs with false alerts on test fixtures</td>
                   </tr>
                   <tr>
                     <td className="py-4 px-6 font-semibold text-slate-900 dark:text-white">PR Gate Enforcement</td>
-                    <td className="py-4 px-6 font-bold text-emerald-600 dark:text-emerald-400 bg-[#EDE9E6]/30 dark:bg-zinc-900/60">
+                    <td className="py-4 px-6 font-bold text-emerald-600 dark:text-emerald-400 bg-[#EDE9E6]/30 dark:bg-blue-950/20">
                       Automated GitHub PR Merge Lock & Unblock
                     </td>
                     <td className="py-4 px-6 text-slate-500 dark:text-zinc-400">Passive emails & easily ignored dashboards</td>
                   </tr>
                   <tr>
                     <td className="py-4 px-6 font-semibold text-slate-900 dark:text-white">Setup Friction</td>
-                    <td className="py-4 px-6 font-bold text-emerald-600 dark:text-emerald-400 bg-[#EDE9E6]/30 dark:bg-zinc-900/60">
+                    <td className="py-4 px-6 font-bold text-emerald-600 dark:text-emerald-400 bg-[#EDE9E6]/30 dark:bg-blue-950/20">
                       30-Second 1-Click GitHub App (Zero YAML)
                     </td>
                     <td className="py-4 px-6 text-slate-500 dark:text-zinc-400">Requires custom Docker, YAML & secrets config</td>
@@ -587,7 +593,7 @@ function LandingPageContent() {
       </section>
 
       {/* ─── 8. CORE FEATURES BENTO GRID ──────────────────────────────────── */}
-      <section id="features" className="py-20 sm:py-28 bg-[#EDE9E6]/25 dark:bg-zinc-950/50 border-t border-slate-200/80 dark:border-zinc-800/80">
+      <section id="features" className="py-20 sm:py-28 bg-[#EDE9E6]/25 dark:bg-[#141417ed] border-t border-slate-200/80 dark:border-white/10">
         <div className="max-w-7xl mx-auto px-4 sm:px-8">
           <div className="text-center max-w-2xl mx-auto mb-16">
             <span className="text-xs font-semibold uppercase tracking-wider text-[#00285B] dark:text-zinc-400 font-mono">
@@ -602,8 +608,8 @@ function LandingPageContent() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            <div className="p-6 rounded-2xl border border-slate-200/80 dark:border-zinc-800 bg-white dark:bg-[#141417]">
-              <div className="h-10 w-10 rounded-xl bg-[#EDE9E6] text-[#00285B] dark:bg-zinc-900 dark:text-white flex items-center justify-center mb-4">
+            <div className="p-6 rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white/80 dark:bg-[#141417e6] backdrop-blur-md shadow-lg hover:border-white/20 transition-all">
+              <div className="h-10 w-10 rounded-xl bg-[#EDE9E6] text-[#00285B] dark:bg-white/[0.06] dark:border dark:border-white/10 dark:text-white flex items-center justify-center mb-4">
                 <ShieldAlert className="h-5 w-5" />
               </div>
               <h3 className="text-base font-semibold text-slate-900 dark:text-white mb-2">
@@ -614,8 +620,8 @@ function LandingPageContent() {
               </p>
             </div>
 
-            <div className="p-6 rounded-2xl border border-slate-200/80 dark:border-zinc-800 bg-white dark:bg-[#141417]">
-              <div className="h-10 w-10 rounded-xl bg-[#EDE9E6] text-[#00285B] dark:bg-zinc-900 dark:text-white flex items-center justify-center mb-4">
+            <div className="p-6 rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white/80 dark:bg-[#141417e6] backdrop-blur-md shadow-lg hover:border-white/20 transition-all">
+              <div className="h-10 w-10 rounded-xl bg-[#EDE9E6] text-[#00285B] dark:bg-white/[0.06] dark:border dark:border-white/10 dark:text-white flex items-center justify-center mb-4">
                 <Lock className="h-5 w-5" />
               </div>
               <h3 className="text-base font-semibold text-slate-900 dark:text-white mb-2">
@@ -626,8 +632,8 @@ function LandingPageContent() {
               </p>
             </div>
 
-            <div className="p-6 rounded-2xl border border-slate-200/80 dark:border-zinc-800 bg-white dark:bg-[#141417]">
-              <div className="h-10 w-10 rounded-xl bg-[#EDE9E6] text-[#00285B] dark:bg-zinc-900 dark:text-white flex items-center justify-center mb-4">
+            <div className="p-6 rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white/80 dark:bg-[#141417e6] backdrop-blur-md shadow-lg hover:border-white/20 transition-all">
+              <div className="h-10 w-10 rounded-xl bg-[#EDE9E6] text-[#00285B] dark:bg-white/[0.06] dark:border dark:border-white/10 dark:text-white flex items-center justify-center mb-4">
                 <EyeOff className="h-5 w-5" />
               </div>
               <h3 className="text-base font-semibold text-slate-900 dark:text-white mb-2">
@@ -638,8 +644,8 @@ function LandingPageContent() {
               </p>
             </div>
 
-            <div className="p-6 rounded-2xl border border-slate-200/80 dark:border-zinc-800 bg-white dark:bg-[#141417]">
-              <div className="h-10 w-10 rounded-xl bg-[#EDE9E6] text-[#00285B] dark:bg-zinc-900 dark:text-white flex items-center justify-center mb-4">
+            <div className="p-6 rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white/80 dark:bg-[#141417e6] backdrop-blur-md shadow-lg hover:border-white/20 transition-all">
+              <div className="h-10 w-10 rounded-xl bg-[#EDE9E6] text-[#00285B] dark:bg-white/[0.06] dark:border dark:border-white/10 dark:text-white flex items-center justify-center mb-4">
                 <Zap className="h-5 w-5" />
               </div>
               <h3 className="text-base font-semibold text-slate-900 dark:text-white mb-2">
@@ -650,8 +656,8 @@ function LandingPageContent() {
               </p>
             </div>
 
-            <div className="p-6 rounded-2xl border border-slate-200/80 dark:border-zinc-800 bg-white dark:bg-[#141417]">
-              <div className="h-10 w-10 rounded-xl bg-[#EDE9E6] text-[#00285B] dark:bg-zinc-900 dark:text-white flex items-center justify-center mb-4">
+            <div className="p-6 rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white/80 dark:bg-[#141417e6] backdrop-blur-md shadow-lg hover:border-white/20 transition-all">
+              <div className="h-10 w-10 rounded-xl bg-[#EDE9E6] text-[#00285B] dark:bg-white/[0.06] dark:border dark:border-white/10 dark:text-white flex items-center justify-center mb-4">
                 <Cpu className="h-5 w-5" />
               </div>
               <h3 className="text-base font-semibold text-slate-900 dark:text-white mb-2">
@@ -662,8 +668,8 @@ function LandingPageContent() {
               </p>
             </div>
 
-            <div className="p-6 rounded-2xl border border-slate-200/80 dark:border-zinc-800 bg-white dark:bg-[#141417]">
-              <div className="h-10 w-10 rounded-xl bg-[#EDE9E6] text-[#00285B] dark:bg-zinc-900 dark:text-white flex items-center justify-center mb-4">
+            <div className="p-6 rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white/80 dark:bg-[#141417e6] backdrop-blur-md shadow-lg hover:border-white/20 transition-all">
+              <div className="h-10 w-10 rounded-xl bg-[#EDE9E6] text-[#00285B] dark:bg-white/[0.06] dark:border dark:border-white/10 dark:text-white flex items-center justify-center mb-4">
                 <ShieldCheck className="h-5 w-5" />
               </div>
               <h3 className="text-base font-semibold text-slate-900 dark:text-white mb-2">
@@ -696,7 +702,7 @@ function LandingPageContent() {
             {FAQS.map((faq, idx) => (
               <div
                 key={idx}
-                className="rounded-2xl border border-slate-200/80 dark:border-zinc-800 bg-white dark:bg-[#141417] overflow-hidden"
+                className="rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white/80 dark:bg-[#141417e6] backdrop-blur-md overflow-hidden shadow-sm"
               >
                 <button
                   type="button"
@@ -711,7 +717,7 @@ function LandingPageContent() {
                   )}
                 </button>
                 {openFaq === idx && (
-                  <div className="px-4 pb-5 sm:px-5 text-xs text-slate-600 dark:text-zinc-400 leading-relaxed border-t border-slate-100 dark:border-zinc-800/80 pt-3">
+                  <div className="px-4 pb-5 sm:px-5 text-xs text-slate-600 dark:text-zinc-400 leading-relaxed border-t border-slate-100 dark:border-white/5 pt-3">
                     {faq.a}
                   </div>
                 )}
@@ -722,7 +728,7 @@ function LandingPageContent() {
       </section>
 
       {/* ─── 10. BOTTOM HERO CTA ────────────────────────────────────────────── */}
-      <section className="py-16 sm:py-24 border-t border-slate-200/80 dark:border-zinc-800/80">
+      <section className="py-16 sm:py-24 border-t border-slate-200/80 dark:border-white/10">
         <div className="max-w-5xl mx-auto px-4 sm:px-8 text-center">
           <div className="rounded-3xl bg-[#00285B] p-8 sm:p-14 text-white relative overflow-hidden shadow-2xl">
             <div className="relative z-10 max-w-2xl mx-auto space-y-5">
@@ -757,10 +763,10 @@ function LandingPageContent() {
       </section>
 
       {/* ─── 11. FOOTER (Exact CodeRabbit Layout Tailored for Secura) ─────────── */}
-      <footer className="border-t border-slate-200/80 dark:border-zinc-800/80 pt-16 pb-6 bg-white dark:bg-[#111113] overflow-hidden">
+      <footer className="border-t border-slate-200/80 dark:border-white/10 pt-16 pb-6 bg-white dark:bg-[#141417ed] backdrop-blur-md overflow-hidden">
         <div className="max-w-7xl mx-auto px-4 sm:px-8">
           {/* Top Section: Brand & Newsletter (Left) + Multi-Column Directory (Right) */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-12 pb-14 border-b border-slate-100 dark:border-zinc-800/60">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-12 pb-14 border-b border-slate-100 dark:border-white/10">
             {/* Left: Brand Identity, Tagline & Newsletter */}
             <div className="lg:col-span-5 space-y-6">
               {/* Brand Lockup */}
@@ -795,7 +801,7 @@ function LandingPageContent() {
                       onChange={(e) => setNewsletterEmail(e.target.value)}
                       placeholder="Enter your email"
                       required
-                      className="flex-1 h-9 rounded-lg px-3.5 text-xs bg-slate-50 dark:bg-zinc-900/90 border border-slate-200 dark:border-zinc-800 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-1 focus:ring-[#00285B] dark:focus:ring-blue-500 transition-all"
+                      className="flex-1 h-9 rounded-lg px-3.5 text-xs bg-slate-50 dark:bg-[#141417e6] border border-slate-200 dark:border-white/10 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-500 backdrop-blur-md focus:outline-none focus:ring-1 focus:ring-[#00285B] dark:focus:ring-blue-500 transition-all"
                     />
                     <button
                       type="submit"
@@ -817,7 +823,7 @@ function LandingPageContent() {
                   target="_blank"
                   rel="noopener noreferrer"
                   aria-label="GitHub"
-                  className="h-8 w-8 rounded-lg border border-slate-200 dark:border-zinc-800 flex items-center justify-center text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white hover:border-slate-300 dark:hover:border-zinc-700 transition-colors"
+                  className="h-8 w-8 rounded-lg border border-slate-200 dark:border-white/10 bg-white/40 dark:bg-white/[0.04] backdrop-blur-xs flex items-center justify-center text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white hover:border-slate-300 dark:hover:border-white/20 transition-colors"
                 >
                   <GithubIcon className="h-4 w-4" />
                 </a>
@@ -826,7 +832,7 @@ function LandingPageContent() {
                   target="_blank"
                   rel="noopener noreferrer"
                   aria-label="X (Twitter)"
-                  className="h-8 w-8 rounded-lg border border-slate-200 dark:border-zinc-800 flex items-center justify-center text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white hover:border-slate-300 dark:hover:border-zinc-700 transition-colors"
+                  className="h-8 w-8 rounded-lg border border-slate-200 dark:border-white/10 bg-white/40 dark:bg-white/[0.04] backdrop-blur-xs flex items-center justify-center text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white hover:border-slate-300 dark:hover:border-white/20 transition-colors"
                 >
                   <XIcon className="h-3.5 w-3.5" />
                 </a>
@@ -835,7 +841,7 @@ function LandingPageContent() {
                   target="_blank"
                   rel="noopener noreferrer"
                   aria-label="LinkedIn"
-                  className="h-8 w-8 rounded-lg border border-slate-200 dark:border-zinc-800 flex items-center justify-center text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white hover:border-slate-300 dark:hover:border-zinc-700 transition-colors"
+                  className="h-8 w-8 rounded-lg border border-slate-200 dark:border-white/10 bg-white/40 dark:bg-white/[0.04] backdrop-blur-xs flex items-center justify-center text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white hover:border-slate-300 dark:hover:border-white/20 transition-colors"
                 >
                   <LinkedInIcon className="h-3.5 w-3.5" />
                 </a>
@@ -998,7 +1004,7 @@ function LandingPageContent() {
         </div>
 
         {/* Bottom Copyright, Legal & Security Guarantee Line (After SECURA Text) */}
-        <div className="max-w-7xl mx-auto px-4 sm:px-8 pt-4 pb-2 border-t border-slate-100 dark:border-zinc-800/60 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-400 dark:text-zinc-500">
+        <div className="max-w-7xl mx-auto px-4 sm:px-8 pt-4 pb-2 border-t border-slate-100 dark:border-white/10 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-400 dark:text-zinc-500">
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
             <span>© 2026 Secura Inc. Zero Code Retention Guaranteed.</span>
             <span className="hidden sm:inline text-slate-300 dark:text-zinc-700">·</span>
@@ -1025,8 +1031,11 @@ export default function Home() {
   return (
     <Suspense
       fallback={
-        <div className="dark min-h-screen flex items-center justify-center bg-[#111113]">
-          <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-zinc-900 border border-zinc-800 text-white shadow-sm">
+        <div
+          className="dark min-h-screen flex items-center justify-center bg-[#141417ed]"
+          style={{ backgroundColor: "#141417ed" }}
+        >
+          <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#141417e6] backdrop-blur-md border border-white/10 text-white shadow-sm">
             <img src="/logo.png" alt="Secura" className="h-7 w-7 rounded-xl object-cover" />
           </div>
         </div>

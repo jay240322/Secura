@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
 from app.core.database import get_db
+from app.api.v1.repositories import get_user_repositories_safe
 from app.models.finding import Finding
 from app.models.repository import Repository
 from app.models.scan import Scan
@@ -36,7 +37,7 @@ def get_insights(
     - Top finding types
     - Transparent Security Posture Score
     """
-    user_repos = db.query(Repository).filter(Repository.user_id == current_user.id).all()
+    user_repos = get_user_repositories_safe(db, current_user)
     repo_ids = [r.id for r in user_repos]
 
     if not repo_ids:
@@ -59,14 +60,22 @@ def get_insights(
             score_history=[],
         )
 
-    all_findings = db.query(Finding).filter(Finding.repository_id.in_(repo_ids)).all()
-    open_findings = [f for f in all_findings if f.status == "open"]
-    resolved_findings = [f for f in all_findings if f.status == "resolved"]
+    # 1. Total open and resolved counts
+    open_count = db.query(func.count(Finding.id)).filter(Finding.repository_id.in_(repo_ids), Finding.status == "open").scalar() or 0
+    resolved_count = db.query(func.count(Finding.id)).filter(Finding.repository_id.in_(repo_ids), Finding.status == "resolved").scalar() or 0
 
-    crit_count = sum(1 for f in open_findings if f.severity == "CRITICAL")
-    high_count = sum(1 for f in open_findings if f.severity == "HIGH")
-    med_count = sum(1 for f in open_findings if f.severity == "MEDIUM")
-    low_count = sum(1 for f in open_findings if f.severity == "LOW")
+    # 2. Open findings by severity in 1 SQL query
+    sev_rows = (
+        db.query(Finding.severity, func.count(Finding.id))
+        .filter(Finding.repository_id.in_(repo_ids), Finding.status == "open")
+        .group_by(Finding.severity)
+        .all()
+    )
+    sev_dict = {sev: cnt for sev, cnt in sev_rows}
+    crit_count = sev_dict.get("CRITICAL", 0)
+    high_count = sev_dict.get("HIGH", 0)
+    med_count = sev_dict.get("MEDIUM", 0)
+    low_count = sev_dict.get("LOW", 0)
 
     # Score calculation: 100 - (30*crit + 20*high + 10*med + 5*low), floor at 0
     calculated_score = max(0, 100 - (crit_count * 30 + high_count * 20 + med_count * 10 + low_count * 5))
@@ -79,22 +88,28 @@ def get_insights(
         FindingSeverityCount(severity="LOW", count=low_count),
     ]
 
-    # Findings by repository
+    # 3. Findings by repository in 1 SQL query
     repo_name_map = {r.id: (r.name or r.full_name) for r in user_repos}
     by_repo_dict: Dict[str, Dict[str, int]] = {}
     for r in user_repos:
         repo_label = r.name or r.full_name
         by_repo_dict[repo_label] = {"total": 0, "critical": 0, "high": 0}
 
-    for f in open_findings:
-        repo_name = repo_name_map.get(f.repository_id, "Unknown")
-        if repo_name not in by_repo_dict:
-            by_repo_dict[repo_name] = {"total": 0, "critical": 0, "high": 0}
-        by_repo_dict[repo_name]["total"] += 1
-        if f.severity == "CRITICAL":
-            by_repo_dict[repo_name]["critical"] += 1
-        elif f.severity == "HIGH":
-            by_repo_dict[repo_name]["high"] += 1
+    repo_sev_rows = (
+        db.query(Finding.repository_id, Finding.severity, func.count(Finding.id))
+        .filter(Finding.repository_id.in_(repo_ids), Finding.status == "open")
+        .group_by(Finding.repository_id, Finding.severity)
+        .all()
+    )
+    for rid, sev, cnt in repo_sev_rows:
+        r_label = repo_name_map.get(rid, "Unknown")
+        if r_label not in by_repo_dict:
+            by_repo_dict[r_label] = {"total": 0, "critical": 0, "high": 0}
+        by_repo_dict[r_label]["total"] += cnt
+        if sev == "CRITICAL":
+            by_repo_dict[r_label]["critical"] += cnt
+        elif sev == "HIGH":
+            by_repo_dict[r_label]["high"] += cnt
 
     by_repo = [
         FindingRepoCount(
@@ -106,29 +121,35 @@ def get_insights(
         for name, data in by_repo_dict.items()
     ]
 
-    # Top finding types
-    type_counts: Dict[str, int] = {}
-    for f in all_findings:
-        type_counts[f.finding_type] = type_counts.get(f.finding_type, 0) + 1
+    # 4. Top finding types in 1 fast SQL query
+    type_rows = (
+        db.query(Finding.finding_type, func.count(Finding.id))
+        .filter(Finding.repository_id.in_(repo_ids))
+        .group_by(Finding.finding_type)
+        .order_by(func.count(Finding.id).desc())
+        .limit(5)
+        .all()
+    )
+    top_types = [TopFindingType(type=t, count=c) for t, c in type_rows]
 
-    top_types = sorted(
-        [TopFindingType(type=t, count=c) for t, c in type_counts.items()],
-        key=lambda x: x.count,
-        reverse=True,
-    )[:5]
-
-    # Average resolution time
+    # 5. Average resolution time
     avg_resolution_days = 0.0
-    if resolved_findings:
+    if resolved_count > 0:
+        resolved_sample = (
+            db.query(Finding.first_detected, Finding.updated_at)
+            .filter(Finding.repository_id.in_(repo_ids), Finding.status == "resolved")
+            .limit(100)
+            .all()
+        )
         durations = [
-            (f.updated_at - f.first_detected).total_seconds() / 86400
-            for f in resolved_findings
-            if f.updated_at and f.first_detected
+            (f[1] - f[0]).total_seconds() / 86400
+            for f in resolved_sample
+            if f[1] and f[0]
         ]
         if durations:
             avg_resolution_days = round(sum(durations) / len(durations), 1)
 
-    # Findings over time (14 days trend)
+    # 6. Findings over time (14 days trend)
     today = datetime.date.today()
     trends = []
     for i in range(13, -1, -1):
@@ -141,16 +162,16 @@ def get_insights(
                 high=high_count,
                 medium=med_count,
                 low=low_count,
-                resolved=len(resolved_findings),
+                resolved=resolved_count,
             )
         )
 
     summary = DashboardSummary(
         connected_repositories=len(user_repos),
-        total_open_findings=len(open_findings),
+        total_open_findings=open_count,
         critical_findings=crit_count,
         high_findings=high_count,
-        resolved_findings=len(resolved_findings),
+        resolved_findings=resolved_count,
         security_score=calculated_score,
     )
 

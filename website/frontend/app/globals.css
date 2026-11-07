@@ -3,7 +3,7 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 :root {
-  --background: #f8fafc;
+  --background: #f8fafcb0;
   --foreground: #0f172a;
   --surface: #ffffff;
   --surface-subtle: #EDE9E6;
@@ -15,12 +15,12 @@
 }
 
 .dark {
-  --background: #111113;
+  --background: #373739b2;
   --foreground: #f4f4f5;
-  --surface: #18181b;
-  --surface-subtle: #1f1f23;
+  --surface: #303032;
+  --surface-subtle: #363637;
   --border: rgba(255, 255, 255, 0.08);
-  --border-hover: rgba(255, 255, 255, 0.16);
+  --border-hover: rgba(46, 44, 44, 0.16);
   --accent: #3b82f6;
   color-scheme: dark;
 }
@@ -114,6 +114,17 @@ textarea {
 }
 
 /* Glass surface helpers */
+.landing-surface-50 {
+  background-color: #141417ed;
+}
+
+.light-glass-black {
+  background-color: #141417e6;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
 .glass-panel {
   background: rgba(255, 255, 255, 0.9);
   backdrop-filter: blur(12px);
@@ -189,6 +200,7 @@ textarea {
 }
 
 @-webkit-keyframes loading-keys-app-loading {
+
   0%,
   80%,
   100% {
@@ -205,6 +217,7 @@ textarea {
 }
 
 @keyframes loading-keys-app-loading {
+
   0%,
   80%,
   100% {
@@ -226,9 +239,11 @@ textarea {
     stroke-dashoffset: 320;
     opacity: 0.2;
   }
+
   50% {
     opacity: 1;
   }
+
   100% {
     stroke-dashoffset: 0;
     opacity: 1;
@@ -240,6 +255,7 @@ textarea {
     opacity: 0;
     transform: translateX(18px);
   }
+
   to {
     opacity: 1;
     transform: translateX(0);
@@ -251,6 +267,7 @@ textarea {
     opacity: 0;
     transform: translateY(12px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -261,6 +278,7 @@ textarea {
   from {
     transform: rotate(0deg);
   }
+
   to {
     transform: rotate(360deg);
   }
@@ -271,6 +289,7 @@ textarea {
     transform: scale(0.2);
     opacity: 1;
   }
+
   100% {
     transform: scale(1.6);
     opacity: 0;

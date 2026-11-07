@@ -378,7 +378,6 @@ export function CodeRabbitAuth({ initialMode = "login" }: CodeRabbitAuthProps) {
                   </button>
                 </div>
               ))}
-            </div>
 
               {/* Divider: or */}
               <div className="relative flex items-center justify-center py-2">

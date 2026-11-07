@@ -73,13 +73,24 @@ export function TopNav() {
   useEffect(() => {
     if (isRepoDetail && repoId) {
       const decoded = decodeURIComponent(repoId);
-      let initialGuess = decoded;
-      if (initialGuess.startsWith("repo-")) {
-        const parts = initialGuess.split("-");
-        if (parts.length > 2) {
-          initialGuess = parts.slice(2).join("-");
+      const cached = api.getCachedRepository?.(decoded);
+      let initialGuess = cached?.name || (cached?.fullName ? cached.fullName.split("/").pop() : null);
+
+      if (!initialGuess) {
+        const isIdLike =
+          /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(decoded) ||
+          decoded.startsWith("repo-") ||
+          decoded.length >= 32;
+
+        if (isIdLike) {
+          if (decoded.startsWith("repo-")) {
+            const parts = decoded.split("-");
+            initialGuess = parts.length > 2 ? parts.slice(2).join("-") : "Repository";
+          } else {
+            initialGuess = "Repository";
+          }
         } else {
-          initialGuess = "Repository";
+          initialGuess = decoded;
         }
       }
       setRepoName(initialGuess);

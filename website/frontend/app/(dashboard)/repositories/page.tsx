@@ -103,6 +103,7 @@ function RepoCard({
         <div className="mb-3">
           <Link
             href={`/repositories/${repo.id}`}
+            onMouseEnter={() => void api.getRepositoryOverview(repo.id)}
             className="text-base font-bold text-slate-900 dark:text-zinc-100 group-hover:text-[#281C59] dark:group-hover:text-blue-400 transition-colors truncate block mt-0.5 tracking-tight"
             title={repo.fullName}
           >
@@ -130,6 +131,7 @@ function RepoCard({
       <div className="pt-3 border-t border-slate-100 dark:border-zinc-800/80">
         <Link
           href={`/repositories/${repo.id}`}
+          onMouseEnter={() => void api.getRepositoryOverview(repo.id)}
           className="w-full flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 py-2 text-xs font-semibold text-slate-800 dark:text-zinc-200 hover:bg-slate-50 dark:hover:bg-zinc-800 hover:text-slate-950 dark:hover:text-zinc-50 transition-all shadow-xs"
           title="Open repository details, pull requests, and findings"
         >
@@ -145,6 +147,7 @@ function RepositoriesContent() {
   const searchParams = useSearchParams();
   const [installedBanner, setInstalledBanner] = useState(false);
   const [repos, setRepos] = useState<Repository[]>([]);
+  const [loading, setLoading] = useState(true);
   const [isLive, setIsLive] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterTab, setFilterTab] = useState<"all" | "monitored" | "unmonitored">("all");
@@ -268,24 +271,27 @@ function RepositoriesContent() {
         const user = api.getStoredUser();
         if (user) setCurrentUser(user);
 
-        // Always sync directly from GitHub App on initial load or tab focus so newly added repos appear immediately
-        if (isInitial || isInstalled || instId || setupAction) {
-          const syncRes = await api.syncRepositories();
-          void api.syncPullRequests();
-          if (mounted && syncRes.success && syncRes.repositories.length > 0) {
-            setRepos(syncRes.repositories);
-            setIsLive(true);
-            return;
-          }
-        }
-
+        // Fetch DB repositories immediately (ultra fast from Neon)
         const res = await api.getRepositories();
-        if (mounted) {
+        if (mounted && res.repositories) {
           setRepos(res.repositories);
           setIsLive(res.isLive);
         }
+
+        // If user just installed or requested sync, trigger background sync
+        if (isInstalled || instId || setupAction) {
+          void api.syncRepositories().then((syncRes) => {
+            if (mounted && syncRes.success && syncRes.repositories.length > 0) {
+              setRepos(syncRes.repositories);
+              setIsLive(true);
+            }
+          });
+          void api.syncPullRequests();
+        }
       } catch (e) {
         console.error("Failed to load repos:", e);
+      } finally {
+        if (mounted) setLoading(false);
       }
     }
     void loadRepos(true);
@@ -838,7 +844,12 @@ function RepositoriesContent() {
           </button>
         </div>
 
-        {filteredRepos.length === 0 ? (
+        {loading ? (
+          <div className="flex flex-col items-center justify-center py-20 text-slate-500 dark:text-zinc-400 gap-3">
+            <Loader />
+            <p className="text-xs font-medium text-slate-600 dark:text-zinc-400">Loading monitored repositories from database...</p>
+          </div>
+        ) : filteredRepos.length === 0 ? (
           <div className="rounded-xl border border-slate-200/80 dark:border-zinc-800/80 bg-white/90 dark:bg-zinc-950/90 p-12 text-center shadow-xs my-auto">
             <GitBranch className="h-8 w-8 text-slate-400 dark:text-zinc-600 mx-auto mb-2.5" />
             <h3 className="text-sm font-semibold text-slate-800 dark:text-zinc-200">No repositories connected</h3>

@@ -16,12 +16,12 @@ class Finding(Base):
         nullable=False,
         index=True,
     )
-    rule_id = Column(String(64), nullable=False, index=True)
-    finding_type = Column(String(128), nullable=False, index=True)
+    rule_id = Column(String(512), nullable=False, index=True)
+    finding_type = Column(String(255), nullable=False, index=True)
     severity = Column(String(16), nullable=False, index=True)  # CRITICAL, HIGH, MEDIUM, LOW
     file_path = Column(String(512), nullable=False)
     line_number = Column(Integer, nullable=False)
-    fingerprint = Column(String(64), nullable=False, index=True)  # Hash of repo+rule+file+line for tracking
+    fingerprint = Column(String(255), nullable=False, index=True)  # Hash of repo+rule+file+line for tracking
     status = Column(String(16), default="open", nullable=False, index=True)  # open, resolved, ignored
     ignore_reason = Column(String(512), nullable=True)
     risk = Column(Text, nullable=True)

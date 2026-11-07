@@ -9,6 +9,15 @@ $FrontendPath = Join-Path $RepoRoot "website\frontend"
 
 # Virtual environment detection
 $VenvActivate = Join-Path $RepoRoot ".venv\Scripts\Activate.ps1"
+$LinuxVenv = Join-Path $RepoRoot ".venv\bin\activate"
+
+if (-not (Test-Path $VenvActivate) -and (Test-Path $LinuxVenv)) {
+    Write-Host "📦 Detected WSL Linux environment (.venv)..." -ForegroundColor Yellow
+    Write-Host "🚀 Launching Secura environment via WSL..." -ForegroundColor Green
+    wsl bash -c "cd /home/jay/projects/Secura && ./run-website.sh"
+    exit 0
+}
+
 $VenvCmd = if (Test-Path $VenvActivate) { ". `"$VenvActivate`"; " } else { "" }
 
 Write-Host "🚀 Launching FastAPI Backend on http://localhost:8000..." -ForegroundColor Green

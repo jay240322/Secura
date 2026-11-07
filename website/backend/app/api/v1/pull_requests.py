@@ -1,10 +1,10 @@
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple, Set
 import datetime
 import json
 import logging
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
-from sqlalchemy.orm import Session
-from sqlalchemy import or_
+from sqlalchemy.orm import Session, joinedload, selectinload
+from sqlalchemy import func, or_, and_
 
 from app.api.deps import get_current_user
 from app.core.database import get_db
@@ -12,7 +12,11 @@ from app.models.finding import Finding
 from app.models.repository import Repository
 from app.models.scan import Scan
 from app.models.user import User
-from app.services.github_service import get_repository_pull_requests, get_pull_request_commits
+from app.services.github_service import (
+    get_repository_pull_requests,
+    get_pull_request_commits,
+    get_commit_check_runs,
+)
 from app.services.scan_runner import execute_pr_scan
 
 logger = logging.getLogger("secura.pull_requests")
@@ -30,9 +34,17 @@ def _parse_github_iso_datetime(dt_str: Optional[str]) -> Optional[datetime.datet
 
 
 def get_user_repository_or_404(db: Session, repository_id: str, user_id: str) -> Repository:
+    user = db.query(User).filter(User.id == user_id).first()
+    gh_user = user.github_username.lower() if (user and user.github_username) else None
     repo = (
         db.query(Repository)
-        .filter(Repository.id == repository_id, Repository.user_id == user_id)
+        .filter(
+            Repository.id == repository_id,
+            or_(
+                Repository.user_id == user_id,
+                (func.lower(Repository.owner) == gh_user) if gh_user else False,
+            ),
+        )
         .first()
     )
     if not repo:
@@ -49,22 +61,28 @@ def get_latest_pr_scan(db: Session, repository_id: str, pull_number: int) -> Opt
     )
 
 
-def serialize_pr_finding(f: Finding) -> Dict[str, Any]:
+def serialize_pr_finding(f: Finding, commit_sha: Optional[str] = None) -> Dict[str, Any]:
+    f_sha = commit_sha or getattr(f, "commit_sha", None)
+    fid = str(f.id) if getattr(f, "id", None) else f"{f.rule_id}-{f.file_path}-{f.line_number}"
     return {
-        "id": f.id,
+        "id": fid,
         "rule_id": f.rule_id,
-        "finding_type": f.finding_type,
+        "finding_type": f.finding_type or "Secret",
         "severity": f.severity,
         "file_path": f.file_path,
         "line_number": f.line_number,
-        "status": f.status,
+        "status": f.status or "open",
         "risk": f.risk,
         "recommendation": f.recommendation,
+        "commit_sha": f_sha,
+        "is_resolved": False,
+        "detected_in_commit": f_sha[:7] if f_sha else None,
+        "resolved_in_commit": None,
     }
 
 
 def serialize_pr_scan_info(sc: Scan) -> Dict[str, Any]:
-    sc_findings = [serialize_pr_finding(f) for f in sc.findings]
+    sc_findings = [serialize_pr_finding(f, commit_sha=sc.commit_sha) for f in sc.findings]
     sc_status = "neutral"
     if sc.scan_result == "passed":
         sc_status = "success"
@@ -72,6 +90,12 @@ def serialize_pr_scan_info(sc: Scan) -> Dict[str, Any]:
         sc_status = "failure"
     elif sc.scan_status == "running":
         sc_status = "in_progress"
+
+    crit_cnt = sum(1 for f in sc_findings if f.get("severity") == "CRITICAL") if sc_findings else (sc.critical_count or 0)
+    high_cnt = sum(1 for f in sc_findings if f.get("severity") == "HIGH") if sc_findings else (sc.high_count or 0)
+    med_cnt = sum(1 for f in sc_findings if f.get("severity") == "MEDIUM") if sc_findings else (sc.medium_count or 0)
+    low_cnt = sum(1 for f in sc_findings if f.get("severity") == "LOW") if sc_findings else (sc.low_count or 0)
+    tot_cnt = len(sc_findings) if sc_findings else (sc.total_findings or 0)
 
     return {
         "id": sc.id,
@@ -81,43 +105,83 @@ def serialize_pr_scan_info(sc: Scan) -> Dict[str, Any]:
         "scan_status": sc.scan_status,
         "scan_result": sc.scan_result,
         "check_run_status": sc_status,
-        "total_findings": sc.total_findings,
-        "critical_findings": sc.critical_count,
-        "high_findings": sc.high_count,
-        "medium_findings": sc.medium_count,
-        "low_findings": sc.low_count,
+        "total_findings": tot_cnt,
+        "critical_findings": crit_cnt,
+        "high_findings": high_cnt,
+        "medium_findings": med_cnt,
+        "low_findings": low_cnt,
         "score": sc.score,
         "created_at": sc.created_at.isoformat() if sc.created_at else None,
         "findings": sc_findings,
     }
 
 
-def annotate_pr_commits(
+def enrich_and_resolve_pr_commits(
     raw_commits: List[Dict[str, Any]],
     scans_by_sha: Dict[str, Dict[str, Any]],
+    head_sha: str,
+    head_scan_result: str,
+    owner: str,
+    repo_name: str,
     all_scans_for_pr: List[Scan],
-    fallback_scan: Optional[Scan] = None,
-    default_owner: str = "developer",
-    repo_full_name: str = "",
-) -> List[Dict[str, Any]]:
-    annotated = []
+    serialized_head_findings: Optional[List[Dict[str, Any]]] = None,
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], bool]:
+    head_sha_clean = (head_sha or "").lower()[:7]
+    head_findings = serialized_head_findings or []
+    head_finding_keys = {
+        f"{f.get('file_path')}:{f.get('line_number')}:{f.get('rule_id')}"
+        for f in head_findings
+    }
+
     known_shas = set()
-    total_pr_scans_count = len(all_scans_for_pr)
+    commits_to_process = []
+
     for c in raw_commits:
         c_dict = dict(c)
-        sha = (c.get("sha") or "").lower()
-        full_sha = (c.get("full_sha") or c.get("sha") or "").lower()
+        sha = (c_dict.get("sha") or "").lower()
+        full_sha = (c_dict.get("full_sha") or c_dict.get("sha") or "").lower()
         if sha:
             known_shas.add(sha)
             known_shas.add(sha[:7])
         if full_sha:
             known_shas.add(full_sha)
             known_shas.add(full_sha[:7])
+        commits_to_process.append(c_dict)
+
+    # Include any scans from all_scans_for_pr not in raw_commits
+    for sc in all_scans_for_pr:
+        sc_sha = (sc.commit_sha or "").lower()
+        if sc_sha and sc_sha not in known_shas and sc_sha[:7] not in known_shas:
+            known_shas.add(sc_sha)
+            known_shas.add(sc_sha[:7])
+            commits_to_process.append({
+                "sha": sc.commit_sha[:7],
+                "full_sha": sc.commit_sha,
+                "message": sc.pr_title or f"Commit {sc.commit_sha[:7]}",
+                "author": sc.pr_author or owner or "developer",
+                "author_avatar": None,
+                "date": sc.created_at.isoformat() if sc.created_at else None,
+                "html_url": f"https://github.com/{repo_name}/commit/{sc.commit_sha}" if repo_name and sc.commit_sha else None,
+                "is_historical": True,
+            })
+
+    # First pass: attach matching scan results to each commit
+    annotated = []
+    for c in commits_to_process:
+        c_dict = dict(c)
+        sha = (c_dict.get("sha") or "").lower()
+        full_sha = (c_dict.get("full_sha") or c_dict.get("sha") or "").lower()
+        short_sha = sha[:7] if sha else (full_sha[:7] if full_sha else "")
+        is_head = bool(
+            short_sha == head_sha_clean
+            or full_sha == (head_sha or "").lower()
+            or (c_dict.get("sha") == "HEAD" and head_sha == "HEAD")
+        )
 
         matching = (
             scans_by_sha.get(full_sha)
             or scans_by_sha.get(sha)
-            or scans_by_sha.get(sha[:7] if len(sha) >= 7 else sha)
+            or scans_by_sha.get(short_sha)
         )
         if matching:
             c_dict["scan_result"] = matching["scan_result"]
@@ -130,21 +194,21 @@ def annotate_pr_commits(
             c_dict["scan_id"] = matching["id"]
             c_dict["findings"] = matching["findings"]
         else:
-            if fallback_scan and len(raw_commits) == 1 and total_pr_scans_count == 1:
+            if is_head:
                 status = "neutral"
-                if fallback_scan.scan_result == "passed":
+                if head_scan_result == "passed":
                     status = "success"
-                elif fallback_scan.scan_result in ("failed", "error"):
+                elif head_scan_result in ("failed", "error"):
                     status = "failure"
-                c_dict["scan_result"] = fallback_scan.scan_result
-                c_dict["scan_status"] = fallback_scan.scan_status
+                c_dict["scan_result"] = head_scan_result
+                c_dict["scan_status"] = "completed"
                 c_dict["check_run_status"] = status
-                c_dict["total_findings"] = fallback_scan.total_findings
-                c_dict["critical_findings"] = fallback_scan.critical_count
-                c_dict["high_findings"] = fallback_scan.high_count
-                c_dict["score"] = fallback_scan.score
-                c_dict["scan_id"] = fallback_scan.id
-                c_dict["findings"] = [serialize_pr_finding(f) for f in fallback_scan.findings]
+                c_dict["total_findings"] = len(head_findings)
+                c_dict["critical_findings"] = sum(1 for f in head_findings if f.get("severity") == "CRITICAL")
+                c_dict["high_findings"] = sum(1 for f in head_findings if f.get("severity") == "HIGH")
+                c_dict["score"] = 100 if head_scan_result == "passed" else 50
+                c_dict["scan_id"] = None
+                c_dict["findings"] = head_findings
             else:
                 c_dict["scan_result"] = None
                 c_dict["scan_status"] = None
@@ -156,32 +220,136 @@ def annotate_pr_commits(
                 c_dict["scan_id"] = None
                 c_dict["findings"] = []
 
+        c_dict["is_head"] = is_head
         annotated.append(c_dict)
 
-    for sc in all_scans_for_pr:
-        sc_sha = (sc.commit_sha or "").lower()
-        if sc_sha and sc_sha not in known_shas and sc_sha[:7] not in known_shas:
-            sc_info = serialize_pr_scan_info(sc)
-            annotated.append({
-                "sha": sc.commit_sha[:7],
-                "full_sha": sc.commit_sha,
-                "message": f"Historical Commit {sc.commit_sha[:7]} (Scanned by Secura)",
-                "author": sc.pr_author or default_owner,
-                "author_avatar": None,
-                "date": sc.created_at.isoformat() if sc.created_at else None,
-                "html_url": f"https://github.com/{repo_full_name}/commit/{sc.commit_sha}" if repo_full_name else None,
-                "scan_result": sc_info["scan_result"],
-                "scan_status": sc_info["scan_status"],
-                "check_run_status": sc_info["check_run_status"],
-                "total_findings": sc_info["total_findings"],
-                "critical_findings": sc_info["critical_findings"],
-                "high_findings": sc_info["high_findings"],
-                "score": sc_info["score"],
-                "scan_id": sc_info["id"],
-                "findings": sc_info["findings"],
-                "is_historical": True,
-            })
+    # If no commit was flagged as head, designate the last commit as head
+    if annotated and not any(c.get("is_head") for c in annotated):
+        annotated[-1]["is_head"] = True
 
+    # Second pass: compute historical resolved findings across commits
+    all_historical_findings = []
+    seen_resolved_keys = set()
+    head_resolved_target = head_sha_clean or "HEAD"
+
+    for c in annotated:
+        if c.get("is_head"):
+            continue
+        c_sha = (c.get("sha") or "")[:7]
+        c_findings = c.get("findings") or []
+        has_violations = c.get("total_findings", 0) > 0 or c.get("scan_result") in ("failed", "error")
+
+        if has_violations and c_findings:
+            enriched_findings = []
+            for f in c_findings:
+                f_key = f"{f.get('file_path')}:{f.get('line_number')}:{f.get('rule_id')}"
+                f_copy = dict(f)
+                f_copy["detected_in_commit"] = c_sha or f.get("commit_sha") or "earlier"
+                if head_scan_result == "passed" or f_key not in head_finding_keys:
+                    f_copy["is_resolved"] = True
+                    f_copy["status"] = "resolved"
+                    f_copy["resolved_in_commit"] = head_resolved_target
+                    if f_key not in seen_resolved_keys:
+                        seen_resolved_keys.add(f_key)
+                        all_historical_findings.append(f_copy)
+                enriched_findings.append(f_copy)
+
+            c["findings"] = enriched_findings
+            c["is_resolved"] = True
+            c["resolved_in_commit"] = head_resolved_target
+        elif has_violations and not c_findings:
+            c["is_resolved"] = bool(head_scan_result == "passed")
+            c["resolved_in_commit"] = head_resolved_target if head_scan_result == "passed" else None
+        else:
+            c["is_resolved"] = False
+            c["resolved_in_commit"] = None
+
+    # Extra pass: collect findings from any historical scans in all_scans_for_pr
+    for sc in all_scans_for_pr:
+        sc_sha_clean = (sc.commit_sha or "")[:7].lower()
+        if sc.findings:
+            for f in sc.findings:
+                f_key = f"{f.file_path}:{f.line_number}:{f.rule_id}"
+                if (head_scan_result == "passed" or f_key not in head_finding_keys) and f_key not in seen_resolved_keys:
+                    seen_resolved_keys.add(f_key)
+                    f_res = serialize_pr_finding(f, commit_sha=sc.commit_sha)
+                    f_res["is_resolved"] = True
+                    f_res["status"] = "resolved"
+                    f_res["detected_in_commit"] = sc_sha_clean or "earlier"
+                    f_res["resolved_in_commit"] = head_resolved_target
+                    all_historical_findings.append(f_res)
+
+    # Backfill findings on any commit in annotated that had empty findings but was marked failed or matched sc_sha
+    for c in annotated:
+        c_sha = (c.get("sha") or "").lower()[:7]
+        c_full = (c.get("full_sha") or c.get("sha") or "").lower()
+        if not c.get("is_head") and (not c.get("findings") or len(c.get("findings", [])) == 0):
+            matched_f = [
+                f for f in all_historical_findings
+                if (f.get("detected_in_commit") or "").lower() == c_sha
+                or (c_full and f.get("detected_in_commit") and c_full.startswith((f.get("detected_in_commit") or "").lower()))
+                or (c_sha and f.get("detected_in_commit") and (f.get("detected_in_commit") or "").lower().startswith(c_sha))
+            ]
+            if not matched_f and (c.get("scan_result") in ("failed", "error") or c.get("total_findings", 0) > 0):
+                matched_f = all_historical_findings
+            if matched_f:
+                c["findings"] = matched_f
+                c["scan_result"] = "failed"
+                c["check_run_status"] = "failure"
+                c["total_findings"] = len(matched_f)
+                c["critical_findings"] = sum(1 for f in matched_f if f.get("severity") == "CRITICAL")
+                c["high_findings"] = sum(1 for f in matched_f if f.get("severity") == "HIGH")
+                c["is_resolved"] = True
+                c["resolved_in_commit"] = head_resolved_target
+
+    # If all_historical_findings exists, but no non-head commit was matched yet, attach to the most recent non-head commit
+    non_head_commits = [c for c in annotated if not c.get("is_head")]
+    if all_historical_findings and non_head_commits:
+        has_any_attached = any(c.get("findings") and len(c["findings"]) > 0 for c in non_head_commits)
+        if not has_any_attached:
+            target_commit = non_head_commits[-1]
+            target_commit["findings"] = all_historical_findings
+            target_commit["scan_result"] = "failed"
+            target_commit["check_run_status"] = "failure"
+            target_commit["total_findings"] = len(all_historical_findings)
+            target_commit["critical_findings"] = sum(1 for f in all_historical_findings if f.get("severity") == "CRITICAL")
+            target_commit["high_findings"] = sum(1 for f in all_historical_findings if f.get("severity") == "HIGH")
+            target_commit["is_resolved"] = True
+            target_commit["resolved_in_commit"] = head_resolved_target
+
+    has_resolved_violations = bool(len(all_historical_findings) > 0 and head_scan_result == "passed")
+
+    # Mark head commit resolution status
+    for c in annotated:
+        if c.get("is_head"):
+            c["resolves_prior_violations"] = has_resolved_violations
+            c["is_resolved"] = False
+            c["resolved_in_commit"] = None
+
+    return annotated, all_historical_findings, has_resolved_violations
+
+
+def annotate_pr_commits(
+    raw_commits: List[Dict[str, Any]],
+    scans_by_sha: Dict[str, Dict[str, Any]],
+    all_scans_for_pr: List[Scan],
+    fallback_scan: Optional[Scan] = None,
+    default_owner: str = "developer",
+    repo_full_name: str = "",
+) -> List[Dict[str, Any]]:
+    head_sha = fallback_scan.commit_sha if fallback_scan else "HEAD"
+    head_res = fallback_scan.scan_result if fallback_scan else "passed"
+    head_findings = [serialize_pr_finding(f) for f in fallback_scan.findings] if fallback_scan else []
+    annotated, _, _ = enrich_and_resolve_pr_commits(
+        raw_commits=raw_commits,
+        scans_by_sha=scans_by_sha,
+        head_sha=head_sha,
+        head_scan_result=head_res,
+        owner=default_owner,
+        repo_name=repo_full_name,
+        all_scans_for_pr=all_scans_for_pr,
+        serialized_head_findings=head_findings,
+    )
     return annotated
 
 
@@ -258,7 +426,9 @@ def fast_sync_repository_prs(db: Session, repo: Repository, background_tasks: Op
                     "html_url": f"https://github.com/{repo.full_name}/commit/{head_sha}" if head_sha != "HEAD" else html_url,
                 }
             ]
-            commits_json = json.dumps(fast_commits)
+
+            commits_list = fast_commits
+            commits_json = json.dumps(commits_list)
 
             if scan_for_head:
                 scan_for_head.pr_state = pr_state
@@ -267,7 +437,7 @@ def fast_sync_repository_prs(db: Session, repo: Repository, background_tasks: Op
                 scan_for_head.pr_title = title
                 scan_for_head.pr_author = author
                 scan_for_head.pr_html_url = html_url
-                if not scan_for_head.pr_commits_json or scan_for_head.pr_commits_json == "[]":
+                if not scan_for_head.pr_commits_json or scan_for_head.pr_commits_json == "[]" or len(commits_list) > 1:
                     scan_for_head.pr_commits_json = commits_json
                 if dt_merged:
                     scan_for_head.pr_merged_at = dt_merged
@@ -325,6 +495,7 @@ def build_annotated_pr_data(
     repo_name: str,
     owner: str,
     all_scans_for_pr: List[Scan],
+    repo_scans_cache: Optional[Dict[Tuple[str, str], Scan]] = None,
 ) -> Dict[str, Any]:
     check_status = "neutral"
     if s.scan_result == "passed":
@@ -338,11 +509,38 @@ def build_annotated_pr_data(
     pr_state = s.pr_state or ("merged" if s.pr_merged_at else ("closed" if s.pr_closed_at else "open"))
     serialized_findings = [serialize_pr_finding(f) for f in s.findings]
 
-    # Build scan runs list & map by commit sha
+    # Collect cached commits for this PR across all scans
+    raw_commits = []
+    seen_commit_shas = set()
+
+    def merge_commits_json(json_str: Optional[str]):
+        if not json_str:
+            return
+        try:
+            parsed = json.loads(json_str)
+            if isinstance(parsed, list):
+                for item in parsed:
+                    if isinstance(item, dict):
+                        c_sha = (item.get("sha") or item.get("full_sha") or "").lower()[:7]
+                        if c_sha and c_sha not in seen_commit_shas:
+                            seen_commit_shas.add(c_sha)
+                            raw_commits.append(item)
+        except Exception:
+            pass
+
+    # Merge commits from latest scan and all scans for this PR
+    if s.pr_commits_json:
+        merge_commits_json(s.pr_commits_json)
+    for sc in all_scans_for_pr:
+        if sc.pr_commits_json:
+            merge_commits_json(sc.pr_commits_json)
+
+    if raw_commits:
+        raw_commits.sort(key=lambda cm: cm.get("date") or "")
+
+    # Build scan runs list & map by commit sha (prioritizing scans with findings)
     scan_runs_list = []
     scans_by_sha: Dict[str, Dict[str, Any]] = {}
-    all_historical_findings = []
-    seen_finding_keys = set()
 
     for sc in all_scans_for_pr:
         sc_info = serialize_pr_scan_info(sc)
@@ -350,62 +548,63 @@ def build_annotated_pr_data(
 
         sha_val = (sc.commit_sha or "").lower()
         if sha_val:
-            scans_by_sha[sha_val] = sc_info
-            scans_by_sha[sha_val[:7]] = sc_info
+            for k in (sha_val, sha_val[:7]):
+                if k not in scans_by_sha:
+                    scans_by_sha[k] = sc_info
+                else:
+                    existing = scans_by_sha[k]
+                    if (sc_info["total_findings"] > existing["total_findings"]) or (
+                        sc_info["scan_result"] == "failed" and existing["scan_result"] != "failed"
+                    ):
+                        scans_by_sha[k] = sc_info
             if len(sha_val) >= 12:
-                scans_by_sha[sha_val[:12]] = sc_info
+                scans_by_sha[sha_val[:12]] = scans_by_sha[sha_val[:7]]
 
-        # Track historical findings across all runs of this PR
-        for f in sc_findings:
-            f_key = f"{f.get('file_path')}:{f.get('line_number')}:{f.get('rule_id')}"
-            if f_key not in seen_finding_keys:
-                seen_finding_keys.add(f_key)
-                f_annotated = dict(f)
-                f_annotated["commit_sha"] = sc.commit_sha[:7] if sc.commit_sha else "HEAD"
-                f_annotated["scan_id"] = sc.id
-                f_annotated["scan_result"] = sc.scan_result
-                if s.scan_result == "passed" and sc.id != s.id:
-                    f_annotated["is_resolved"] = True
-                all_historical_findings.append(f_annotated)
+    # Also match repository scans matching any commit sha in raw_commits (e.g. pushed before PR was created)
+    pr_commit_shas = {
+        (c.get("sha") or c.get("full_sha") or "")[:7].lower()
+        for c in raw_commits if c.get("sha") or c.get("full_sha")
+    }
+    missing_shas = [sha for sha in pr_commit_shas if sha and sha not in scans_by_sha]
+    if missing_shas:
+        matching_scans = []
+        if repo_scans_cache is not None:
+            for sha in missing_shas:
+                matched_sc = repo_scans_cache.get((s.repository_id, sha))
+                if matched_sc and matched_sc not in matching_scans:
+                    matching_scans.append(matched_sc)
+        else:
+            matching_scans = (
+                db.query(Scan)
+                .filter(
+                    Scan.repository_id == s.repository_id,
+                    or_(*[Scan.commit_sha.startswith(sha) for sha in missing_shas[:5]]),
+                )
+                .all()
+            )
+        for sc in matching_scans:
+            sc_sha = (sc.commit_sha or "").lower()
+            if sc_sha:
+                sc_info = serialize_pr_scan_info(sc)
+                for k in (sc_sha, sc_sha[:7]):
+                    if k not in scans_by_sha:
+                        scans_by_sha[k] = sc_info
+                    else:
+                        existing = scans_by_sha[k]
+                        if (sc_info["total_findings"] > existing["total_findings"]) or (
+                            sc_info["scan_result"] == "failed" and existing["scan_result"] != "failed"
+                        ):
+                            scans_by_sha[k] = sc_info
 
-    # Collect commits for this PR
-    raw_commits = []
-    for sc in all_scans_for_pr:
-        if sc.pr_commits_json:
-            try:
-                parsed = json.loads(sc.pr_commits_json)
-                if isinstance(parsed, list) and len(parsed) > len(raw_commits):
-                    raw_commits = parsed
-            except Exception:
-                pass
-
-    if not raw_commits and s.commit_sha:
-        short_sha = s.commit_sha[:7] if len(s.commit_sha) >= 7 else s.commit_sha
-        raw_commits = [
-            {
-                "sha": short_sha,
-                "full_sha": s.commit_sha,
-                "message": s.pr_title or f"Commit {short_sha} on #{pr_num}",
-                "author": s.pr_author or (owner or "developer"),
-                "author_avatar": None,
-                "date": s.created_at.isoformat() if s.created_at else None,
-                "html_url": s.pr_html_url or f"https://github.com/{repo_name}/commit/{s.commit_sha}",
-            }
-        ]
-
-    annotated_commits = annotate_pr_commits(
+    annotated_commits, all_historical_findings, has_resolved = enrich_and_resolve_pr_commits(
         raw_commits=raw_commits,
         scans_by_sha=scans_by_sha,
+        head_sha=s.commit_sha or "HEAD",
+        head_scan_result=s.scan_result or "passed",
+        owner=owner,
+        repo_name=repo_name,
         all_scans_for_pr=all_scans_for_pr,
-        fallback_scan=s,
-        default_owner=owner or "developer",
-        repo_full_name=repo_name,
-    )
-
-    # Check if a previous scan failed but current head scan passed
-    has_previous_failure = any(
-        sc.scan_result in ("failed", "error") or sc.critical_count > 0 or sc.high_count > 0
-        for sc in all_scans_for_pr if sc.id != s.id
+        serialized_head_findings=serialized_findings,
     )
 
     return {
@@ -433,7 +632,7 @@ def build_annotated_pr_data(
         "commits": annotated_commits,
         "scan_runs": scan_runs_list,
         "historical_findings": all_historical_findings,
-        "has_resolved_violations": bool(has_previous_failure and s.scan_result == "passed"),
+        "has_resolved_violations": has_resolved,
     }
 
 
@@ -449,10 +648,23 @@ def list_pull_requests(
     Aggregates all genuine PR scan records associated with user's monitored repositories.
     Automatically fast-syncs PRs from GitHub if a repository is newly connected with 0 PR scans.
     """
+    gh_handle = current_user.github_username.lower() if current_user.github_username else None
+    user_ids = [current_user.id]
+    if gh_handle:
+        for (uid,) in db.query(User.id).filter(func.lower(User.github_username) == gh_handle).all():
+            if uid not in user_ids:
+                user_ids.append(uid)
+
     if repository_id:
         target_repo = (
             db.query(Repository)
-            .filter(Repository.id == repository_id, Repository.user_id == current_user.id)
+            .filter(
+                Repository.id == repository_id,
+                or_(
+                    Repository.user_id.in_(user_ids),
+                    (func.lower(Repository.owner) == gh_handle) if gh_handle else False,
+                ),
+            )
             .first()
         )
         if target_repo:
@@ -463,30 +675,16 @@ def list_pull_requests(
             )
             if existing_count == 0:
                 fast_sync_repository_prs(db, target_repo)
-    else:
-        # Check only monitored repositories belonging to current_user
-        monitored_repos = (
-            db.query(Repository)
-            .filter(
-                Repository.is_monitored == True,
-                Repository.user_id == current_user.id,
-            )
-            .all()
-        )
-        for m_repo in monitored_repos:
-            has_scans = (
-                db.query(Scan)
-                .filter(Scan.repository_id == m_repo.id, Scan.pull_number.isnot(None))
-                .first()
-            )
-            if not has_scans:
-                fast_sync_repository_prs(db, m_repo)
 
     query = (
         db.query(Scan)
+        .options(joinedload(Scan.repository), selectinload(Scan.findings))
         .join(Repository)
         .filter(
-            Repository.user_id == current_user.id,
+            or_(
+                Repository.user_id.in_(user_ids),
+                (func.lower(Repository.owner) == gh_handle) if gh_handle else False,
+            ),
             Scan.pull_number.isnot(None),
         )
     )
@@ -496,40 +694,38 @@ def list_pull_requests(
     if state and state.lower() != "all":
         target_state = state.lower()
         if target_state == "merged":
-            query = query.filter(Scan.pr_state == "merged")
+            query = query.filter(or_(func.lower(Scan.pr_state) == "merged", Scan.pr_merged_at.isnot(None)))
         elif target_state == "closed":
-            query = query.filter(Scan.pr_state == "closed")
+            query = query.filter(or_(func.lower(Scan.pr_state) == "closed", and_(Scan.pr_closed_at.isnot(None), Scan.pr_merged_at.is_(None))))
         elif target_state == "open":
-            query = query.filter(or_(Scan.pr_state == "open", Scan.pr_state.is_(None)))
+            query = query.filter(and_(or_(func.lower(Scan.pr_state) == "open", Scan.pr_state.is_(None)), Scan.pr_merged_at.is_(None), Scan.pr_closed_at.is_(None)))
 
-    scans = query.order_by(Scan.created_at.desc()).limit(100).all()
+    scans = query.order_by(Scan.created_at.desc()).limit(500).all()
+
+    # Pre-index all scans by sha prefix to eliminate per-PR N+1 database queries
+    repo_scans_cache: Dict[Tuple[str, str], Scan] = {}
+    for sc in scans:
+        if sc.commit_sha:
+            s_clean = sc.commit_sha.lower()
+            repo_scans_cache[(sc.repository_id, s_clean[:7])] = sc
+            if len(s_clean) >= 12:
+                repo_scans_cache[(sc.repository_id, s_clean[:12])] = sc
+
+    scans_by_pr = {}
+    for s in scans:
+        pr_k = (s.repository_id, s.pull_number)
+        if pr_k not in scans_by_pr:
+            scans_by_pr[pr_k] = []
+        scans_by_pr[pr_k].append(s)
 
     pr_list = []
-    seen_prs = set()
-
-    for s in scans:
-        repo_name = s.repository.full_name if s.repository else "unknown"
+    for (repo_id, pr_num), pr_scans in scans_by_pr.items():
+        primary_scan = pr_scans[0]
+        repo_name = primary_scan.repository.full_name if primary_scan.repository else "unknown"
         owner, r_name = repo_name.split("/", 1) if "/" in repo_name else ("", repo_name)
-        pr_num = s.pull_number
-
-        pr_key = f"{repo_name}#{pr_num}"
-        # Keep latest scan as primary entry for each PR
-        if pr_key in seen_prs:
-            continue
-        seen_prs.add(pr_key)
-
-        # Query all historical scans for this repository & pull number
-        all_scans_for_pr = (
-            db.query(Scan)
-            .filter(
-                Scan.repository_id == s.repository_id,
-                Scan.pull_number == pr_num,
-            )
-            .order_by(Scan.created_at.desc())
-            .all()
+        pr_data = build_annotated_pr_data(
+            db, primary_scan, repo_name, owner, pr_scans, repo_scans_cache=repo_scans_cache
         )
-
-        pr_data = build_annotated_pr_data(db, s, repo_name, owner, all_scans_for_pr)
         pr_list.append(pr_data)
 
     # Ensure pull requests are always returned in ordered sequence (#1, #2, #3, ...)
@@ -549,8 +745,12 @@ def sync_pull_requests(
     Rapidly synchronize Pull Requests (open, merged, and closed) across monitored
     repositories, enqueuing security scans in the background.
     """
+    gh_handle = current_user.github_username.lower() if current_user.github_username else None
     repo_query = db.query(Repository).filter(
-        Repository.user_id == current_user.id,
+        or_(
+            Repository.user_id == current_user.id,
+            (func.lower(Repository.owner) == gh_handle) if gh_handle else False,
+        ),
         Repository.is_monitored == True,
     )
     if repository_id:
@@ -593,18 +793,54 @@ def get_pr_commits(
     inst_id = repo.installation.github_installation_id if repo.installation else None
     if not inst_id:
         from app.models.installation import GitHubInstallation
-        user_inst = db.query(GitHubInstallation).filter(GitHubInstallation.user_id == current_user.id).first()
+        gh_user = current_user.github_username.lower() if current_user.github_username else None
+        user_inst = db.query(GitHubInstallation).filter(
+            or_(
+                GitHubInstallation.user_id == current_user.id,
+                (func.lower(GitHubInstallation.account_name) == gh_user) if gh_user else False,
+            )
+        ).first()
         if user_inst:
             inst_id = user_inst.github_installation_id
 
     # Fetch live commits from GitHub
-    raw_commits = get_pull_request_commits(inst_id, owner, repo_name, pull_number)
+    raw_commits = get_pull_request_commits(inst_id, owner, repo_name, pull_number) or []
 
-    if not raw_commits and scan and scan.pr_commits_json:
+    # Merge with cached commits across all scans for this PR
+    seen_shas = {
+        (c.get("sha") or c.get("full_sha") or "")[:7].lower()
+        for c in raw_commits if c.get("sha") or c.get("full_sha")
+    }
+
+    if scan and scan.pr_commits_json:
         try:
-            raw_commits = json.loads(scan.pr_commits_json)
+            p = json.loads(scan.pr_commits_json)
+            if isinstance(p, list):
+                for item in p:
+                    if isinstance(item, dict):
+                        s_sha = (item.get("sha") or item.get("full_sha") or "").lower()[:7]
+                        if s_sha and s_sha not in seen_shas:
+                            seen_shas.add(s_sha)
+                            raw_commits.append(item)
         except Exception:
-            raw_commits = []
+            pass
+
+    for sc in all_scans_for_pr:
+        if sc.pr_commits_json:
+            try:
+                p = json.loads(sc.pr_commits_json)
+                if isinstance(p, list):
+                    for item in p:
+                        if isinstance(item, dict):
+                            s_sha = (item.get("sha") or item.get("full_sha") or "").lower()[:7]
+                            if s_sha and s_sha not in seen_shas:
+                                seen_shas.add(s_sha)
+                                raw_commits.append(item)
+            except Exception:
+                pass
+
+    if raw_commits:
+        raw_commits.sort(key=lambda cm: cm.get("date") or "")
 
     if not raw_commits and scan and scan.commit_sha:
         short_sha = scan.commit_sha[:7] if len(scan.commit_sha) >= 7 else scan.commit_sha
@@ -620,24 +856,96 @@ def get_pr_commits(
             }
         ]
 
-    # Map scans by sha
+    # Map scans by sha (including any repo scans for commits in this PR)
     scans_by_sha = {}
     for sc in all_scans_for_pr:
         sc_info = serialize_pr_scan_info(sc)
         sha_val = (sc.commit_sha or "").lower()
         if sha_val:
-            scans_by_sha[sha_val] = sc_info
-            scans_by_sha[sha_val[:7]] = sc_info
+            for k in (sha_val, sha_val[:7]):
+                if k not in scans_by_sha:
+                    scans_by_sha[k] = sc_info
+                else:
+                    existing = scans_by_sha[k]
+                    if (sc_info["total_findings"] > existing["total_findings"]) or (
+                        sc_info["scan_result"] == "failed" and existing["scan_result"] != "failed"
+                    ):
+                        scans_by_sha[k] = sc_info
             if len(sha_val) >= 12:
-                scans_by_sha[sha_val[:12]] = sc_info
+                scans_by_sha[sha_val[:12]] = scans_by_sha[sha_val[:7]]
 
-    annotated = annotate_pr_commits(
+    # Also check repo scans for commits matching raw_commits (e.g. pushed before PR was created)
+    pr_shas = {
+        (c.get("sha") or c.get("full_sha") or "")[:7].lower()
+        for c in raw_commits if c.get("sha") or c.get("full_sha")
+    }
+    if pr_shas:
+        repo_scans = (
+            db.query(Scan)
+            .filter(Scan.repository_id == repo.id)
+            .order_by(Scan.created_at.desc())
+            .limit(200)
+            .all()
+        )
+        for sc in repo_scans:
+            sc_sha = (sc.commit_sha or "").lower()
+            if sc_sha and (sc_sha[:7] in pr_shas or sc_sha in pr_shas):
+                sc_info = serialize_pr_scan_info(sc)
+                for k in (sc_sha, sc_sha[:7]):
+                    if k not in scans_by_sha:
+                        scans_by_sha[k] = sc_info
+                    else:
+                        existing = scans_by_sha[k]
+                        if (sc_info["total_findings"] > existing["total_findings"]) or (
+                            sc_info["scan_result"] == "failed" and existing["scan_result"] != "failed"
+                        ):
+                            scans_by_sha[k] = sc_info
+
+    # For commits without a local scan, check GitHub Check Runs
+    for c in raw_commits:
+        c_sha = (c.get("sha") or "")[:7].lower()
+        c_full = (c.get("full_sha") or c.get("sha") or "").lower()
+        if c_sha not in scans_by_sha and c_full not in scans_by_sha and c_full != "head":
+            try:
+                check_runs = get_commit_check_runs(inst_id, owner, repo_name, c_full)
+                for cr in check_runs:
+                    if cr.get("findings") or cr.get("conclusion") == "failure":
+                        cr_info = {
+                            "id": str(cr.get("id")),
+                            "commit_sha": c_sha,
+                            "full_commit_sha": c_full,
+                            "branch": scan.branch if scan else "main",
+                            "scan_status": "completed",
+                            "scan_result": "failed",
+                            "check_run_status": "failure",
+                            "total_findings": len(cr.get("findings", [])),
+                            "critical_findings": sum(1 for f in cr.get("findings", []) if f.get("severity") == "CRITICAL"),
+                            "high_findings": sum(1 for f in cr.get("findings", []) if f.get("severity") == "HIGH"),
+                            "medium_findings": sum(1 for f in cr.get("findings", []) if f.get("severity") == "MEDIUM"),
+                            "low_findings": sum(1 for f in cr.get("findings", []) if f.get("severity") == "LOW"),
+                            "score": 50,
+                            "created_at": None,
+                            "findings": cr.get("findings", []),
+                        }
+                        scans_by_sha[c_sha] = cr_info
+                        scans_by_sha[c_full] = cr_info
+                        break
+            except Exception:
+                pass
+
+    head_scan_res = scan.scan_result if scan else "passed"
+    head_sha_val = scan.commit_sha if scan else "HEAD"
+    serialized_head = [serialize_pr_finding(f) for f in scan.findings] if scan else []
+
+    annotated, _, _ = enrich_and_resolve_pr_commits(
         raw_commits=raw_commits,
         scans_by_sha=scans_by_sha,
+        head_sha=head_sha_val,
+        head_scan_result=head_scan_res,
+        owner=owner,
+        repo_name=repo_name,
         all_scans_for_pr=all_scans_for_pr,
-        fallback_scan=scan,
-        default_owner=repo.owner,
-        repo_full_name=repo.full_name,
+        serialized_head_findings=serialized_head,
     )
 
     if scan and annotated:

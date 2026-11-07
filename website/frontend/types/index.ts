@@ -2,7 +2,7 @@
 export type Severity = "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
 
 // ─── Finding ───────────────────────────────────────────────────────────────
-export type FindingStatus = "open" | "resolved" | "ignored";
+export type FindingStatus = "open" | "resolved" | "ignored" | "solved";
 
 export interface Finding {
   id: string;
@@ -20,6 +20,12 @@ export interface Finding {
   risk?: string;
   recommendation?: string;
   ignoreReason?: string;
+  commitSha?: string;
+  detectedInCommit?: string;
+  resolvedInCommit?: string;
+  isResolved?: boolean;
+  pullNumber?: number;
+  branch?: string;
 }
 
 // ─── Repository ────────────────────────────────────────────────────────────
@@ -100,6 +106,10 @@ export interface PRCommit {
   scanId?: string;
   findings?: PRFinding[];
   isHistorical?: boolean;
+  isHead?: boolean;
+  isResolved?: boolean;
+  resolvesPriorViolations?: boolean;
+  resolvedInCommit?: string;
 }
 
 export interface PRFinding {
@@ -115,6 +125,8 @@ export interface PRFinding {
   commitSha?: string;
   scanId?: string;
   isResolved?: boolean;
+  detectedInCommit?: string;
+  resolvedInCommit?: string;
 }
 
 export interface PRScanRun {
