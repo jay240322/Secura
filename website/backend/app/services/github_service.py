@@ -92,8 +92,18 @@ def create_app_jwt() -> str:
     return encoded_jwt
 
 
+_INSTALL_CACHE: Dict[int, Any] = {}
+
+
 def create_installation_token(installation_id: int) -> str:
-    """Exchange an App JWT for an installation access token."""
+    """Exchange an App JWT for an installation access token (cached for efficiency)."""
+    now = time.time()
+    cached = _INSTALL_CACHE.get(installation_id)
+    if cached:
+        tok_val, exp_time = cached
+        if now < exp_time - 120:  # 2 minute buffer
+            return tok_val
+
     app_jwt = create_app_jwt()
     url = f"{GITHUB_API_URL}/app/installations/{installation_id}/access_tokens"
 
@@ -121,6 +131,9 @@ def create_installation_token(installation_id: int) -> str:
     access_token = token_data.get("token")
     if not access_token:
         raise RuntimeError("GitHub did not return an installation access token")
+
+    # Cache token for 50 minutes (GitHub tokens last 60 minutes)
+    _INSTALL_CACHE[installation_id] = (access_token, now + 3000)
     return access_token
 
 
@@ -288,16 +301,12 @@ def get_open_pull_requests(
     return get_repository_pull_requests(installation_id, owner, repo, state="open")
 
 
-def get_pull_request_commits(
+def _get_github_auth_headers(
     installation_id: Optional[int],
     owner: str,
     repo: str,
-    pull_number: int,
-) -> List[Dict[str, Any]]:
-    """
-    Fetch all commits associated with a GitHub Pull Request.
-    Tries GitHub App installation token first, with automatic fallback to public API.
-    """
+) -> Dict[str, str]:
+    """Obtain standard headers for GitHub API requests with auto-discovery of installation tokens."""
     token = None
     if installation_id:
         try:
@@ -305,7 +314,6 @@ def get_pull_request_commits(
         except Exception as exc:
             logger.warning("Could not obtain installation token for %s: %s", installation_id, exc)
 
-    # If no installation token yet, try looking up installation via App JWT
     if not token:
         try:
             app_jwt = create_app_jwt()
@@ -333,7 +341,20 @@ def get_pull_request_commits(
     }
     if token:
         headers["Authorization"] = f"Bearer {token}"
+    return headers
 
+
+def get_pull_request_commits(
+    installation_id: Optional[int],
+    owner: str,
+    repo: str,
+    pull_number: int,
+) -> List[Dict[str, Any]]:
+    """
+    Fetch all commits associated with a GitHub Pull Request.
+    Tries GitHub App installation token first, with automatic fallback to public API.
+    """
+    headers = _get_github_auth_headers(installation_id, owner, repo)
     url = f"{GITHUB_API_URL}/repos/{owner}/{repo}/pulls/{pull_number}/commits"
     try:
         response = requests.get(
@@ -372,6 +393,191 @@ def get_pull_request_commits(
         return []
     except Exception as exc:
         logger.error("Failed to fetch PR commits for %s/%s #%s: %s", owner, repo, pull_number, exc)
+        return []
+
+
+def _make_check_run_finding(
+    f_id: str,
+    rule_id: str,
+    f_path: str,
+    line_no: int = 1,
+    severity: str = "HIGH",
+    risk: Optional[str] = None,
+    remediation: Optional[str] = None,
+    commit_sha: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Helper to build standardized finding dictionaries without code duplication."""
+    clean_rule = rule_id.strip() if rule_id else "SECRET"
+    clean_path = f_path.strip().strip("`") if f_path else "unknown"
+    upper_sev = (severity or "HIGH").upper()
+    valid_sev = upper_sev if upper_sev in ("CRITICAL", "HIGH", "MEDIUM", "LOW") else "HIGH"
+
+    return {
+        "id": f_id,
+        "rule_id": clean_rule,
+        "finding_type": "Secret",
+        "severity": valid_sev,
+        "file_path": clean_path,
+        "line_number": line_no,
+        "status": "open",
+        "risk": risk or f"Exposed {clean_rule} credential detected in source code",
+        "recommendation": remediation or "Remove secret from source code and revoke compromised credentials",
+        "commit_sha": commit_sha,
+        "detected_in_commit": commit_sha[:7] if commit_sha else None,
+        "is_resolved": False,
+        "resolved_in_commit": None,
+    }
+
+
+def get_commit_check_runs(
+    installation_id: Optional[int],
+    owner: str,
+    repo: str,
+    commit_sha: str,
+) -> List[Dict[str, Any]]:
+    """
+    Fetch GitHub Check Runs and annotations for a specific commit SHA.
+    Enables retrieving detections made by GitHub Actions or GitHub App for historical commits.
+    """
+    headers = _get_github_auth_headers(installation_id, owner, repo)
+    url = f"{GITHUB_API_URL}/repos/{owner}/{repo}/commits/{commit_sha}/check-runs"
+    try:
+        response = requests.get(url, headers=headers, params={"per_page": 50}, timeout=15)
+        if not response.ok:
+            return []
+        data = response.json()
+        runs = []
+        for cr in data.get("check_runs", []):
+            findings = []
+            run_id = cr.get("id")
+            output = cr.get("output") or {}
+            ann_count = output.get("annotations_count", 0)
+
+            if run_id and (ann_count > 0 or cr.get("conclusion") == "failure"):
+                ann_url = f"{GITHUB_API_URL}/repos/{owner}/{repo}/check-runs/{run_id}/annotations"
+                try:
+                    ann_resp = requests.get(ann_url, headers=headers, params={"per_page": 100}, timeout=10)
+                    if ann_resp.ok:
+                        for ann in ann_resp.json():
+                            level = (ann.get("annotation_level") or "failure").lower()
+                            sev = "CRITICAL" if level == "failure" else "HIGH"
+                            raw_msg = ann.get("message") or ""
+                            ann_title = ann.get("title") or "SECRET_DETECTED"
+                            ann_path = ann.get("path") or "unknown"
+                            ann_line = ann.get("start_line") or 1
+                            remed = (
+                                raw_msg.split("Remediation:")[-1].strip()
+                                if "Remediation:" in raw_msg
+                                else "Remove secret from source code and revoke compromised credentials"
+                            )
+                            findings.append(_make_check_run_finding(
+                                f_id=f"cr-{run_id}-{ann_line}-{ann_title}",
+                                rule_id=ann_title,
+                                f_path=ann_path,
+                                line_no=ann_line,
+                                severity=sev,
+                                risk=raw_msg.split("\n")[0] if raw_msg else "Detected sensitive secret in source code",
+                                remediation=remed,
+                                commit_sha=commit_sha,
+                            ))
+                except Exception as ann_err:
+                    logger.debug("Failed to fetch annotations for check run %s: %s", run_id, ann_err)
+
+                # Fallback: Parse findings directly from check run markdown summary or text
+                if not findings and cr.get("conclusion") == "failure":
+                    summary_text = (output.get("summary") or "") + "\n" + (output.get("text") or "")
+                    lines = [ln.strip() for ln in summary_text.splitlines() if ln.strip()]
+
+                    # Pattern 1: Secura list format: **[CRITICAL] AWS Access Key** in `app/config.py:12`
+                    for line in lines:
+                        if line.startswith("**[") and "** in " in line:
+                            prefix, _, target = line.partition("** in ")
+                            if prefix.startswith("**[") and "]" in prefix:
+                                sev_str, _, rule_name = prefix[3:].partition("]")
+                                target = target.strip().strip("`")
+                                path_part, _, line_part = target.rpartition(":")
+                                line_no = int(line_part) if line_part.isdigit() else 1
+                                file_target = path_part if line_part.isdigit() else target
+                                rule_clean = rule_name.strip()
+                                findings.append(_make_check_run_finding(
+                                    f_id=f"cr-parsed-{run_id}-{len(findings) + 1}-{rule_clean}",
+                                    rule_id=rule_clean,
+                                    f_path=file_target,
+                                    line_no=line_no,
+                                    severity=sev_str.strip(),
+                                    commit_sha=commit_sha,
+                                ))
+
+                    # Pattern 2: Table format: | CRITICAL | AWS Access Key | app/config.py:12 |
+                    if not findings:
+                        for line in lines:
+                            if line.startswith("|") and line.endswith("|"):
+                                parts = [p.strip() for p in line.split("|")[1:-1]]
+                                if len(parts) >= 3 and parts[0].upper() in ("CRITICAL", "HIGH", "MEDIUM", "LOW"):
+                                    sev_str = parts[0].upper()
+                                    rule_clean = parts[1]
+                                    target = parts[2].strip("`")
+                                    path_part, _, line_part = target.rpartition(":")
+                                    line_no = int(line_part) if line_part.isdigit() else 1
+                                    file_target = path_part if line_part.isdigit() else target
+                                    findings.append(_make_check_run_finding(
+                                        f_id=f"cr-table-{run_id}-{len(findings) + 1}-{rule_clean}",
+                                        rule_id=rule_clean,
+                                        f_path=file_target,
+                                        line_no=line_no,
+                                        severity=sev_str,
+                                        commit_sha=commit_sha,
+                                    ))
+
+                    # Pattern 3: Key-value pattern (e.g. Rule: AWS Access Key ... File: app/config.py:12)
+                    if not findings:
+                        cur_rule = None
+                        for line in lines:
+                            lower = line.lower()
+                            if lower.startswith(("rule:", "detector:", "secrettype:")):
+                                _, _, val = line.partition(":")
+                                cur_rule = val.strip()[:40]
+                            elif lower.startswith("file:") and cur_rule:
+                                _, _, val = line.partition(":")
+                                target = val.strip().strip("`")
+                                path_part, _, line_part = target.rpartition(":")
+                                line_no = int(line_part) if line_part.isdigit() else 1
+                                file_target = path_part if line_part.isdigit() else target
+                                findings.append(_make_check_run_finding(
+                                    f_id=f"cr-tool-{run_id}-{len(findings) + 1}-{cur_rule}",
+                                    rule_id=cur_rule,
+                                    f_path=file_target,
+                                    line_no=line_no,
+                                    severity="CRITICAL",
+                                    commit_sha=commit_sha,
+                                ))
+                                cur_rule = None
+
+                    # Fallback for failed check run
+                    if not findings:
+                        fallback_title = output.get("title") or cr.get("name") or "Security Gate: Blocked"
+                        findings.append(_make_check_run_finding(
+                            f_id=f"cr-fallback-{run_id}",
+                            rule_id="SECRET_DETECTED",
+                            f_path="security-gate",
+                            line_no=1,
+                            severity="CRITICAL",
+                            risk=fallback_title,
+                            commit_sha=commit_sha,
+                        ))
+
+            runs.append({
+                "id": cr.get("id"),
+                "name": cr.get("name"),
+                "status": cr.get("status"),
+                "conclusion": cr.get("conclusion"),
+                "title": output.get("title"),
+                "summary": output.get("summary"),
+                "findings": findings,
+            })
+        return runs
+    except Exception as exc:
+        logger.error("Failed to fetch check runs for %s/%s %s: %s", owner, repo, commit_sha, exc)
         return []
 
 

@@ -35,6 +35,24 @@ def _sanitize_and_prepare_user(db: Session, user: User) -> User:
         user.avatar_url = f"https://github.com/{user.github_username}.png"
         dirty = True
 
+    if user.github_username:
+        try:
+            from app.models.installation import GitHubInstallation
+            from app.models.repository import Repository
+            from sqlalchemy import func
+            gh_user = user.github_username.lower()
+            db.query(GitHubInstallation).filter(
+                func.lower(GitHubInstallation.account_name) == gh_user,
+                GitHubInstallation.user_id != user.id,
+            ).update({GitHubInstallation.user_id: user.id}, synchronize_session=False)
+            db.query(Repository).filter(
+                func.lower(Repository.owner) == gh_user,
+                Repository.user_id != user.id,
+            ).update({Repository.user_id: user.id}, synchronize_session=False)
+            db.commit()
+        except Exception:
+            db.rollback()
+
     if dirty:
         try:
             db.commit()

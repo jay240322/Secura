@@ -15,6 +15,9 @@ import {
   FileText,
   MapPin,
   ShieldAlert,
+  Check,
+  Sparkles,
+  ExternalLink,
 } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
@@ -113,6 +116,12 @@ function FindingDetailContent() {
               <span className="text-xs text-slate-600 dark:text-zinc-400 font-mono bg-slate-100 dark:bg-zinc-800 px-2 py-0.5 rounded border border-slate-200 dark:border-zinc-700">
                 {finding.ruleId}
               </span>
+              {(finding.status === "resolved" || finding.isResolved) && (
+                <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 flex items-center gap-1">
+                  <Check className="h-3 w-3" />
+                  <span>Solved in commit {finding.resolvedInCommit || "latest commit"}</span>
+                </span>
+              )}
             </div>
             <h1 className="text-xl font-bold text-slate-900 dark:text-zinc-100">{finding.type}</h1>
             <div className="mt-2 flex items-center gap-2 text-xs text-slate-500 dark:text-zinc-400">
@@ -126,6 +135,29 @@ function FindingDetailContent() {
           </div>
         </div>
       </Card>
+
+      {/* Solved Banner */}
+      {(finding.status === "resolved" || finding.isResolved) && (
+        <div className="p-4 rounded-xl border border-emerald-200 dark:border-emerald-900/60 bg-emerald-50/70 dark:bg-emerald-950/30 text-xs text-emerald-800 dark:text-emerald-300 flex items-start gap-3 shadow-2xs">
+          <Check className="h-5 w-5 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <p className="font-bold text-slate-900 dark:text-white text-sm">
+              Secret Solved & Verified Clean!
+            </p>
+            <p className="text-xs leading-relaxed text-emerald-800 dark:text-emerald-300">
+              This secret was detected in commit{" "}
+              <code className="font-mono bg-emerald-100 dark:bg-emerald-900/60 px-1.5 py-0.5 rounded font-bold text-rose-700 dark:text-rose-400">
+                {finding.detectedInCommit || (finding.commitSha ? finding.commitSha.slice(0, 7) : "prior commit")}
+              </code>{" "}
+              and successfully removed in commit{" "}
+              <code className="font-mono bg-emerald-100 dark:bg-emerald-900/60 px-1.5 py-0.5 rounded font-bold text-emerald-700 dark:text-emerald-300">
+                {finding.resolvedInCommit || "latest commit"}
+              </code>
+              . Secura scanner verified that the violation has been completely eliminated.
+            </p>
+          </div>
+        </div>
+      )}
 
       <div className="grid gap-5 lg:grid-cols-3">
         {/* Main content */}
@@ -292,6 +324,42 @@ function FindingDetailContent() {
                   <dt className="text-slate-500 dark:text-zinc-400 mb-0.5">Rule ID</dt>
                   <dd className="text-slate-800 dark:text-zinc-200 font-mono font-medium">{finding.ruleId}</dd>
                 </div>
+                {(finding.detectedInCommit || finding.commitSha) && (
+                  <div>
+                    <dt className="text-slate-500 dark:text-zinc-400 mb-0.5">Detected in commit</dt>
+                    <dd className="font-mono font-bold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 px-1.5 py-0.5 rounded border border-rose-200 dark:border-rose-900/40 inline-block">
+                      {finding.detectedInCommit || (finding.commitSha ? finding.commitSha.slice(0, 7) : "—")}
+                    </dd>
+                  </div>
+                )}
+                {(finding.status === "resolved" || finding.isResolved) && (
+                  <div>
+                    <dt className="text-slate-500 dark:text-zinc-400 mb-0.5">Solved in commit</dt>
+                    <dd className="font-mono font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-1.5 py-0.5 rounded border border-emerald-200 dark:border-emerald-900/40 inline-block">
+                      {finding.resolvedInCommit || "latest commit"}
+                    </dd>
+                  </div>
+                )}
+                {finding.pullNumber && (
+                  <div>
+                    <dt className="text-slate-500 dark:text-zinc-400 mb-0.5">Pull Request</dt>
+                    <dd>
+                      <Link
+                        href={`/pull-requests?repo=${encodeURIComponent(finding.repository)}`}
+                        className="text-blue-600 dark:text-blue-400 hover:underline font-mono font-bold inline-flex items-center gap-1"
+                      >
+                        PR #{finding.pullNumber}
+                        <ExternalLink className="h-3 w-3" />
+                      </Link>
+                    </dd>
+                  </div>
+                )}
+                {finding.branch && (
+                  <div>
+                    <dt className="text-slate-500 dark:text-zinc-400 mb-0.5">Branch</dt>
+                    <dd className="text-slate-800 dark:text-zinc-200 font-mono font-medium">{finding.branch}</dd>
+                  </div>
+                )}
               </dl>
             </CardContent>
           </Card>

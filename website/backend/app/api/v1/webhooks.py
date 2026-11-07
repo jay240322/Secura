@@ -8,6 +8,7 @@ from app.core.database import SessionLocal
 from app.models.finding import Finding
 from app.models.installation import GitHubInstallation
 from app.models.repository import Repository
+from app.models.scan import Scan
 from app.models.user import User
 from app.services.github_service import verify_webhook_signature
 from app.services.scan_runner import (
@@ -352,6 +353,44 @@ async def github_webhook(
                 return {"status": "enqueued", "event": "push", "branch": branch, "commit": after_sha}
 
             return {"status": "ignored", "event": "push", "branch": branch}
+
+        # 6. Check Run event (from GitHub Actions / Secura Security Gate)
+        if x_github_event == "check_run":
+            cr_data = payload.get("check_run", {})
+            repo_data = payload.get("repository", {})
+            full_name = repo_data.get("full_name")
+            head_sha = cr_data.get("head_sha")
+            conclusion = cr_data.get("conclusion")
+            pull_requests_list = cr_data.get("pull_requests") or []
+            pr_num = pull_requests_list[0].get("number") if pull_requests_list else None
+
+            repo = db.query(Repository).filter(Repository.full_name == full_name).first()
+            if repo and head_sha:
+                target_sha = head_sha[:12] if len(head_sha) >= 12 else head_sha
+                scan = (
+                    db.query(Scan)
+                    .filter(Scan.repository_id == repo.id, Scan.commit_sha == target_sha)
+                    .first()
+                )
+                if not scan:
+                    scan = Scan(
+                        repository_id=repo.id,
+                        commit_sha=target_sha,
+                        branch="main",
+                        pull_number=pr_num,
+                        scan_status="completed",
+                        scan_result="passed" if conclusion == "success" else "failed",
+                        score=100 if conclusion == "success" else 50,
+                    )
+                    db.add(scan)
+                    db.commit()
+                else:
+                    if pr_num and not scan.pull_number:
+                        scan.pull_number = pr_num
+                    if conclusion:
+                        scan.scan_result = "passed" if conclusion == "success" else "failed"
+                    db.commit()
+                return {"status": "recorded", "event": "check_run", "commit": head_sha}
 
         return {"status": "ignored", "event": x_github_event}
 

@@ -168,6 +168,21 @@ async def github_webhook(
     installation_token = None
     owner, repo = repository_name.split("/", 1)
 
+    def _fail_check_run(fail_title: str, fail_summary: str):
+        if check_run_id and installation_token:
+            try:
+                update_check_run(
+                    installation_token=installation_token,
+                    owner=owner,
+                    repo=repo,
+                    check_run_id=check_run_id,
+                    conclusion="failure",
+                    title=fail_title,
+                    summary=fail_summary,
+                )
+            except Exception:
+                pass
+
     try:
         logger.info(
             "Creating installation token for %s",
@@ -311,26 +326,16 @@ async def github_webhook(
     except HTTPException:
         raise
 
-    except RequestException as exc:
+    except RequestException:
         logger.exception(
             "GitHub API request failed for %s PR #%s",
             repository_name,
             pull_number,
         )
-        if check_run_id and installation_token:
-            try:
-                update_check_run(
-                    installation_token=installation_token,
-                    owner=owner,
-                    repo=repo,
-                    check_run_id=check_run_id,
-                    conclusion="failure",
-                    title="Secura Security Gate: API error",
-                    summary="GitHub API request failed during the security scan.",
-                )
-            except Exception:
-                pass
-
+        _fail_check_run(
+            "Secura Security Gate: API error",
+            "GitHub API request failed during the security scan.",
+        )
         raise HTTPException(
             status_code=502,
             detail="Unable to complete GitHub API request",
@@ -342,20 +347,10 @@ async def github_webhook(
             repository_name,
             pull_number,
         )
-        if check_run_id and installation_token:
-            try:
-                update_check_run(
-                    installation_token=installation_token,
-                    owner=owner,
-                    repo=repo,
-                    check_run_id=check_run_id,
-                    conclusion="failure",
-                    title="Secura Security Gate: Scan error",
-                    summary=f"An unexpected error occurred during scan: {exc}",
-                )
-            except Exception:
-                pass
-
+        _fail_check_run(
+            "Secura Security Gate: Scan error",
+            f"An unexpected error occurred during scan: {exc}",
+        )
         raise HTTPException(
             status_code=500,
             detail="Unexpected error during Secura scan",

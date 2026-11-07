@@ -15,45 +15,22 @@ def get_engine():
     if db_url.startswith("postgres://"):
         db_url = db_url.replace("postgres://", "postgresql://", 1)
 
-    sqlite_url = f"sqlite:///{BASE_DIR}/secura.db"
+    clean_db_url = db_url.replace("&channel_binding=require", "").replace("?channel_binding=require", "")
 
-    # If configured for PostgreSQL, test the connection
-    if not db_url.startswith("sqlite"):
-        try:
-            # Clean connection string if needed
-            clean_db_url = db_url.replace("&channel_binding=require", "").replace("?channel_binding=require", "")
-            logger.info("Attempting connection to PostgreSQL...")
-            pg_engine = create_engine(
-                clean_db_url,
-                pool_pre_ping=True,
-                pool_recycle=300,
-                connect_args={"connect_timeout": 5},
-            )
-            with pg_engine.connect() as conn:
-                conn.execute(text("SELECT 1"))
-            logger.info("Successfully connected to PostgreSQL database.")
-            return pg_engine
-        except Exception as exc:
-            logger.warning(
-                f"⚠️ PostgreSQL connection failed ({exc}). "
-                f"Falling back to local SQLite at {sqlite_url}"
-            )
-            eng = create_engine(
-                sqlite_url,
-                connect_args={"check_same_thread": False, "timeout": 30.0},
-            )
-            @event.listens_for(eng, "connect")
-            def set_sqlite_pragma(dbapi_connection, connection_record):
-                cursor = dbapi_connection.cursor()
-                try:
-                    cursor.execute("PRAGMA journal_mode=WAL")
-                    cursor.execute("PRAGMA busy_timeout=10000")
-                finally:
-                    cursor.close()
-            return eng
+    if clean_db_url.startswith("postgresql"):
+        logger.info("Connecting to Neon PostgreSQL database...")
+        return create_engine(
+            clean_db_url,
+            pool_pre_ping=True,
+            pool_recycle=300,
+            pool_size=10,
+            max_overflow=20,
+            connect_args={"connect_timeout": 30},
+        )
     else:
+        logger.info("Using SQLite database: %s", clean_db_url)
         eng = create_engine(
-            db_url,
+            clean_db_url,
             connect_args={"check_same_thread": False, "timeout": 30.0},
         )
         @event.listens_for(eng, "connect")
@@ -68,32 +45,81 @@ def get_engine():
 
 
 def ensure_db_schema(target_engine):
-    """Ensure all tables and new columns exist across SQLite and PostgreSQL."""
+    """Ensure all tables and columns exist across SQLite and PostgreSQL."""
     try:
         Base.metadata.create_all(bind=target_engine)
-        new_columns = [
-            ("pull_number", "INTEGER"),
-            ("pr_title", "VARCHAR(255)"),
-            ("pr_author", "VARCHAR(100)"),
-            ("pr_html_url", "VARCHAR(512)"),
-            ("base_branch", "VARCHAR(100)"),
-            ("pr_state", "VARCHAR(32) DEFAULT 'open'"),
-            ("pr_merged_at", "DATETIME"),
-            ("pr_closed_at", "DATETIME"),
-            ("pr_commits_json", "TEXT"),
-        ]
-        with target_engine.connect() as conn:
-            for col_name, col_type in new_columns:
+        is_pg = target_engine.dialect.name == "postgresql"
+
+        if is_pg:
+            with target_engine.connect() as conn:
                 try:
-                    conn.execute(text(f"ALTER TABLE scans ADD COLUMN {col_name} {col_type}"))
+                    conn.execute(text("""
+                        ALTER TABLE scans 
+                            ADD COLUMN IF NOT EXISTS pull_number INTEGER,
+                            ADD COLUMN IF NOT EXISTS pr_title VARCHAR(255),
+                            ADD COLUMN IF NOT EXISTS pr_author VARCHAR(100),
+                            ADD COLUMN IF NOT EXISTS pr_html_url VARCHAR(512),
+                            ADD COLUMN IF NOT EXISTS base_branch VARCHAR(100),
+                            ADD COLUMN IF NOT EXISTS pr_state VARCHAR(32) DEFAULT 'open',
+                            ADD COLUMN IF NOT EXISTS pr_merged_at TIMESTAMP,
+                            ADD COLUMN IF NOT EXISTS pr_closed_at TIMESTAMP,
+                            ADD COLUMN IF NOT EXISTS pr_commits_json TEXT;
+                        ALTER TABLE users 
+                            ADD COLUMN IF NOT EXISTS github_access_token VARCHAR(512),
+                            ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255),
+                            ADD COLUMN IF NOT EXISTS provider VARCHAR(32) DEFAULT 'github';
+                        ALTER TABLE findings 
+                            ALTER COLUMN rule_id TYPE VARCHAR(512),
+                            ALTER COLUMN fingerprint TYPE VARCHAR(255),
+                            ALTER COLUMN finding_type TYPE VARCHAR(255);
+                        CREATE INDEX IF NOT EXISTS idx_scans_repo_created ON scans (repository_id, created_at DESC);
+                        CREATE INDEX IF NOT EXISTS idx_scans_repo_pull ON scans (repository_id, pull_number);
+                        CREATE INDEX IF NOT EXISTS idx_findings_repo_status ON findings (repository_id, status);
+                        CREATE INDEX IF NOT EXISTS idx_findings_scan_id ON findings (scan_id);
+                    """))
                     conn.commit()
                 except Exception:
-                    pass
-            try:
-                conn.execute(text("ALTER TABLE users ADD COLUMN github_access_token VARCHAR(512)"))
-                conn.commit()
-            except Exception:
-                pass
+                    try:
+                        conn.rollback()
+                    except Exception:
+                        pass
+        else:
+            timestamp_type = "DATETIME"
+            new_scan_columns = [
+                ("pull_number", "INTEGER"),
+                ("pr_title", "VARCHAR(255)"),
+                ("pr_author", "VARCHAR(100)"),
+                ("pr_html_url", "VARCHAR(512)"),
+                ("base_branch", "VARCHAR(100)"),
+                ("pr_state", "VARCHAR(32) DEFAULT 'open'"),
+                ("pr_merged_at", timestamp_type),
+                ("pr_closed_at", timestamp_type),
+                ("pr_commits_json", "TEXT"),
+            ]
+            with target_engine.connect() as conn:
+                for col_name, col_type in new_scan_columns:
+                    try:
+                        conn.execute(text(f"ALTER TABLE scans ADD COLUMN {col_name} {col_type}"))
+                        conn.commit()
+                    except Exception:
+                        try:
+                            conn.rollback()
+                        except Exception:
+                            pass
+                user_columns = [
+                    ("github_access_token", "VARCHAR(512)"),
+                    ("password_hash", "VARCHAR(255)"),
+                    ("provider", "VARCHAR(32) DEFAULT 'github'"),
+                ]
+                for col_name, col_type in user_columns:
+                    try:
+                        conn.execute(text(f"ALTER TABLE users ADD COLUMN {col_name} {col_type}"))
+                        conn.commit()
+                    except Exception:
+                        try:
+                            conn.rollback()
+                        except Exception:
+                            pass
     except Exception as exc:
         logger.warning("Database schema check warning: %s", exc)
 
@@ -101,7 +127,6 @@ def ensure_db_schema(target_engine):
 engine = get_engine()
 ensure_db_schema(engine)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
 
 
 def get_db():
@@ -114,4 +139,3 @@ def get_db():
         raise
     finally:
         db.close()
-

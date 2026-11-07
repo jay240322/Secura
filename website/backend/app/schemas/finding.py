@@ -25,6 +25,12 @@ class FindingResponse(FindingBase):
     repository_name: Optional[str] = None
     status: str
     ignore_reason: Optional[str] = None
+    commit_sha: Optional[str] = None
+    detected_in_commit: Optional[str] = None
+    resolved_in_commit: Optional[str] = None
+    is_resolved: Optional[bool] = False
+    pull_number: Optional[int] = None
+    branch: Optional[str] = None
     first_detected: datetime.datetime
     last_detected: datetime.datetime
     created_at: datetime.datetime

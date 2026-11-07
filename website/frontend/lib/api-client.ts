@@ -39,15 +39,85 @@ export const DEFAULT_SUMMARY: DashboardSummary = {
 
 // ─── Data Mappers (snake_case Backend -> camelCase Frontend) ─────────────────
 
+const repoCache = new Map<string, Repository>();
+
+function initRepoCache() {
+  if (typeof window !== "undefined") {
+    try {
+      const stored = localStorage.getItem("secura_cached_repos");
+      if (stored) {
+        const list: Repository[] = JSON.parse(stored);
+        list.forEach((r) => {
+          if (r.id) repoCache.set(r.id.toLowerCase(), r);
+          if (r.name) repoCache.set(r.name.toLowerCase(), r);
+          if (r.fullName) repoCache.set(r.fullName.toLowerCase(), r);
+        });
+      }
+    } catch {}
+  }
+}
+initRepoCache();
+
+function registerRepoInCache(r: Repository) {
+  if (!r) return;
+  if (r.id) repoCache.set(r.id.toLowerCase(), r);
+  if (r.name) repoCache.set(r.name.toLowerCase(), r);
+  if (r.fullName) repoCache.set(r.fullName.toLowerCase(), r);
+  if (typeof window !== "undefined") {
+    try {
+      const uniqueList = Array.from(new Set(Array.from(repoCache.values())));
+      localStorage.setItem("secura_cached_repos", JSON.stringify(uniqueList));
+    } catch {}
+  }
+}
+
+export function cleanRepoDisplay(nameOrId?: unknown, fallbackRepoId?: unknown): string {
+  const str = String(nameOrId || "").trim();
+  const fId = String(fallbackRepoId || "").trim();
+
+  if (fId && repoCache.has(fId.toLowerCase())) {
+    return repoCache.get(fId.toLowerCase())!.name;
+  }
+  if (str && repoCache.has(str.toLowerCase())) {
+    return repoCache.get(str.toLowerCase())!.name;
+  }
+
+  const isIdLike =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str) ||
+    str.startsWith("repo-") ||
+    str.length >= 32;
+
+  if (isIdLike) {
+    if (str.startsWith("repo-")) {
+      const parts = str.split("-");
+      if (parts.length > 2) {
+        return parts.slice(2).join("-");
+      }
+    }
+    return "Repository";
+  }
+
+  if (str.includes("/")) {
+    const parts = str.split("/");
+    const lastPart = parts[parts.length - 1];
+    if (lastPart) return lastPart;
+  }
+
+  return str || "Repository";
+}
+
 function mapBackendFinding(f: Record<string, unknown>): Finding {
+  const repId = String(f.repository_id || f.repositoryId || "");
+  const repName = cleanRepoDisplay(f.repository_name || f.repository, repId);
+
   return {
     id: String(f.id ?? ""),
     ruleId: String(f.rule_id || f.ruleId || ""),
     type: String(f.finding_type || f.type || "Security Finding"),
     severity: (f.severity as Severity) || "MEDIUM",
     status: (f.status as FindingStatus) || "open",
-    repository: String(f.repository_name || f.repository || "Unknown Repository"),
-    repositoryId: String(f.repository_id || f.repositoryId || ""),
+    repository: repName,
+    repositoryId: repId,
     filePath: String(f.file_path || f.filePath || "unknown"),
     lineNumber: Number(f.line_number || f.lineNumber || 1),
     firstDetected: String(f.first_detected || f.firstDetected || new Date().toISOString()),
@@ -56,6 +126,12 @@ function mapBackendFinding(f: Record<string, unknown>): Finding {
     risk: f.risk ? String(f.risk) : "",
     recommendation: f.recommendation ? String(f.recommendation) : "",
     ignoreReason: f.ignore_reason ? String(f.ignore_reason) : (f.ignoreReason ? String(f.ignoreReason) : undefined),
+    commitSha: f.commit_sha ? String(f.commit_sha) : (f.commitSha ? String(f.commitSha) : undefined),
+    detectedInCommit: f.detected_in_commit ? String(f.detected_in_commit) : (f.detectedInCommit ? String(f.detectedInCommit) : (f.commit_sha ? String(f.commit_sha) : undefined)),
+    resolvedInCommit: f.resolved_in_commit ? String(f.resolved_in_commit) : (f.resolvedInCommit ? String(f.resolvedInCommit) : undefined),
+    isResolved: Boolean(f.is_resolved ?? f.isResolved ?? (f.status === "resolved" || f.status === "solved")),
+    pullNumber: f.pull_number !== undefined && f.pull_number !== null ? Number(f.pull_number) : (f.pullNumber !== undefined && f.pullNumber !== null ? Number(f.pullNumber) : undefined),
+    branch: f.branch ? String(f.branch) : undefined,
   };
 }
 
@@ -67,7 +143,7 @@ function mapBackendRepository(r: Record<string, unknown>): Repository {
     ? Number(r.score)
     : Math.max(0, 100 - (crit * 30 + high * 20));
 
-  return {
+  const repoObj: Repository = {
     id: String(r.id ?? ""),
     name: String(r.name ?? ""),
     fullName: String(r.full_name || r.fullName || r.name || ""),
@@ -85,13 +161,18 @@ function mapBackendRepository(r: Record<string, unknown>): Repository {
     githubInstallationId: r.github_installation_id ? Number(r.github_installation_id) : undefined,
     githubAppUrl: r.github_app_url ? String(r.github_app_url) : "https://github.com/apps/secura-security-scanner",
   };
+  registerRepoInCache(repoObj);
+  return repoObj;
 }
 
 function mapBackendScan(s: Record<string, unknown>): Scan {
+  const repId = String(s.repository_id || s.repositoryId || "");
+  const repName = cleanRepoDisplay(s.repository_name || s.repository, repId);
+
   return {
     id: String(s.id ?? ""),
-    repositoryId: String(s.repository_id || s.repositoryId || ""),
-    repository: String(s.repository_name || s.repository || "Repository"),
+    repositoryId: repId,
+    repository: repName,
     branch: String(s.branch || "main"),
     commitSha: String(s.commit_sha || s.commitSha || "HEAD"),
     status: (s.scan_status as "running" | "completed" | "failed") || (s.status as "running" | "completed" | "failed") || "completed",
@@ -160,19 +241,62 @@ export function mapBackendUser(u: any): User {
 }
 
 function mapBackendFindingItem(f: any): PRFinding {
+  const rule = String(f.rule_id || f.ruleId || "SECRET");
+  const path = String(f.file_path || f.filePath || "");
+  const line = Number(f.line_number || f.lineNumber || 1);
+  const fid = f.id ? String(f.id) : `${rule}-${path}-${line}`;
+
   return {
-    id: String(f.id || ""),
-    ruleId: String(f.rule_id || f.ruleId || ""),
+    id: fid,
+    ruleId: rule,
     findingType: String(f.finding_type || f.findingType || "Secret"),
     severity: (String(f.severity || "MEDIUM").toUpperCase()) as any,
-    filePath: String(f.file_path || f.filePath || ""),
-    lineNumber: Number(f.line_number || f.lineNumber || 1),
+    filePath: path,
+    lineNumber: line,
     status: f.status ? String(f.status) : "open",
     risk: f.risk ? String(f.risk) : undefined,
     recommendation: f.recommendation ? String(f.recommendation) : undefined,
     commitSha: f.commit_sha ? String(f.commit_sha) : undefined,
     scanId: f.scan_id ? String(f.scan_id) : undefined,
-    isResolved: Boolean(f.is_resolved),
+    isResolved: Boolean(f.is_resolved || f.isResolved || f.status === "resolved"),
+    detectedInCommit: f.detected_in_commit
+      ? String(f.detected_in_commit)
+      : f.detectedInCommit
+      ? String(f.detectedInCommit)
+      : f.commit_sha
+      ? String(f.commit_sha).slice(0, 7)
+      : undefined,
+    resolvedInCommit: f.resolved_in_commit
+      ? String(f.resolved_in_commit)
+      : f.resolvedInCommit
+      ? String(f.resolvedInCommit)
+      : undefined,
+  };
+}
+
+function mapBackendPRCommit(c: any): PRCommit {
+  return {
+    sha: String(c.sha || "HEAD"),
+    fullSha: c.full_sha ? String(c.full_sha) : (c.sha ? String(c.sha) : undefined),
+    message: String(c.message || "Commit update"),
+    author: String(c.author || "developer"),
+    authorAvatar: c.author_avatar ? String(c.author_avatar) : null,
+    date: c.date ? String(c.date) : null,
+    htmlUrl: c.html_url ? String(c.html_url) : undefined,
+    scanResult: (c.scan_result as any) ?? null,
+    scanStatus: c.scan_status ? String(c.scan_status) : undefined,
+    checkRunStatus: (c.check_run_status as any) || (c.scan_result === "passed" ? "success" : (c.scan_result ? "failure" : "neutral")),
+    totalFindings: Number(c.total_findings ?? 0),
+    criticalFindings: Number(c.critical_findings ?? 0),
+    highFindings: Number(c.high_findings ?? 0),
+    score: c.score !== undefined ? Number(c.score) : undefined,
+    scanId: c.scan_id ? String(c.scan_id) : undefined,
+    findings: Array.isArray(c.findings) ? c.findings.map(mapBackendFindingItem) : [],
+    isHistorical: Boolean(c.is_historical),
+    isHead: Boolean(c.is_head ?? c.isHead),
+    isResolved: Boolean(c.is_resolved ?? c.isResolved),
+    resolvesPriorViolations: Boolean(c.resolves_prior_violations ?? c.resolvesPriorViolations),
+    resolvedInCommit: c.resolved_in_commit ? String(c.resolved_in_commit) : (c.resolvedInCommit ? String(c.resolvedInCommit) : undefined),
   };
 }
 
@@ -182,17 +306,20 @@ function mapBackendPullRequest(p: Record<string, unknown>): PullRequest {
   const scanRunsRaw = Array.isArray(p.scan_runs) ? p.scan_runs : [];
   const histFindingsRaw = Array.isArray(p.historical_findings) ? p.historical_findings : [];
 
+  const repId = String(p.repository_id || p.repositoryId || "");
+  const repName = cleanRepoDisplay(p.repository_name || p.repository, repId);
+
   return {
     id: String(p.id ?? ""),
     number: Number(p.number || 1),
     title: String(p.title || "Pull Request"),
-    repository: String(p.repository_name || p.repository || "Repository"),
-    repositoryId: String(p.repository_id || p.repositoryId || ""),
+    repository: repName,
+    repositoryId: repId,
     branch: String(p.branch || "main"),
     baseBranch: String(p.base_branch || p.baseBranch || "main"),
     commitSha: String(p.commit_sha || p.commitSha || "HEAD"),
     author: String(p.author || "developer"),
-    state: (p.state as "open" | "merged" | "closed") || (p.merged_at ? "merged" : (p.closed_at ? "closed" : "open")),
+    state: (String(p.state || (p.merged_at ? "merged" : (p.closed_at ? "closed" : "open"))).toLowerCase() as "open" | "merged" | "closed"),
     mergedAt: p.merged_at ? String(p.merged_at) : (p.mergedAt ? String(p.mergedAt) : null),
     closedAt: p.closed_at ? String(p.closed_at) : (p.closedAt ? String(p.closedAt) : null),
     scanStatus: (p.scan_status as "pending" | "running" | "completed" | "failed") || (p.scanStatus as "pending" | "running" | "completed" | "failed") || "completed",
@@ -204,25 +331,7 @@ function mapBackendPullRequest(p: Record<string, unknown>): PullRequest {
     createdAt: String(p.created_at || p.createdAt || new Date().toISOString()),
     htmlUrl: String(p.html_url || p.htmlUrl || "https://github.com"),
     findings: findingsRaw.map(mapBackendFindingItem),
-    commits: commitsRaw.map((c: any) => ({
-      sha: String(c.sha || "HEAD"),
-      fullSha: c.full_sha ? String(c.full_sha) : (c.sha ? String(c.sha) : undefined),
-      message: String(c.message || "Commit update"),
-      author: String(c.author || "developer"),
-      authorAvatar: c.author_avatar ? String(c.author_avatar) : null,
-      date: c.date ? String(c.date) : null,
-      htmlUrl: c.html_url ? String(c.html_url) : undefined,
-      scanResult: (c.scan_result as any) ?? null,
-      scanStatus: c.scan_status ? String(c.scan_status) : undefined,
-      checkRunStatus: (c.check_run_status as any) || (c.scan_result === "passed" ? "success" : (c.scan_result ? "failure" : "neutral")),
-      totalFindings: Number(c.total_findings ?? 0),
-      criticalFindings: Number(c.critical_findings ?? 0),
-      highFindings: Number(c.high_findings ?? 0),
-      score: c.score !== undefined ? Number(c.score) : undefined,
-      scanId: c.scan_id ? String(c.scan_id) : undefined,
-      findings: Array.isArray(c.findings) ? c.findings.map(mapBackendFindingItem) : [],
-      isHistorical: Boolean(c.is_historical),
-    })),
+    commits: commitsRaw.map(mapBackendPRCommit),
     scanRuns: scanRunsRaw.map((r: any) => ({
       id: String(r.id || ""),
       commitSha: String(r.commit_sha || "HEAD"),
@@ -347,14 +456,45 @@ class ApiClient {
     }
   }
 
-  async getRepositoryById(repositoryId: string): Promise<Repository | null> {
+  getCachedRepository(idOrName: string): Repository | null {
+    if (!idOrName) return null;
+    return repoCache.get(idOrName.toLowerCase()) || null;
+  }
+
+  async getRepositoryOverview(repositoryId: string): Promise<{
+    repository: Repository | null;
+    pullRequests: PullRequest[];
+    findings: Finding[];
+  } | null> {
+    if (!repositoryId) return null;
     try {
-      const res = await this.fetchWithTimeout(`${API_BASE}/repositories/${repositoryId}`);
+      const res = await this.fetchWithTimeout(`${API_BASE}/repositories/${encodeURIComponent(repositoryId)}/overview`);
       if (!res.ok) return null;
       const data = await res.json();
-      return mapBackendRepository(data);
+      const repo = data.repository ? mapBackendRepository(data.repository) : null;
+      if (repo) registerRepoInCache(repo);
+      return {
+        repository: repo,
+        pullRequests: Array.isArray(data.pull_requests) ? data.pull_requests.map(mapBackendPullRequest) : [],
+        findings: Array.isArray(data.findings) ? data.findings.map(mapBackendFinding) : [],
+      };
     } catch {
       return null;
+    }
+  }
+
+  async getRepositoryById(repositoryId: string): Promise<Repository | null> {
+    if (!repositoryId) return null;
+    const cached = this.getCachedRepository(repositoryId);
+    try {
+      const res = await this.fetchWithTimeout(`${API_BASE}/repositories/${repositoryId}`);
+      if (!res.ok) return cached;
+      const data = await res.json();
+      const mapped = mapBackendRepository(data);
+      registerRepoInCache(mapped);
+      return mapped;
+    } catch {
+      return cached;
     }
   }
 
@@ -570,14 +710,15 @@ class ApiClient {
       if (state && state !== "all") params.set("state", state);
       const qs = params.toString();
       const url = `${API_BASE}/pull-requests${qs ? `?${qs}` : ""}`;
-      const res = await this.fetchWithTimeout(url);
+      const res = await this.fetchWithTimeout(url, {}, 25000);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       if (Array.isArray(data)) {
         return { pullRequests: data.map(mapBackendPullRequest), isLive: true };
       }
       return { pullRequests: [], isLive: false };
-    } catch {
+    } catch (err) {
+      console.warn("getPullRequests fetch error:", err);
       return { pullRequests: [], isLive: false };
     }
   }
@@ -587,14 +728,15 @@ class ApiClient {
       const url = repositoryId
         ? `${API_BASE}/pull-requests/sync?repository_id=${encodeURIComponent(repositoryId)}`
         : `${API_BASE}/pull-requests/sync`;
-      const res = await this.fetchWithTimeout(url, { method: "POST" });
+      const res = await this.fetchWithTimeout(url, { method: "POST" }, 30000);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       return {
         pullRequests: Array.isArray(data) ? data.map(mapBackendPullRequest) : [],
         success: true,
       };
-    } catch {
+    } catch (err) {
+      console.warn("syncPullRequests error:", err);
       return { pullRequests: [], success: false };
     }
   }
@@ -605,25 +747,7 @@ class ApiClient {
       if (!res.ok) return [];
       const data = await res.json();
       if (!Array.isArray(data)) return [];
-      return data.map((c: any) => ({
-        sha: String(c.sha || "HEAD"),
-        fullSha: c.full_sha ? String(c.full_sha) : undefined,
-        message: String(c.message || "Commit update"),
-        author: String(c.author || "developer"),
-        authorAvatar: c.author_avatar ? String(c.author_avatar) : null,
-        date: c.date ? String(c.date) : null,
-        htmlUrl: c.html_url ? String(c.html_url) : undefined,
-        scanResult: (c.scan_result as any) ?? null,
-        scanStatus: c.scan_status ? String(c.scan_status) : undefined,
-        checkRunStatus: (c.check_run_status as any) || (c.scan_result === "passed" ? "success" : (c.scan_result ? "failure" : "neutral")),
-        totalFindings: Number(c.total_findings ?? 0),
-        criticalFindings: Number(c.critical_findings ?? 0),
-        highFindings: Number(c.high_findings ?? 0),
-        score: c.score !== undefined ? Number(c.score) : undefined,
-        scanId: c.scan_id ? String(c.scan_id) : undefined,
-        findings: Array.isArray(c.findings) ? c.findings.map(mapBackendFindingItem) : [],
-        isHistorical: Boolean(c.is_historical),
-      }));
+      return data.map(mapBackendPRCommit);
     } catch {
       return [];
     }

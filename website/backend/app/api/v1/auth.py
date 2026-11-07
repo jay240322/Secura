@@ -161,9 +161,13 @@ def oauth_sign_in(payload: OAuthLogin, db: Session = Depends(get_db)):
         avatar = f"https://github.com/{gh_handle}.png"
 
     try:
-        user = db.query(User).filter(User.email == email_clean).first()
+        user = None
+        if provider_lower == "github" and gh_handle:
+            user = db.query(User).filter(func.lower(User.github_username) == gh_handle.lower()).first()
+        if not user:
+            user = db.query(User).filter(User.email == email_clean).first()
         if not user and gh_handle:
-            user = db.query(User).filter(User.github_username == gh_handle).first()
+            user = db.query(User).filter(func.lower(User.github_username) == gh_handle.lower()).first()
 
         if not user:
             user = User(
@@ -180,6 +184,8 @@ def oauth_sign_in(payload: OAuthLogin, db: Session = Depends(get_db)):
         else:
             user.name = clean_name
             user.provider = provider_lower
+            if "@users.noreply.github.com" in (user.email or "") and "@users.noreply.github.com" not in email_clean:
+                user.email = email_clean
             if avatar:
                 user.avatar_url = avatar
             elif not user.avatar_url and gh_handle:

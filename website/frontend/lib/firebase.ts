@@ -199,7 +199,7 @@ export async function signInWithPopup(
         user: {
           uid: result.user.uid,
           email: result.user.email,
-          displayName: resolvedName,
+          displayName: resolvedName || null,
           photoURL: finalAvatar,
           githubUsername: ghLogin,
           githubProfileUrl: ghHtmlUrl || (ghLogin ? `https://github.com/${ghLogin}` : undefined),

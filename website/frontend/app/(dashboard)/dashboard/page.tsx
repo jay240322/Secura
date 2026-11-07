@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { SeverityBadge } from "@/components/ui/severity-badge";
 import { StatusBadge } from "@/components/ui/status-badge";
+import { ChartTooltip } from "@/components/ui/chart-tooltip";
 import { api, DEFAULT_SUMMARY } from "@/lib/api-client";
 import {
   Finding,
@@ -98,40 +99,13 @@ function SummaryCard({
   );
 }
 
-// ─── Custom chart tooltip ─────────────────────────────────────────────────
-function ChartTooltip({
-  active,
-  payload,
-  label,
-}: {
-  active?: boolean;
-  payload?: { name: string; value: number; color: string }[];
-  label?: string;
-}) {
-  if (!active || !payload?.length) return null;
-  return (
-    <div className="rounded-xl border border-slate-200 dark:border-zinc-800 bg-white/95 dark:bg-zinc-900/95 px-3 py-2 text-xs shadow-xl backdrop-blur-xl">
-      <p className="mb-1 font-semibold text-slate-800 dark:text-zinc-200">{label}</p>
-      {payload.map((p) => (
-        <div key={p.name} className="flex items-center gap-2">
-          <span
-            className="h-2 w-2 rounded-full"
-            style={{ background: p.color }}
-          />
-          <span className="text-slate-500 dark:text-zinc-400 capitalize">{p.name}:</span>
-          <span className="text-slate-900 dark:text-zinc-100 font-medium">{p.value}</span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
 // ─── Dashboard page ───────────────────────────────────────────────────────
 function DashboardContent() {
   const searchParams = useSearchParams();
   const [isMounted, setIsMounted] = useState(false);
   const [installedBanner, setInstalledBanner] = useState(false);
   const [isLive, setIsLive] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [summary, setSummary] = useState<DashboardSummary>(DEFAULT_SUMMARY);
   const [findingsOverTime, setFindingsOverTime] = useState<FindingOverTime[]>([]);
   const [findingsBySeverity, setFindingsBySeverity] = useState<FindingBySeverity[]>([]);
@@ -190,6 +164,7 @@ function DashboardContent() {
         console.error("Dashboard data load error:", e);
       } finally {
         inFlight = false;
+        setLoading(false);
       }
     }
     void loadData();
@@ -204,6 +179,15 @@ function DashboardContent() {
       clearInterval(interval);
     };
   }, []);
+
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center py-28 text-slate-500 dark:text-zinc-400 gap-3">
+        <Loader />
+        <span className="text-xs font-medium text-slate-600 dark:text-zinc-400">Loading security command center...</span>
+      </div>
+    );
+  }
 
   const reposNeedingAttention = repos
     .filter((r) => r.criticalFindings > 0 || r.highFindings > 0 || r.openFindings > 0)

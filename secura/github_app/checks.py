@@ -138,6 +138,28 @@ def build_check_output(
     return conclusion, title, summary, annotations
 
 
+def _prepare_completed_check_output(
+    findings: list[Finding] | None,
+    result: ScanResult | None,
+    conclusion: str | None,
+    title: str | None,
+    summary: str | None,
+) -> tuple[str, dict]:
+    """Assemble standardized conclusion and output dictionary for completed check runs."""
+    b_conclusion, b_title, b_summary, annotations = build_check_output(findings=findings, result=result)
+    fin_conclusion = conclusion or b_conclusion
+    if fin_conclusion not in ALLOWED_CONCLUSIONS:
+        raise ValueError(f"Invalid Check Run conclusion: {fin_conclusion}")
+
+    out: dict = {
+        "title": title or b_title,
+        "summary": summary or b_summary,
+    }
+    if annotations:
+        out["annotations"] = annotations
+    return fin_conclusion, out
+
+
 def create_check_run(
     installation_token: str,
     owner: str,
@@ -167,27 +189,9 @@ def create_check_run(
             },
         }
     else:
-        built_conclusion, built_title, built_summary, annotations = build_check_output(
-            findings=findings,
-            result=result,
+        final_conclusion, output_payload = _prepare_completed_check_output(
+            findings, result, conclusion, title, summary
         )
-
-        final_conclusion = conclusion or built_conclusion
-        final_title = title or built_title
-        final_summary = summary or built_summary
-
-        if final_conclusion not in ALLOWED_CONCLUSIONS:
-            raise ValueError(
-                f"Invalid Check Run conclusion: {final_conclusion}"
-            )
-
-        output_payload = {
-            "title": final_title,
-            "summary": final_summary,
-        }
-        if annotations:
-            output_payload["annotations"] = annotations
-
         payload = {
             "name": name,
             "head_sha": head_sha,
@@ -242,29 +246,11 @@ def update_check_run(
     """
     Update an existing GitHub Check Run with completed scan results.
     """
-    built_conclusion, built_title, built_summary, annotations = build_check_output(
-        findings=findings,
-        result=result,
+    final_conclusion, output_payload = _prepare_completed_check_output(
+        findings, result, conclusion, title, summary
     )
 
-    final_conclusion = conclusion or built_conclusion
-    final_title = title or built_title
-    final_summary = summary or built_summary
-
-    if final_conclusion not in ALLOWED_CONCLUSIONS:
-        raise ValueError(
-            f"Invalid Check Run conclusion: {final_conclusion}"
-        )
-
     url = f"{GITHUB_API_URL}/repos/{owner}/{repo}/check-runs/{check_run_id}"
-
-    output_payload = {
-        "title": final_title,
-        "summary": final_summary,
-    }
-
-    if annotations:
-        output_payload["annotations"] = annotations
 
     response = requests.patch(
         url,

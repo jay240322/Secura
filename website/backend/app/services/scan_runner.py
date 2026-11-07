@@ -423,14 +423,15 @@ def _reconcile_pr_findings_in_db(
             default_recommendation="Remove credential or secret from pull request.",
         )
     elif not findings_data:
-        for s in pr_scans:
-            s.total_findings = 0
-            s.critical_count = 0
-            s.high_count = 0
-            s.medium_count = 0
-            s.low_count = 0
-            s.scan_result = "passed"
-            s.score = 100
+        curr_scan = db.query(Scan).filter(Scan.id == scan_id).first()
+        if curr_scan:
+            curr_scan.total_findings = 0
+            curr_scan.critical_count = 0
+            curr_scan.high_count = 0
+            curr_scan.medium_count = 0
+            curr_scan.low_count = 0
+            curr_scan.scan_result = "passed"
+            curr_scan.score = 100
 
 
 def execute_pr_scan(

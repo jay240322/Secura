@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { api } from "@/lib/api-client";
-import type { PullRequest, Repository } from "@/types";
+import type { PullRequest, Repository, PRFinding } from "@/types";
 import {
   ExternalLink,
   GitPullRequest,
@@ -43,8 +43,69 @@ export default function PullRequestsPage() {
     try {
       const commits = await api.getPullRequestCommits(pr.repositoryId, pr.number);
       if (commits && commits.length > 0) {
+        // Collect resolved historical findings
+        const resolvedFindings: PRFinding[] = [];
+        const seenKeys = new Set<string>();
+
+        // 1. Keep any existing historical findings
+        for (const hf of pr.historicalFindings || []) {
+          const k = `${hf.filePath}:${hf.lineNumber}:${hf.ruleId}`;
+          if (!seenKeys.has(k)) {
+            seenKeys.add(k);
+            resolvedFindings.push(hf);
+          }
+        }
+
+        // 2. Discover and enrich from refreshed commits
+        for (const c of commits) {
+          if (c.findings && c.findings.length > 0 && (c.isResolved || (!c.isHead && c.scanResult === "failed"))) {
+            for (const f of c.findings) {
+              const k = `${f.filePath}:${f.lineNumber}:${f.ruleId}`;
+              if (!seenKeys.has(k)) {
+                seenKeys.add(k);
+                resolvedFindings.push({
+                  ...f,
+                  isResolved: true,
+                  status: "resolved",
+                  detectedInCommit: f.detectedInCommit || c.sha,
+                  resolvedInCommit: f.resolvedInCommit || (pr.commitSha ? pr.commitSha.slice(0, 7) : "HEAD"),
+                });
+              }
+            }
+          }
+        }
+
+        // 3. For any commit marked failed or resolved with empty findings, backfill matching findings
+        const enrichedCommits = commits.map((c) => {
+          if ((!c.findings || c.findings.length === 0) && (c.isResolved || (!c.isHead && c.scanResult === "failed"))) {
+            const matched = resolvedFindings.filter(
+              (rf) =>
+                rf.detectedInCommit === c.sha ||
+                (c.fullSha && rf.detectedInCommit && c.fullSha.startsWith(rf.detectedInCommit)) ||
+                (c.sha && rf.detectedInCommit && rf.detectedInCommit.startsWith(c.sha))
+            );
+            if (matched.length > 0) {
+              return { ...c, findings: matched, isResolved: true };
+            }
+            if (resolvedFindings.length > 0 && commits.filter((x) => x.scanResult === "failed" || x.isResolved).length <= 1) {
+              return { ...c, findings: resolvedFindings, isResolved: true };
+            }
+          }
+          return c;
+        });
+
+        const hasResolved = pr.hasResolvedViolations || resolvedFindings.length > 0;
+
         setPullRequests((prev) =>
-          prev.map((item) => (item.id === pr.id ? { ...item, commits } : item))
+          prev.map((item) => {
+            if (item.id !== pr.id) return item;
+            return {
+              ...item,
+              commits: enrichedCommits,
+              historicalFindings: resolvedFindings,
+              hasResolvedViolations: hasResolved,
+            };
+          })
         );
       }
     } catch (e) {
@@ -54,16 +115,17 @@ export default function PullRequestsPage() {
     }
   };
 
-  const loadData = async (repoId?: string, state?: string) => {
+  const loadData = async (repoId?: string) => {
     try {
       const activeRepoId = repoId !== undefined ? repoId : (selectedRepoId === "all" ? undefined : selectedRepoId);
-      const activeState = state !== undefined ? state : (selectedState === "all" ? undefined : selectedState);
 
       const [prRes, repoRes] = await Promise.all([
-        api.getPullRequests(activeRepoId, activeState),
+        api.getPullRequests(activeRepoId),
         api.getRepositories(),
       ]);
-      setPullRequests(prRes.pullRequests);
+      if (prRes.isLive || prRes.pullRequests.length > 0) {
+        setPullRequests(prRes.pullRequests);
+      }
       setRepos(repoRes.repositories);
     } catch (e) {
       console.error("Failed to fetch pull requests:", e);
@@ -79,8 +141,8 @@ export default function PullRequestsPage() {
     if (typeof window !== "undefined") {
       const urlParams = new URLSearchParams(window.location.search);
       const repoParam = urlParams.get("repo");
-      if (repoParam) {
-        // Will be matched once repos are loaded
+      if (repoParam && selectedRepoId !== repoParam) {
+        setSelectedRepoId(repoParam);
       }
     }
 
@@ -99,11 +161,10 @@ export default function PullRequestsPage() {
     // Live auto-polling every 5 seconds for newly scanned PRs
     const interval = setInterval(() => {
       const repoId = selectedRepoId === "all" ? undefined : selectedRepoId;
-      const st = selectedState === "all" ? undefined : selectedState;
       void api
-        .getPullRequests(repoId, st)
+        .getPullRequests(repoId)
         .then((res) => {
-          if (mounted && res.pullRequests) {
+          if (mounted && res.isLive && res.pullRequests && res.pullRequests.length > 0) {
             setPullRequests(res.pullRequests);
           }
         })
@@ -114,7 +175,7 @@ export default function PullRequestsPage() {
       mounted = false;
       clearInterval(interval);
     };
-  }, [selectedRepoId, selectedState]);
+  }, [selectedRepoId]);
 
   // Sync PRs from GitHub button
   const handleSyncPRs = async () => {
@@ -174,9 +235,8 @@ export default function PullRequestsPage() {
 
         // 2. State filter (open, merged, closed)
         if (selectedState !== "all") {
-          if (selectedState === "open" && pr.state !== "open") return false;
-          if (selectedState === "merged" && pr.state !== "merged") return false;
-          if (selectedState === "closed" && pr.state !== "closed") return false;
+          const prState = (pr.state || "open").toLowerCase();
+          if (prState !== selectedState) return false;
         }
 
         // 3. Search query
@@ -199,9 +259,9 @@ export default function PullRequestsPage() {
   // Aggregate stats across currently filtered PR set
   const failed = pullRequests.filter((p) => p.checkRunStatus === "failure" || p.criticalFindings > 0);
   const passed = pullRequests.filter((p) => p.checkRunStatus === "success" && p.criticalFindings === 0);
-  const mergedCount = pullRequests.filter((p) => p.state === "merged").length;
-  const openCount = pullRequests.filter((p) => p.state === "open" || !p.state).length;
-  const closedCount = pullRequests.filter((p) => p.state === "closed").length;
+  const mergedCount = pullRequests.filter((p) => (p.state || "").toLowerCase() === "merged").length;
+  const openCount = pullRequests.filter((p) => (p.state || "open").toLowerCase() === "open").length;
+  const closedCount = pullRequests.filter((p) => (p.state || "").toLowerCase() === "closed").length;
 
   return (
     <div className="max-w-screen-xl mx-auto space-y-5">
@@ -256,7 +316,9 @@ export default function PullRequestsPage() {
               <ShieldAlert className="h-5 w-5" />
             </div>
             <div>
-              <p className="text-2xl font-bold tracking-tight text-slate-900 dark:text-zinc-100">{failed.length}</p>
+              <p className="text-2xl font-bold tracking-tight text-slate-900 dark:text-zinc-100">
+                {loading && pullRequests.length === 0 ? "..." : failed.length}
+              </p>
               <p className="text-xs text-slate-500 dark:text-zinc-400 font-medium">Blocked Gate (Findings)</p>
             </div>
           </div>
@@ -268,7 +330,9 @@ export default function PullRequestsPage() {
               <ShieldCheck className="h-5 w-5" />
             </div>
             <div>
-              <p className="text-2xl font-bold tracking-tight text-slate-900 dark:text-zinc-100">{passed.length}</p>
+              <p className="text-2xl font-bold tracking-tight text-slate-900 dark:text-zinc-100">
+                {loading && pullRequests.length === 0 ? "..." : passed.length}
+              </p>
               <p className="text-xs text-slate-500 dark:text-zinc-400 font-medium">Passed Gate (Safe to Merge)</p>
             </div>
           </div>
@@ -280,7 +344,9 @@ export default function PullRequestsPage() {
               <GitMerge className="h-5 w-5" />
             </div>
             <div>
-              <p className="text-2xl font-bold tracking-tight text-slate-900 dark:text-zinc-100">{mergedCount}</p>
+              <p className="text-2xl font-bold tracking-tight text-slate-900 dark:text-zinc-100">
+                {loading && pullRequests.length === 0 ? "..." : mergedCount}
+              </p>
               <p className="text-xs text-slate-500 dark:text-zinc-400 font-medium">Merged Pull Requests</p>
             </div>
           </div>
@@ -384,6 +450,28 @@ export default function PullRequestsPage() {
               <p className="text-xs text-slate-500 dark:text-zinc-400 mt-1 max-w-md">
                 Secura automatically detects pull requests and scans diffs for secrets and SAST vulnerabilities in real time.
               </p>
+              {pullRequests.length > 0 && (selectedState !== "all" || selectedRepoId !== "all" || searchQuery) && (
+                <button
+                  onClick={() => {
+                    setSelectedState("all");
+                    setSelectedRepoId("all");
+                    setSearchQuery("");
+                  }}
+                  className="mt-4 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#281C59] text-white text-xs font-semibold hover:bg-[#281C59]/90 transition-all shadow-xs"
+                >
+                  <span>View All Pull Requests ({pullRequests.length})</span>
+                </button>
+              )}
+              {pullRequests.length === 0 && (
+                <button
+                  onClick={() => void handleSyncPRs()}
+                  disabled={syncLoading}
+                  className="mt-4 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#281C59] text-white text-xs font-semibold hover:bg-[#281C59]/90 transition-all shadow-xs disabled:opacity-50"
+                >
+                  <RefreshCcw className={`h-3.5 w-3.5 ${syncLoading ? "animate-spin" : ""}`} />
+                  <span>{syncLoading ? "Syncing PRs..." : "Sync Pull Requests from GitHub"}</span>
+                </button>
+              )}
             </div>
           ) : (
             <div className="space-y-3">

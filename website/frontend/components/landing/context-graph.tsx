@@ -474,7 +474,8 @@ export function ContextGraphSection() {
     <section
       id="context"
       ref={trackRef}
-      className="relative h-[340vh] bg-[#111113] text-zinc-100"
+      className="relative h-[340vh] bg-[#141417ed] text-zinc-100"
+      style={{ backgroundColor: "#141417ed" }}
     >
       {/* ─── PINNED STICKY VIEWPORT CONTAINER ─── */}
       <div className="sticky top-12 lg:top-16 min-h-[calc(100vh-4rem)] flex flex-col justify-center py-6 px-4 sm:px-8">
@@ -490,10 +491,10 @@ export function ContextGraphSection() {
           </div>
 
           {/* ─── MAIN SHOWCASE CONTAINER (Matching CodeRabbit Video Frame) ────── */}
-          <div className="rounded-2xl border border-zinc-800/90 bg-[#111113] overflow-hidden shadow-2xl relative">
+          <div className="rounded-2xl border border-white/10 bg-[#141417ed] backdrop-blur-md overflow-hidden shadow-2xl relative">
             <div className="flex flex-col lg:flex-row min-h-[530px]">
               {/* ─── LEFT COLUMN: Steps Navigation + Bottom Title & Description ─── */}
-              <div className="w-full lg:w-64 xl:w-72 p-6 sm:p-8 flex flex-col justify-between shrink-0 select-none border-b lg:border-b-0 border-slate-200 dark:border-zinc-800/80">
+              <div className="w-full lg:w-64 xl:w-72 p-6 sm:p-8 flex flex-col justify-between shrink-0 select-none border-b lg:border-b-0 border-slate-200 dark:border-white/10">
                 {/* Step Navigation Tabs with Scroll Progress Bars */}
                 <div className="space-y-6 sm:space-y-7">
                   {STEPS_DATA.map((step, idx) => {
@@ -525,7 +526,7 @@ export function ContextGraphSection() {
                 {/* Bottom Explanation Block (Animated Arrival) */}
                 <div
                   key={`desc-${animKey}`}
-                  className="mt-8 lg:mt-auto pt-6 border-t border-slate-200/50 dark:border-zinc-800/50"
+                  className="mt-8 lg:mt-auto pt-6 border-t border-slate-200/50 dark:border-white/10"
                   style={{ animation: "cardSlideUp 0.35s ease-out forwards" }}
                 >
                   <h3 className="text-sm font-bold text-slate-900 dark:text-white mb-1.5 tracking-tight">
@@ -580,7 +581,7 @@ export function ContextGraphSection() {
                     {/* Semicircle / Half-Cut Round Shape (Flush against x=0) */}
                     <path
                       d="M 0 20 A 190 190 0 0 1 0 400 Z"
-                      className="fill-slate-100/10 dark:fill-[#111113]/40 stroke-slate-200/40 dark:stroke-zinc-800/60"
+                      className="fill-slate-100/10 dark:fill-white/[0.03] stroke-slate-200/40 dark:stroke-white/10"
                       strokeWidth="1"
                     />
 
@@ -734,10 +735,10 @@ export function ContextGraphSection() {
                   style={{ animation: "cardSlideUp 0.35s ease-out forwards" }}
                 >
                   {/* 1. Code Diff Box (Clean real code, no verbose clutter) */}
-                  <div className="rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-[#141417] shadow-sm overflow-hidden text-xs">
+                  <div className="rounded-xl border border-slate-200/80 dark:border-white/10 bg-white/80 dark:bg-[#141417e6] backdrop-blur-md shadow-lg overflow-hidden text-xs">
                     {/* Clean Code Gutter & Lines */}
                     <div className="p-3.5 font-mono text-[11px] leading-relaxed overflow-x-auto text-slate-800 dark:text-zinc-300">
-                      <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-100 dark:border-zinc-800/80 text-[10px] text-slate-400 dark:text-zinc-500">
+                      <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-100 dark:border-white/10 text-[10px] text-slate-400 dark:text-zinc-500">
                         <span className="font-semibold text-slate-600 dark:text-zinc-400">
                           {activeStep.diff.fileName}
                         </span>
@@ -827,7 +828,7 @@ export function ContextGraphSection() {
                   </div>
 
                   {/* 2. Secura Bot Review Card (Clean & concise, logo icon) ─── */}
-                  <div className="rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-[#141417] p-3.5 shadow-sm space-y-2 text-xs">
+                  <div className="rounded-xl border border-slate-200/80 dark:border-white/10 bg-white/80 dark:bg-[#141417e6] backdrop-blur-md p-3.5 shadow-lg space-y-2 text-xs">
                     {/* Author Header with Secura Image Logo */}
                     <div className="flex items-center gap-2">
                       <img

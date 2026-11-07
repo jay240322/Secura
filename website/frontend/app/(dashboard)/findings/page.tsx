@@ -3,6 +3,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { SeverityBadge } from "@/components/ui/severity-badge";
 import { StatusBadge } from "@/components/ui/status-badge";
+import { FindingRow } from "@/components/findings/finding-row";
 import { Loader } from "@/components/ui/loader";
 import { api } from "@/lib/api-client";
 import type { Finding, FindingStatus, Severity } from "@/types";
@@ -13,6 +14,9 @@ import {
   Search,
   ShieldCheck,
   X,
+  Check,
+  Sparkles,
+  GitCommit,
 } from "lucide-react";
 import Link from "next/link";
 import { useState, useMemo, useEffect, Suspense } from "react";
@@ -37,6 +41,7 @@ function FindingsContent() {
   const [severityFilter, setSeverityFilter] = useState<Severity | "">("");
   const [statusFilter, setStatusFilter] = useState<FindingStatus | "">("");
   const [repoFilter, setRepoFilter] = useState("");
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let mounted = true;
@@ -49,6 +54,8 @@ function FindingsContent() {
         }
       } catch (e) {
         console.error("Failed to fetch findings:", e);
+      } finally {
+        if (mounted) setLoading(false);
       }
     }
     void fetchFindings();
@@ -85,22 +92,31 @@ function FindingsContent() {
         query &&
         !f.type.toLowerCase().includes(query.toLowerCase()) &&
         !f.filePath.toLowerCase().includes(query.toLowerCase()) &&
-        !f.repository.toLowerCase().includes(query.toLowerCase())
+        !f.repository.toLowerCase().includes(query.toLowerCase()) &&
+        !(f.ruleId && f.ruleId.toLowerCase().includes(query.toLowerCase())) &&
+        !(f.detectedInCommit && f.detectedInCommit.toLowerCase().includes(query.toLowerCase())) &&
+        !(f.resolvedInCommit && f.resolvedInCommit.toLowerCase().includes(query.toLowerCase()))
       )
         return false;
       if (severityFilter && f.severity !== severityFilter) return false;
-      if (statusFilter && f.status !== statusFilter) return false;
+      if (statusFilter) {
+        if (statusFilter === "resolved" || statusFilter === "solved") {
+          if (f.status !== "resolved" && f.status !== "solved" && !f.isResolved) return false;
+        } else if (f.status !== statusFilter) {
+          return false;
+        }
+      }
       if (repoFilter && f.repository !== repoFilter) return false;
       return true;
     });
   }, [findings, query, severityFilter, statusFilter, repoFilter]);
 
-  const openCount = findings.filter((f) => f.status === "open").length;
+  const openCount = findings.filter((f) => f.status === "open" && !f.isResolved).length;
   const criticalCount = findings.filter(
-    (f) => f.status === "open" && f.severity === "CRITICAL"
+    (f) => f.status === "open" && !f.isResolved && f.severity === "CRITICAL"
   ).length;
   const solvedCount = findings.filter(
-    (f) => f.status === "resolved" || f.status === "solved"
+    (f) => f.status === "resolved" || f.status === "solved" || Boolean(f.isResolved)
   ).length;
 
   return (
@@ -109,7 +125,7 @@ function FindingsContent() {
       <div className="flex items-center gap-4">
         <div className="flex-1">
           <h2 className="text-sm font-medium text-slate-500 dark:text-zinc-400">
-            {openCount} open · {criticalCount} critical · {solvedCount} solved
+            {loading ? "Loading findings posture..." : `${openCount} open · ${criticalCount} critical · ${solvedCount} solved`}
           </h2>
         </div>
       </div>
@@ -192,7 +208,12 @@ function FindingsContent() {
           </CardTitle>
         </CardHeader>
         <CardContent className="pt-3">
-          {filtered.length === 0 ? (
+          {loading ? (
+            <div className="flex flex-col items-center justify-center py-20 text-slate-500 dark:text-zinc-400 gap-3">
+              <Loader />
+              <p className="text-xs font-medium text-slate-600 dark:text-zinc-400">Loading security findings from database...</p>
+            </div>
+          ) : filtered.length === 0 ? (
             <div className="flex flex-col items-center py-12 text-slate-500 dark:text-zinc-400">
               {findings.length === 0 ? (
                 <>
@@ -217,39 +238,5 @@ function FindingsContent() {
         </CardContent>
       </Card>
     </div>
-  );
-}
-
-function FindingRow({ finding }: { finding: Finding }) {
-  return (
-    <Link
-      href={`/findings/${finding.id}`}
-      className="group flex items-start gap-4 py-3.5 hover:bg-slate-50/70 dark:hover:bg-zinc-900/60 -mx-2 px-3 rounded-xl transition-colors"
-    >
-      <SeverityBadge severity={finding.severity} />
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2 mb-1">
-          <span className="text-xs font-semibold text-slate-900 dark:text-zinc-100 tracking-tight group-hover:text-[#281C59] dark:group-hover:text-blue-400 transition-colors">
-            {finding.type}
-          </span>
-          <StatusBadge status={finding.status} />
-        </div>
-        <p className="text-xs text-slate-500 dark:text-zinc-400 truncate">
-          {finding.repository} ·{" "}
-          <span className="font-mono text-slate-700 dark:text-zinc-300">
-            {finding.filePath}:{finding.lineNumber}
-          </span>
-        </p>
-        {finding.recommendation && (
-          <p className="text-[11px] text-slate-500 dark:text-zinc-400 truncate mt-0.5">
-            {finding.recommendation}
-          </p>
-        )}
-      </div>
-      <div className="hidden sm:flex items-center gap-2 text-xs text-slate-400 dark:text-zinc-500 shrink-0">
-        <span>{new Date(finding.firstDetected).toLocaleDateString()}</span>
-        <ChevronRight className="h-4 w-4 opacity-0 group-hover:opacity-100 transition-opacity text-slate-500 dark:text-zinc-400" />
-      </div>
-    </Link>
   );
 }
