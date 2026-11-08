@@ -237,6 +237,7 @@ def update_check_run(
     owner: str,
     repo: str,
     check_run_id: int,
+    status: str = "completed",
     findings: list[dict] | None = None,
     result: dict | None = None,
     conclusion: str | None = None,
@@ -260,7 +261,7 @@ def update_check_run(
             "X-GitHub-Api-Version": "2022-11-28",
         },
         json={
-            "status": "completed",
+            "status": status,
             "conclusion": final_conclusion,
             "output": output_payload,
         },

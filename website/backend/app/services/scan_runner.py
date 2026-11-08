@@ -857,6 +857,43 @@ def _record_branch_scan_completion(
     return duration
 
 
+def _publish_main_branch_check_run(
+    inst_id: Optional[int],
+    owner: str,
+    repo_name: str,
+    ref_sha: str,
+    findings_data: List[Dict[str, Any]],
+    event_label: str = "main",
+) -> None:
+    """Create GitHub Check Run for merge or push commit on default/main branch."""
+    if not (inst_id and ref_sha and ref_sha != "HEAD"):
+        return
+    try:
+        counts = {
+            "CRITICAL": sum(1 for f in findings_data if f.get("severity") == "CRITICAL"),
+            "HIGH": sum(1 for f in findings_data if f.get("severity") == "HIGH"),
+            "MEDIUM": sum(1 for f in findings_data if f.get("severity") == "MEDIUM"),
+            "LOW": sum(1 for f in findings_data if f.get("severity") == "LOW"),
+        }
+        result_dict = {
+            "passed": len(findings_data) == 0,
+            "score": 100 if len(findings_data) == 0 else 0,
+            "counts": counts,
+            "failures": ["Unsafe commit on main: security findings detected"] if findings_data else [],
+        }
+        trigger_check_run(
+            installation_id=inst_id,
+            owner=owner,
+            repo=repo_name,
+            head_sha=ref_sha,
+            status="completed",
+            findings=findings_data,
+            result=result_dict,
+        )
+    except Exception as cr_err:
+        logger.warning("Could not post check run for %s: %s", event_label, cr_err)
+
+
 def execute_main_merge_scan(
     repository_id: str,
     pull_number: int,
@@ -935,33 +972,7 @@ def execute_main_merge_scan(
             default_recommendation="Review and remediate security vulnerability on main branch.",
         )
         logger.info("Merged PR #%s main branch scan finished in %ss with %s findings", pull_number, duration, len(findings_data))
-
-        # Create GitHub Check Run for merge commit on main
-        if inst_id and ref_sha and ref_sha != "HEAD":
-            try:
-                counts = {
-                    "CRITICAL": sum(1 for f in findings_data if f.get("severity") == "CRITICAL"),
-                    "HIGH": sum(1 for f in findings_data if f.get("severity") == "HIGH"),
-                    "MEDIUM": sum(1 for f in findings_data if f.get("severity") == "MEDIUM"),
-                    "LOW": sum(1 for f in findings_data if f.get("severity") == "LOW"),
-                }
-                result_dict = {
-                    "passed": len(findings_data) == 0,
-                    "score": 100 if len(findings_data) == 0 else 0,
-                    "counts": counts,
-                    "failures": ["Unsafe commit on main: security findings detected"] if findings_data else [],
-                }
-                trigger_check_run(
-                    installation_id=inst_id,
-                    owner=owner,
-                    repo=repo_name,
-                    head_sha=ref_sha,
-                    status="completed",
-                    findings=findings_data,
-                    result=result_dict,
-                )
-            except Exception as cr_err:
-                logger.warning("Could not post check run for main merge: %s", cr_err)
+        _publish_main_branch_check_run(inst_id, owner, repo_name, ref_sha, findings_data, event_label="main merge")
     except Exception as exc:
         db.rollback()
         logger.exception("execute_main_merge_scan failed: %s", exc)
@@ -1028,33 +1039,7 @@ def execute_main_push_scan(
             default_recommendation="Remediate security finding on main branch.",
         )
         logger.info("Main branch push scan completed in %ss with %s findings", duration, len(findings_data))
-
-        # Create GitHub Check Run for push commit on main
-        if inst_id and ref_sha and ref_sha != "HEAD":
-            try:
-                counts = {
-                    "CRITICAL": sum(1 for f in findings_data if f.get("severity") == "CRITICAL"),
-                    "HIGH": sum(1 for f in findings_data if f.get("severity") == "HIGH"),
-                    "MEDIUM": sum(1 for f in findings_data if f.get("severity") == "MEDIUM"),
-                    "LOW": sum(1 for f in findings_data if f.get("severity") == "LOW"),
-                }
-                result_dict = {
-                    "passed": len(findings_data) == 0,
-                    "score": 100 if len(findings_data) == 0 else 0,
-                    "counts": counts,
-                    "failures": ["Unsafe commit on main: security findings detected"] if findings_data else [],
-                }
-                trigger_check_run(
-                    installation_id=inst_id,
-                    owner=owner,
-                    repo=repo_name,
-                    head_sha=ref_sha,
-                    status="completed",
-                    findings=findings_data,
-                    result=result_dict,
-                )
-            except Exception as cr_err:
-                logger.warning("Could not post check run for main push: %s", cr_err)
+        _publish_main_branch_check_run(inst_id, owner, repo_name, ref_sha, findings_data, event_label="main push")
     except Exception as exc:
         db.rollback()
         logger.exception("execute_main_push_scan failed: %s", exc)
