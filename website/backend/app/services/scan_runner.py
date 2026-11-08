@@ -278,13 +278,14 @@ def _get_or_create_pr_scan(
     default_repo_name: str = "",
 ) -> Scan:
     short_sha = commit_sha[:12] if commit_sha else "HEAD"
+    # Find existing scan for this PR (by repo, pull_number, and matching sha or newest)
     scan = (
         db.query(Scan)
         .filter(
             Scan.repository_id == repository_id,
             Scan.pull_number == pull_number,
-            Scan.commit_sha == short_sha,
         )
+        .order_by(Scan.created_at.desc())
         .first()
     )
     if not scan:
@@ -312,12 +313,23 @@ def _get_or_create_pr_scan(
         db.commit()
         db.refresh(scan)
     else:
+        scan.commit_sha = short_sha
         scan.branch = branch
         scan.base_branch = base_branch
+        scan.scan_status = "running"
         if pr_title:
             scan.pr_title = pr_title
         if pr_author:
             scan.pr_author = pr_author
+        if pr_html_url:
+            scan.pr_html_url = pr_html_url
+        if pr_state:
+            scan.pr_state = pr_state
+        if pr_merged_at:
+            scan.pr_merged_at = pr_merged_at
+        if pr_closed_at:
+            scan.pr_closed_at = pr_closed_at
+        db.commit()
         if pr_html_url:
             scan.pr_html_url = pr_html_url
         if pr_state:
@@ -491,28 +503,58 @@ def execute_pr_scan(
         inst_id = installation_id or (repo.installation.github_installation_id if repo.installation else None)
         owner, repo_name = repo.full_name.split("/", 1) if "/" in repo.full_name else (repo.owner, repo.name)
 
-        # Store PR commits if not already recorded
-        if not scan.pr_commits_json:
-            try:
-                from app.services.github_service import get_pull_request_commits
-                raw_commits = get_pull_request_commits(inst_id, owner, repo_name, pull_number)
-                if not raw_commits:
-                    short_sha = commit_sha[:7] if len(commit_sha) >= 7 else commit_sha
-                    raw_commits = [
-                        {
-                            "sha": short_sha,
-                            "full_sha": commit_sha,
-                            "message": pr_title or f"Commit {short_sha} for PR #{pull_number}",
-                            "author": pr_author or repo.owner,
-                            "author_avatar": None,
-                            "date": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-                            "html_url": pr_html_url or f"https://github.com/{repo.full_name}/commit/{commit_sha}",
-                        }
-                    ]
+        user_token = None
+        if not inst_id:
+            from app.models.installation import GitHubInstallation
+            inst = (
+                db.query(GitHubInstallation)
+                .filter(
+                    or_(
+                        func.lower(GitHubInstallation.account_name) == owner.lower(),
+                        GitHubInstallation.user_id == repo.user_id,
+                    )
+                )
+                .first()
+            )
+            if inst:
+                inst_id = inst.github_installation_id
+
+        if repo.user_id:
+            from app.models.user import User
+            u = db.query(User).filter(User.id == repo.user_id).first()
+            if u:
+                user_token = getattr(u, "github_access_token", None)
+
+        # Store PR commits (fetch all commits from GitHub)
+        try:
+            curr_commits = []
+            if scan.pr_commits_json:
+                try:
+                    curr_commits = json.loads(scan.pr_commits_json)
+                except Exception:
+                    curr_commits = []
+            from app.services.github_service import get_pull_request_commits
+            raw_commits = get_pull_request_commits(inst_id, owner, repo_name, pull_number, user_token=user_token)
+            if raw_commits and (len(curr_commits) <= 1 or len(raw_commits) >= len(curr_commits)):
                 scan.pr_commits_json = json.dumps(raw_commits)
                 db.commit()
-            except Exception:
-                pass
+            elif not scan.pr_commits_json:
+                short_sha = commit_sha[:7] if len(commit_sha) >= 7 else commit_sha
+                raw_commits = [
+                    {
+                        "sha": short_sha,
+                        "full_sha": commit_sha,
+                        "message": pr_title or f"Commit {short_sha} for PR #{pull_number}",
+                        "author": pr_author or repo.owner,
+                        "author_avatar": None,
+                        "date": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                        "html_url": pr_html_url or f"https://github.com/{repo.full_name}/commit/{commit_sha}",
+                    }
+                ]
+                scan.pr_commits_json = json.dumps(raw_commits)
+                db.commit()
+        except Exception as commit_err:
+            logger.warning("Error updating PR commits in execute_pr_scan: %s", commit_err)
 
         findings_data: List[Dict[str, Any]] = []
 
@@ -523,6 +565,8 @@ def execute_pr_scan(
                 token = create_installation_token(inst_id)
             except Exception as token_err:
                 logger.warning("Could not obtain installation token for %s: %s", inst_id, token_err)
+        if not token and user_token:
+            token = user_token
 
         try:
             pr_files = get_pull_request_files(token, owner, repo_name, pull_number)
@@ -539,7 +583,8 @@ def execute_pr_scan(
 
                 # Fetch file content at head_sha
                 try:
-                    content = get_repository_file_content(token, owner, repo_name, filename, commit_sha)
+                    ref_to_fetch = commit_sha if commit_sha and commit_sha != "HEAD" else (branch or "main")
+                    content = get_repository_file_content(token, owner, repo_name, filename, ref_to_fetch)
                     if content:
                         sec_findings = scan_secrets_content(content, file_path=filename)
                         findings_data.extend(sec_findings)

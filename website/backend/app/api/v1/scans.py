@@ -1,6 +1,7 @@
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
+from sqlalchemy import func, or_
 
 from app.api.deps import get_current_user
 from app.core.database import get_db
@@ -44,10 +45,22 @@ def list_scans(
     current_user: User = Depends(get_current_user),
 ):
     """List historical scans with pagination."""
+    gh_handle = current_user.github_username.lower() if current_user.github_username else None
+    user_ids = [current_user.id]
+    if gh_handle:
+        for (uid,) in db.query(User.id).filter(func.lower(User.github_username) == gh_handle).all():
+            if uid not in user_ids:
+                user_ids.append(uid)
+
     query = (
         db.query(Scan)
         .join(Repository)
-        .filter(Repository.user_id == current_user.id)
+        .filter(
+            or_(
+                Repository.user_id.in_(user_ids),
+                (func.lower(Repository.owner) == gh_handle) if gh_handle else False,
+            )
+        )
     )
 
     if repository_id:

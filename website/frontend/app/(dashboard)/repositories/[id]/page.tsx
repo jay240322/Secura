@@ -8,7 +8,7 @@ import { SeverityBadge } from "@/components/ui/severity-badge";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { api } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
-import type { Repository, PullRequest, Finding } from "@/types";
+import type { Repository, PullRequest, Finding, PRFinding } from "@/types";
 import { PullRequestRow } from "@/components/pull-requests/pull-request-row";
 import { FindingRow } from "@/components/findings/finding-row";
 import Loader from "@/components/ui/loader";
@@ -64,13 +64,25 @@ function RepositoryDetailContent() {
   const [scanningMap, setScanningMap] = useState<Record<string, boolean>>({});
   const [expandedPRs, setExpandedPRs] = useState<Record<string, boolean>>({});
   const [syncLoading, setSyncLoading] = useState(false);
-  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
   const [loadingCommits, setLoadingCommits] = useState<Record<string, boolean>>({});
 
-  // Keep PRs strictly ordered by numerical PR number (#1, #2, #3, ...)
+  // Keep PRs strictly ordered by PR number descending (#N, ..., #1)
   const orderedPullRequests = useMemo(() => {
     return [...pullRequests].sort((a, b) => {
-      return sortOrder === "asc" ? a.number - b.number : b.number - a.number;
+      const numA = typeof a.number === "number" ? a.number : parseInt(String(a.number), 10) || 0;
+      const numB = typeof b.number === "number" ? b.number : parseInt(String(b.number), 10) || 0;
+      if (sortOrder === "desc") {
+        if (numB !== numA) return numB - numA;
+        const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return timeB - timeA;
+      } else {
+        if (numA !== numB) return numA - numB;
+        const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return timeA - timeB;
+      }
     });
   }, [pullRequests, sortOrder]);
 
@@ -118,6 +130,18 @@ function RepositoryDetailContent() {
 
     void loadData();
 
+    // Automatically sync pull requests from GitHub on repository load
+    if (params?.id) {
+      void api
+        .syncPullRequests(params.id)
+        .then((res) => {
+          if (mounted && res.success && res.pullRequests.length > 0) {
+            setPullRequests(res.pullRequests);
+          }
+        })
+        .catch(() => {});
+    }
+
     // Auto-poll every 5 seconds to keep PRs and findings live for this repository
     const interval = setInterval(() => {
       if (params?.id) {
@@ -148,8 +172,67 @@ function RepositoryDetailContent() {
     try {
       const commits = await api.getPullRequestCommits(repoId, pullNumber);
       if (commits && commits.length > 0) {
+        const pr = pullRequests.find((p) => p.id === prId);
+        const resolvedFindings: PRFinding[] = [];
+        const seenKeys = new Set<string>();
+
+        for (const hf of pr?.historicalFindings || []) {
+          const k = `${hf.filePath}:${hf.lineNumber}:${hf.ruleId}`;
+          if (!seenKeys.has(k)) {
+            seenKeys.add(k);
+            resolvedFindings.push(hf);
+          }
+        }
+
+        for (const c of commits) {
+          if (c.findings && c.findings.length > 0 && (c.isResolved || (!c.isHead && c.scanResult === "failed"))) {
+            for (const f of c.findings) {
+              const k = `${f.filePath}:${f.lineNumber}:${f.ruleId}`;
+              if (!seenKeys.has(k)) {
+                seenKeys.add(k);
+                resolvedFindings.push({
+                  ...f,
+                  isResolved: true,
+                  status: "resolved",
+                  detectedInCommit: f.detectedInCommit || c.sha,
+                  resolvedInCommit: f.resolvedInCommit || (pr?.commitSha ? pr.commitSha.slice(0, 7) : "HEAD"),
+                });
+              }
+            }
+          }
+        }
+
+        const enrichedCommits = commits.map((c) => {
+          if ((!c.findings || c.findings.length === 0) && (c.isResolved || (!c.isHead && c.scanResult === "failed"))) {
+            const matched = resolvedFindings.filter(
+              (rf) =>
+                rf.detectedInCommit === c.sha ||
+                (c.fullSha && rf.detectedInCommit && c.fullSha.startsWith(rf.detectedInCommit)) ||
+                (c.sha && rf.detectedInCommit && rf.detectedInCommit.startsWith(c.sha))
+            );
+            if (matched.length > 0) {
+              return { ...c, findings: matched, isResolved: true };
+            }
+            if (resolvedFindings.length > 0 && commits.filter((x) => x.scanResult === "failed" || x.isResolved).length <= 1) {
+              return { ...c, findings: resolvedFindings, isResolved: true };
+            }
+          }
+          return c;
+        });
+
+        const hasResolved = (pr?.hasResolvedViolations) || resolvedFindings.length > 0;
+
         setPullRequests((prev) =>
-          prev.map((item) => (item.id === prId ? { ...item, commits } : item))
+          prev.map((item) =>
+            item.id === prId
+              ? {
+                  ...item,
+                  commits: enrichedCommits,
+                  historicalFindings: resolvedFindings,
+                  hasResolvedViolations: hasResolved,
+                }
+              : item
+          )
         );
       }
     } catch (e) {
@@ -506,7 +589,7 @@ function RepositoryDetailContent() {
                     title="Toggle PR numerical order"
                   >
                     <ArrowUpDown className="h-3.5 w-3.5 text-blue-600 dark:text-blue-500" />
-                    <span>Order: {sortOrder === "asc" ? "#1 → #N" : "#N → #1"}</span>
+                    <span>Order: {sortOrder === "desc" ? "Latest First (#N → #1)" : "Oldest First (#1 → #N)"}</span>
                   </button>
                 </div>
               </CardHeader>

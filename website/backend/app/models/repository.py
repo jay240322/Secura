@@ -32,6 +32,7 @@ class Repository(Base):
         nullable=False,
     )
 
+    user = relationship("User")
     installation = relationship("GitHubInstallation", back_populates="repositories")
     scans = relationship("Scan", back_populates="repository", cascade="all, delete-orphan", order_by="desc(Scan.created_at)")
     findings = relationship("Finding", back_populates="repository", cascade="all, delete-orphan")

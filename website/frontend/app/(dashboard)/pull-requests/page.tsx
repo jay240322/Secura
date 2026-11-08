@@ -36,7 +36,7 @@ export default function PullRequestsPage() {
   const [loadingCommits, setLoadingCommits] = useState<Record<string, boolean>>({});
   const [feedback, setFeedback] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
 
   const handleRefreshCommits = async (pr: PullRequest) => {
     setLoadingCommits((prev) => ({ ...prev, [pr.id]: true }));
@@ -149,8 +149,9 @@ export default function PullRequestsPage() {
     void loadData();
 
     // Automatically sync pull requests from GitHub on initial load
+    const syncTargetRepo = selectedRepoId === "all" ? undefined : selectedRepoId;
     void api
-      .syncPullRequests()
+      .syncPullRequests(syncTargetRepo)
       .then((res) => {
         if (mounted && res.success && res.pullRequests.length > 0) {
           setPullRequests(res.pullRequests);
@@ -252,7 +253,19 @@ export default function PullRequestsPage() {
         );
       })
       .sort((a, b) => {
-        return sortOrder === "asc" ? a.number - b.number : b.number - a.number;
+        const numA = typeof a.number === "number" ? a.number : parseInt(String(a.number), 10) || 0;
+        const numB = typeof b.number === "number" ? b.number : parseInt(String(b.number), 10) || 0;
+        if (sortOrder === "desc") {
+          if (numB !== numA) return numB - numA;
+          const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+          const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+          return timeB - timeA;
+        } else {
+          if (numA !== numB) return numA - numB;
+          const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+          const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+          return timeA - timeB;
+        }
       });
   }, [pullRequests, selectedRepoId, selectedState, searchQuery, repos, sortOrder]);
 
@@ -415,7 +428,7 @@ export default function PullRequestsPage() {
               title="Toggle Pull Request numerical order"
             >
               <ArrowUpDown className="h-3.5 w-3.5 text-[#281C59] dark:text-blue-500" />
-              <span>Order: {sortOrder === "asc" ? "#1 → #N" : "#N → #1"}</span>
+              <span>Order: {sortOrder === "desc" ? "Latest First (#N → #1)" : "Oldest First (#1 → #N)"}</span>
             </button>
 
             {/* Search Box */}
