@@ -354,14 +354,15 @@ async def github_webhook(
 
             return {"status": "ignored", "event": "push", "branch": branch}
 
-        # 6. Check Run event (from GitHub Actions / Secura Security Gate)
-        if x_github_event == "check_run":
-            cr_data = payload.get("check_run", {})
+        # 6. Check Run / Check Suite / Workflow Run events (Secura Security Gate, GitHub Actions)
+        if x_github_event in ("check_run", "check_suite", "workflow_run"):
+            event_obj = payload.get(x_github_event, {})
             repo_data = payload.get("repository", {})
             full_name = repo_data.get("full_name")
-            head_sha = cr_data.get("head_sha")
-            conclusion = cr_data.get("conclusion")
-            pull_requests_list = cr_data.get("pull_requests") or []
+            head_sha = event_obj.get("head_sha")
+            conclusion = (event_obj.get("conclusion") or "").lower()
+            status_val = (event_obj.get("status") or "").lower()
+            pull_requests_list = event_obj.get("pull_requests") or []
             pr_num = pull_requests_list[0].get("number") if pull_requests_list else None
 
             repo = db.query(Repository).filter(func.lower(Repository.full_name) == full_name.lower()).first()
@@ -369,28 +370,84 @@ async def github_webhook(
                 target_sha = head_sha[:12] if len(head_sha) >= 12 else head_sha
                 scan = (
                     db.query(Scan)
-                    .filter(Scan.repository_id == repo.id, Scan.commit_sha == target_sha)
+                    .filter(
+                        Scan.repository_id == repo.id,
+                        (Scan.commit_sha == target_sha) | (Scan.pull_number == pr_num if pr_num else False),
+                    )
+                    .order_by(Scan.created_at.desc())
                     .first()
                 )
+
+                is_fail = conclusion in ("failure", "action_required", "timed_out", "cancelled")
+                is_succ = conclusion == "success"
+
+                # Parse findings from check run output
+                output = event_obj.get("output") or {}
+                output_text = (output.get("summary") or "") + "\n" + (output.get("text") or "")
+                parsed_findings = []
+                if output_text.strip():
+                    for line in output_text.splitlines():
+                        clean_ln = line.strip().strip("*").strip()
+                        if clean_ln.startswith("[") and " in " in clean_ln:
+                            prefix, _, target = clean_ln.partition(" in ")
+                            if prefix.startswith("[") and "]" in prefix:
+                                sev_str, _, rule_name = prefix[1:].partition("]")
+                                target = target.strip().strip("`").strip("*")
+                                path_part, _, line_part = target.rpartition(":")
+                                line_no = int(line_part) if line_part.isdigit() else 1
+                                file_target = path_part if line_part.isdigit() else target
+                                if "secura-pr-" in file_target:
+                                    _, _, rem = file_target.partition("secura-pr-")
+                                    if "/" in rem:
+                                        file_target = rem.partition("/")[2]
+                                rule_clean = rule_name.strip()
+                                parsed_findings.append({
+                                    "rule_id": rule_clean,
+                                    "type": rule_clean,
+                                    "file": file_target,
+                                    "line": line_no,
+                                    "severity": sev_str.strip(),
+                                })
+
                 if not scan:
                     scan = Scan(
                         repository_id=repo.id,
                         commit_sha=target_sha,
                         branch="main",
                         pull_number=pr_num,
-                        scan_status="completed",
-                        scan_result="passed" if conclusion == "success" else "failed",
-                        score=100 if conclusion == "success" else 50,
+                        scan_status="completed" if (is_fail or is_succ) else ("running" if status_val in ("in_progress", "queued") else "completed"),
+                        scan_result="failed" if is_fail else ("passed" if is_succ else "pending"),
+                        score=0 if is_fail else 100,
+                        total_findings=len(parsed_findings),
+                        critical_count=sum(1 for f in parsed_findings if f.get("severity") == "CRITICAL"),
+                        high_count=sum(1 for f in parsed_findings if f.get("severity") == "HIGH"),
                     )
                     db.add(scan)
                     db.commit()
+                    db.refresh(scan)
+                    if parsed_findings:
+                        from app.services.scan_runner import _reconcile_pr_findings_in_db
+                        _reconcile_pr_findings_in_db(db, repo.id, scan.id, pr_num or 1, parsed_findings)
+                        db.commit()
                 else:
                     if pr_num and not scan.pull_number:
                         scan.pull_number = pr_num
-                    if conclusion:
-                        scan.scan_result = "passed" if conclusion == "success" else "failed"
+                    if is_fail or is_succ or status_val:
+                        scan.scan_status = "completed" if (is_fail or is_succ) else ("running" if status_val in ("in_progress", "queued") else scan.scan_status)
+                        scan.scan_result = "failed" if is_fail else ("passed" if is_succ else scan.scan_result)
+                        if is_fail:
+                            scan.score = 0
+                        elif is_succ and scan.scan_result != "failed":
+                            scan.score = 100
+                    if parsed_findings:
+                        scan.total_findings = len(parsed_findings)
+                        scan.critical_count = sum(1 for f in parsed_findings if f.get("severity") == "CRITICAL")
+                        scan.high_count = sum(1 for f in parsed_findings if f.get("severity") == "HIGH")
+                        from app.services.scan_runner import _reconcile_pr_findings_in_db
+                        _reconcile_pr_findings_in_db(db, repo.id, scan.id, pr_num or scan.pull_number or 1, parsed_findings)
                     db.commit()
-                return {"status": "recorded", "event": "check_run", "commit": head_sha}
+
+                return {"status": "recorded", "event": x_github_event, "commit": head_sha}
 
         return {"status": "ignored", "event": x_github_event}
 
