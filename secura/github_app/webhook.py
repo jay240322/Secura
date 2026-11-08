@@ -37,6 +37,82 @@ def health():
     }
 
 
+def _scan_and_publish_check_run(
+    installation_token: str,
+    owner: str,
+    repo: str,
+    head_sha: str,
+    changed_files: list[dict],
+) -> tuple[dict, list[dict], dict]:
+    """Execute in-progress check, scan files, and publish completed check run."""
+    check_run_id = None
+    try:
+        init_check = create_check_run(
+            installation_token=installation_token,
+            owner=owner,
+            repo=repo,
+            head_sha=head_sha,
+            status="in_progress",
+        )
+        check_run_id = init_check.get("id")
+    except Exception as exc:
+        logger.warning("Could not set check run to in_progress: %s", exc)
+
+    def fetch_file_content(filename: str):
+        encoded_path = quote(filename, safe="/")
+        return get_repository_file_content(
+            installation_token=installation_token,
+            owner=owner,
+            repo=repo,
+            path=encoded_path,
+            ref=head_sha,
+        )
+
+    try:
+        scan_output = scan_github_pull_request(
+            changed_files=changed_files,
+            fetch_file_content=fetch_file_content,
+        )
+        result = scan_output["result"]
+        findings = scan_output["findings"]
+
+        if check_run_id:
+            check_run = update_check_run(
+                installation_token=installation_token,
+                owner=owner,
+                repo=repo,
+                check_run_id=check_run_id,
+                findings=findings,
+                result=result,
+            )
+        else:
+            check_run = create_check_run(
+                installation_token=installation_token,
+                owner=owner,
+                repo=repo,
+                head_sha=head_sha,
+                status="completed",
+                findings=findings,
+                result=result,
+            )
+        return result, findings, check_run
+    except Exception as exc:
+        if check_run_id:
+            try:
+                update_check_run(
+                    installation_token=installation_token,
+                    owner=owner,
+                    repo=repo,
+                    check_run_id=check_run_id,
+                    conclusion="failure",
+                    title="Secura Security Gate: Scan error",
+                    summary=f"An unexpected error occurred during scan: {exc}",
+                )
+            except Exception:
+                pass
+        raise
+
+
 @app.post("/webhook")
 async def github_webhook(
     request: Request,
@@ -97,6 +173,64 @@ async def github_webhook(
             "status": "ok",
             "event": "ping",
         }
+
+    # Handle push events (e.g. commits merged or pushed directly to main)
+    if x_github_event == "push":
+        repository = payload.get("repository", {})
+        installation = payload.get("installation", {})
+        repository_name = repository.get("full_name")
+        installation_id = installation.get("id")
+        head_sha = payload.get("after")
+
+        if (
+            not repository_name
+            or not installation_id
+            or not head_sha
+            or head_sha == "0000000000000000000000000000000000000000"
+        ):
+            return {
+                "status": "ignored",
+                "event": "push",
+                "reason": "missing_required_fields_or_deleted_branch",
+            }
+
+        owner, repo = repository_name.split("/", 1)
+        try:
+            logger.info("Processing push event for %s (%s)", repository_name, head_sha[:7])
+            installation_token = create_installation_token(installation_id)
+
+            changed_files_map = {}
+            all_commits = list(payload.get("commits", []))
+            if payload.get("head_commit"):
+                all_commits.append(payload.get("head_commit"))
+
+            for commit in all_commits:
+                for f in commit.get("added", []):
+                    changed_files_map[f] = {"filename": f, "status": "added"}
+                for f in commit.get("modified", []):
+                    changed_files_map[f] = {"filename": f, "status": "modified"}
+                for f in commit.get("removed", []):
+                    changed_files_map[f] = {"filename": f, "status": "removed"}
+
+            result, findings, _ = _scan_and_publish_check_run(
+                installation_token=installation_token,
+                owner=owner,
+                repo=repo,
+                head_sha=head_sha,
+                changed_files=list(changed_files_map.values()),
+            )
+
+            logger.info("Completed push check run for %s (%s findings)", repository_name, len(findings))
+            return {
+                "status": "success",
+                "event": "push",
+                "repository": repository_name,
+                "commit": head_sha,
+                "findings": len(findings),
+            }
+        except Exception as exc:
+            logger.exception("Error processing push event for %s: %s", repository_name, exc)
+            return {"status": "error", "error": str(exc)}
 
     if x_github_event != "pull_request":
         logger.info(
@@ -190,19 +324,6 @@ async def github_webhook(
         )
         installation_token = create_installation_token(installation_id)
 
-        # 1. Start Check Run in_progress so the user immediately sees the pending check
-        try:
-            init_check = create_check_run(
-                installation_token=installation_token,
-                owner=owner,
-                repo=repo,
-                head_sha=head_sha,
-                status="in_progress",
-            )
-            check_run_id = init_check.get("id")
-        except Exception as exc:
-            logger.warning("Could not set check run to in_progress: %s", exc)
-
         logger.info(
             "Fetching changed files for %s PR #%s",
             repository_name,
@@ -220,60 +341,14 @@ async def github_webhook(
             len(changed_files),
         )
 
-        def fetch_file_content(filename):
-            encoded_path = quote(
-                filename,
-                safe="/",
-            )
-            return get_repository_file_content(
-                installation_token=installation_token,
-                owner=owner,
-                repo=repo,
-                path=encoded_path,
-                ref=head_sha,
-            )
-
-        logger.info(
-            "Starting Secura scan for %s PR #%s",
-            repository_name,
-            pull_number,
-        )
-
-        scan_output = scan_github_pull_request(
+        result, findings, check_run = _scan_and_publish_check_run(
+            installation_token=installation_token,
+            owner=owner,
+            repo=repo,
+            head_sha=head_sha,
             changed_files=changed_files,
-            fetch_file_content=fetch_file_content,
         )
-
-        result = scan_output["result"]
-        findings = scan_output["findings"]
-
-        logger.info(
-            "Finalizing Secura Check Run for %s PR #%s (findings: %s)",
-            repository_name,
-            pull_number,
-            len(findings),
-        )
-
-        # 2. Update existing check run or create completed check run
-        if check_run_id:
-            check_run = update_check_run(
-                installation_token=installation_token,
-                owner=owner,
-                repo=repo,
-                check_run_id=check_run_id,
-                findings=findings,
-                result=result,
-            )
-        else:
-            check_run = create_check_run(
-                installation_token=installation_token,
-                owner=owner,
-                repo=repo,
-                head_sha=head_sha,
-                status="completed",
-                findings=findings,
-                result=result,
-            )
+        check_run_id = check_run.get("id")
 
         conclusion = check_run.get("conclusion")
         score = result.get("score")

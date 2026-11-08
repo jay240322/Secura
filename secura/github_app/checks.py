@@ -59,7 +59,7 @@ def build_check_output(
 
     if has_violations or findings:
         conclusion = "failure"
-        title = "Secura Security Gate: FAILED - Unsafe to merge"
+        title = f"Failed - {len(findings)} security finding(s) detected (Score: {score}/100)"
 
         summary_lines = [
             "## ❌ MERGE BLOCKED: Unsafe to merge into main\n",
@@ -103,7 +103,7 @@ def build_check_output(
 
     else:
         conclusion = "success"
-        title = "Secura Security Gate: PASSED - Safe to merge"
+        title = f"Passed - 0 secrets detected (Score: {score}/100)"
         summary = (
             "## ✅ Secura Security Gate: PASSED\n\n"
             "Secura scanned all changed files and detected no exposed secrets "
@@ -237,6 +237,7 @@ def update_check_run(
     owner: str,
     repo: str,
     check_run_id: int,
+    status: str = "completed",
     findings: list[dict] | None = None,
     result: dict | None = None,
     conclusion: str | None = None,
@@ -260,7 +261,7 @@ def update_check_run(
             "X-GitHub-Api-Version": "2022-11-28",
         },
         json={
-            "status": "completed",
+            "status": status,
             "conclusion": final_conclusion,
             "output": output_payload,
         },

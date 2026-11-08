@@ -21,6 +21,38 @@ logger = logging.getLogger("secura.webhook")
 router = APIRouter(tags=["Webhooks"])
 
 
+def _find_or_enroll_repo(
+    db: Session,
+    full_name: str,
+    installation_id: int | None,
+    repo_data: dict,
+) -> Repository | None:
+    """Find monitored repository or auto-enroll it if installed via GitHub App."""
+    repo = db.query(Repository).filter(func.lower(Repository.full_name) == full_name.lower()).first()
+    if not repo and installation_id:
+        inst = db.query(GitHubInstallation).filter(
+            GitHubInstallation.github_installation_id == installation_id
+        ).first()
+        if inst:
+            owner_part, repo_part = full_name.split("/", 1) if "/" in full_name else (inst.account_name, full_name)
+            repo = Repository(
+                installation_id=inst.id,
+                user_id=inst.user_id,
+                github_repo_id=repo_data.get("id") or (abs(hash(full_name)) % 1000000000),
+                name=repo_part,
+                full_name=full_name,
+                owner=owner_part,
+                is_private=repo_data.get("private", False),
+                is_monitored=True,
+                html_url=f"https://github.com/{full_name}",
+            )
+            db.add(repo)
+            db.commit()
+            db.refresh(repo)
+            logger.info("Auto-enrolled repository %s for GitHub App installation %s", full_name, installation_id)
+    return repo
+
+
 @router.post("/webhooks/github")
 @router.post("/api/webhooks/github")
 async def github_webhook(
@@ -242,7 +274,7 @@ async def github_webhook(
             base_branch = pr_data.get("base", {}).get("ref", "main")
             installation_id = inst_data.get("id")
 
-            repo = db.query(Repository).filter(func.lower(Repository.full_name) == full_name.lower()).first()
+            repo = _find_or_enroll_repo(db, full_name, installation_id, repo_data)
             if not repo:
                 logger.info("Repository %s not monitored by Secura, ignoring PR #%s", full_name, pull_number)
                 return {"status": "unmonitored", "repository": full_name}
@@ -335,7 +367,7 @@ async def github_webhook(
             installation_id = inst_data.get("id")
             after_sha = payload.get("after")
 
-            repo = db.query(Repository).filter(func.lower(Repository.full_name) == full_name.lower()).first()
+            repo = _find_or_enroll_repo(db, full_name, installation_id, repo_data)
             if not repo:
                 logger.info("Repository %s not monitored by Secura, ignoring push event", full_name)
                 return {"status": "unmonitored", "repository": full_name}
