@@ -17,8 +17,10 @@ import {
   Check,
   Sparkles,
   GitCommit,
+  GitPullRequest,
 } from "lucide-react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useState, useMemo, useEffect, Suspense } from "react";
 
 export const dynamic = "force-dynamic";
@@ -35,19 +37,38 @@ export default function FindingsPage() {
 }
 
 function FindingsContent() {
+  const searchParams = useSearchParams();
+  const urlRepo = searchParams.get("repo") || "";
+  const urlPr = searchParams.get("pr");
+  const initialPr = urlPr ? Number.parseInt(urlPr, 10) : null;
+  const urlStatus = (searchParams.get("status") as FindingStatus) || "";
+
   const [findings, setFindings] = useState<Finding[]>([]);
   const [isLive, setIsLive] = useState(false);
   const [query, setQuery] = useState("");
   const [severityFilter, setSeverityFilter] = useState<Severity | "">("");
-  const [statusFilter, setStatusFilter] = useState<FindingStatus | "">("");
-  const [repoFilter, setRepoFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState<FindingStatus | "">(urlStatus);
+  const [repoFilter, setRepoFilter] = useState(urlRepo);
+  const [prFilter, setPrFilter] = useState<number | null>(initialPr);
   const [loading, setLoading] = useState(true);
+
+  // Sync state when URL search parameters change (e.g. user navigates from PR or directly to Findings)
+  useEffect(() => {
+    const p = searchParams.get("pr");
+    setPrFilter(p ? Number.parseInt(p, 10) : null);
+    setRepoFilter(searchParams.get("repo") || "");
+    setStatusFilter((searchParams.get("status") as FindingStatus) || "");
+  }, [searchParams]);
 
   useEffect(() => {
     let mounted = true;
     async function fetchFindings() {
       try {
-        const res = await api.getFindings();
+        const res = await api.getFindings({
+          repoName: repoFilter || undefined,
+          pullNumber: prFilter !== null ? prFilter : undefined,
+          status: statusFilter || undefined,
+        });
         if (mounted) {
           setFindings(res.findings);
           setIsLive(res.isLive);
@@ -69,11 +90,15 @@ function FindingsContent() {
       mounted = false;
       clearInterval(interval);
     };
-  }, []);
+  }, [repoFilter, prFilter, statusFilter]);
 
   const handleRefresh = async () => {
     try {
-      const res = await api.getFindings();
+      const res = await api.getFindings({
+        repoName: repoFilter || undefined,
+        pullNumber: prFilter !== null ? prFilter : undefined,
+        status: statusFilter || undefined,
+      });
       setFindings(res.findings);
       setIsLive(res.isLive);
     } catch (e) {
@@ -81,13 +106,19 @@ function FindingsContent() {
     }
   };
 
-  const repos = useMemo(
-    () => [...new Set(findings.map((f) => f.repository))],
-    [findings]
-  );
+  const repos = useMemo(() => {
+    const set = new Set(findings.map((f) => f.repository).filter(Boolean));
+    if (repoFilter) set.add(repoFilter);
+    return [...set];
+  }, [findings, repoFilter]);
 
   const filtered = useMemo(() => {
     return findings.filter((f) => {
+      if (prFilter !== null) {
+        if (f.pullNumber !== undefined && f.pullNumber !== null && f.pullNumber !== prFilter) {
+          return false;
+        }
+      }
       if (
         query &&
         !f.type.toLowerCase().includes(query.toLowerCase()) &&
@@ -109,7 +140,7 @@ function FindingsContent() {
       if (repoFilter && f.repository !== repoFilter) return false;
       return true;
     });
-  }, [findings, query, severityFilter, statusFilter, repoFilter]);
+  }, [findings, query, severityFilter, statusFilter, repoFilter, prFilter]);
 
   const openCount = findings.filter((f) => f.status === "open" && !f.isResolved).length;
   const criticalCount = findings.filter(
@@ -121,6 +152,48 @@ function FindingsContent() {
 
   return (
     <div className="max-w-screen-2xl mx-auto space-y-5">
+      {/* PR Filter Active Banner */}
+      {prFilter !== null && (
+        <div className="flex items-center justify-between gap-3 p-3.5 rounded-2xl border border-blue-200 bg-blue-50/80 dark:border-blue-900/60 dark:bg-blue-950/40 text-blue-950 dark:text-blue-100 shadow-2xs">
+          <div className="flex items-center gap-2.5 min-w-0 flex-1">
+            <div className="p-2 rounded-xl bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300 shrink-0">
+              <GitPullRequest className="h-4 w-4" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-semibold flex items-center gap-2 flex-wrap">
+                <span>Findings for Pull Request #{prFilter}</span>
+                {repoFilter && (
+                  <span className="font-mono text-[11px] text-blue-700 dark:text-blue-300 font-normal">
+                    · {repoFilter}
+                  </span>
+                )}
+              </p>
+              <p className="text-[11px] text-blue-700 dark:text-blue-300">
+                Viewing all detected secrets and solved violations for this pull request.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setPrFilter(null);
+              setRepoFilter("");
+              if (typeof window !== "undefined") {
+                const newUrl = new URL(window.location.href);
+                newUrl.searchParams.delete("pr");
+                newUrl.searchParams.delete("repo");
+                newUrl.searchParams.delete("status");
+                window.history.replaceState({}, "", newUrl.pathname);
+              }
+            }}
+            className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-xl bg-white dark:bg-zinc-900 border border-blue-200 dark:border-blue-800 text-blue-800 dark:text-blue-200 hover:bg-blue-100 dark:hover:bg-zinc-800 shadow-2xs transition-colors shrink-0"
+          >
+            <X className="h-3.5 w-3.5" />
+            <span>View all findings</span>
+          </button>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-center gap-4">
         <div className="flex-1">

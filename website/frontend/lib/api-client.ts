@@ -307,6 +307,26 @@ function mapBackendPullRequest(p: Record<string, unknown>): PullRequest {
   const repId = String(p.repository_id || p.repositoryId || "");
   const repName = cleanRepoDisplay(p.repository_name || p.repository, repId);
 
+  const rawState = String(p.state || p.pr_state || (p.merged_at || p.mergedAt ? "merged" : (p.closed_at || p.closedAt ? "closed" : "open"))).toLowerCase();
+  const prState: "open" | "merged" | "closed" = rawState === "merged" ? "merged" : (rawState === "closed" ? "closed" : "open");
+
+  const totFind = Number(p.total_findings ?? p.totalFindings ?? 0);
+  let resolvedScanStatus: "pending" | "running" | "completed" | "failed" =
+    (p.scan_status as "pending" | "running" | "completed" | "failed") || (p.scanStatus as "pending" | "running" | "completed" | "failed") || "completed";
+  let resolvedCheckRunStatus: "success" | "failure" | "in_progress" | "neutral" =
+    (p.check_run_status as "success" | "failure" | "in_progress" | "neutral") ||
+    (p.checkRunStatus as "success" | "failure" | "in_progress" | "neutral") ||
+    (p.scan_result === "failed" || totFind > 0 ? "failure" : "success");
+
+  if (prState === "merged" || prState === "closed") {
+    if (resolvedScanStatus === "running" || resolvedScanStatus === "pending") {
+      resolvedScanStatus = "completed";
+    }
+    if (resolvedCheckRunStatus === "in_progress") {
+      resolvedCheckRunStatus = (p.scan_result === "failed" || totFind > 0) ? "failure" : "success";
+    }
+  }
+
   return {
     id: String(p.id ?? ""),
     number: Number(p.number || 1),
@@ -317,17 +337,15 @@ function mapBackendPullRequest(p: Record<string, unknown>): PullRequest {
     baseBranch: String(p.base_branch || p.baseBranch || "main"),
     commitSha: String(p.commit_sha || p.commitSha || "HEAD"),
     author: String(p.author || "developer"),
-    state: (String(p.state || (p.merged_at ? "merged" : (p.closed_at ? "closed" : "open"))).toLowerCase() as "open" | "merged" | "closed"),
+    state: prState,
     mergedAt: p.merged_at ? String(p.merged_at) : (p.mergedAt ? String(p.mergedAt) : null),
     closedAt: p.closed_at ? String(p.closed_at) : (p.closedAt ? String(p.closedAt) : null),
-    scanStatus: (p.scan_status as "pending" | "running" | "completed" | "failed") || (p.scanStatus as "pending" | "running" | "completed" | "failed") || "completed",
-    checkRunStatus: (p.check_run_status as "success" | "failure" | "in_progress" | "neutral") ||
-      (p.checkRunStatus as "success" | "failure" | "in_progress" | "neutral") ||
-      (p.scan_result === "failed" || Number(p.total_findings ?? p.totalFindings ?? 0) > 0 ? "failure" : "success"),
-    totalFindings: Number(p.total_findings ?? p.totalFindings ?? 0),
+    scanStatus: resolvedScanStatus,
+    checkRunStatus: resolvedCheckRunStatus,
+    totalFindings: totFind,
     criticalFindings: Number(p.critical_findings ?? p.criticalFindings ?? 0),
     highFindings: Number(p.high_findings ?? p.highFindings ?? 0),
-    score: (p.check_run_status === "failure" || p.scan_result === "failed" || Number(p.total_findings ?? p.totalFindings ?? 0) > 0)
+    score: (resolvedCheckRunStatus === "failure" || p.scan_result === "failed" || totFind > 0)
       ? (p.score !== undefined && p.score !== null && Number(p.score) < 100 ? Number(p.score) : 0)
       : (p.score !== undefined && p.score !== null ? Number(p.score) : 100),
     createdAt: String(p.created_at || p.createdAt || new Date().toISOString()),
@@ -638,6 +656,8 @@ class ApiClient {
   // ─── Findings ─────────────────────────────────────────────────────────────
   async getFindings(params?: {
     repositoryId?: string;
+    repoName?: string;
+    pullNumber?: number;
     severity?: string;
     status?: string;
     search?: string;
@@ -645,9 +665,14 @@ class ApiClient {
     try {
       const query = new URLSearchParams();
       if (params?.repositoryId) query.set("repository_id", params.repositoryId);
+      if (params?.repoName) query.set("repo_name", params.repoName);
+      if (params?.pullNumber !== undefined && params?.pullNumber !== null) {
+        query.set("pull_number", String(params.pullNumber));
+      }
       if (params?.severity && params.severity !== "ALL") query.set("severity", params.severity);
       if (params?.status && params.status !== "ALL") query.set("status", params.status);
       if (params?.search) query.set("search", params.search);
+      query.set("limit", "200");
 
       const res = await this.fetchWithTimeout(`${API_BASE}/findings?${query.toString()}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);

@@ -587,6 +587,12 @@ def fast_sync_repository_prs(
                     existing_pr_scan.scan_status = "running"
                     existing_pr_scan.scan_result = "pending"
 
+                if pr_state in ("merged", "closed"):
+                    if existing_pr_scan.scan_status in ("running", "pending"):
+                        existing_pr_scan.scan_status = "completed"
+                    if existing_pr_scan.scan_result == "pending":
+                        existing_pr_scan.scan_result = "failed" if (cr_failed or cr_findings) else "passed"
+
                 curr_stored = []
                 if existing_pr_scan.pr_commits_json:
                     try:
@@ -740,11 +746,11 @@ def build_annotated_pr_data(
     high_cnt = sum(1 for f in serialized_findings if f.get("severity") == "HIGH") if serialized_findings else (s.high_count or 0)
 
     check_status = "neutral"
-    if s.scan_status == "running":
+    if pr_state == "open" and s.scan_status == "running":
         check_status = "in_progress"
     elif tot_cnt > 0 or s.scan_result in ("failed", "error") or (matching_head_scan and (matching_head_scan.get("scan_result") == "failed" or matching_head_scan.get("total_findings", 0) > 0)):
         check_status = "failure"
-    elif s.scan_result == "passed" or (s.scan_status == "completed" and tot_cnt == 0):
+    elif s.scan_result == "passed" or (s.scan_status == "completed" and tot_cnt == 0) or pr_state in ("merged", "closed"):
         check_status = "success"
 
     # Also match repository scans matching any commit sha in raw_commits (e.g. pushed before PR was created)
