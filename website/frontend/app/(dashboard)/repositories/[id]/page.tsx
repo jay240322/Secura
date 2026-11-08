@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { SeverityBadge } from "@/components/ui/severity-badge";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { api } from "@/lib/api-client";
+import { comparePullRequests, enrichPRWithRefreshedCommits } from "@/lib/pull-request-utils";
 import { cn } from "@/lib/utils";
 import type { Repository, PullRequest, Finding } from "@/types";
 import { PullRequestRow } from "@/components/pull-requests/pull-request-row";
@@ -64,14 +65,12 @@ function RepositoryDetailContent() {
   const [scanningMap, setScanningMap] = useState<Record<string, boolean>>({});
   const [expandedPRs, setExpandedPRs] = useState<Record<string, boolean>>({});
   const [syncLoading, setSyncLoading] = useState(false);
-  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
   const [loadingCommits, setLoadingCommits] = useState<Record<string, boolean>>({});
 
-  // Keep PRs strictly ordered by numerical PR number (#1, #2, #3, ...)
+  // Keep PRs strictly ordered by PR number descending (#N, ..., #1)
   const orderedPullRequests = useMemo(() => {
-    return [...pullRequests].sort((a, b) => {
-      return sortOrder === "asc" ? a.number - b.number : b.number - a.number;
-    });
+    return [...pullRequests].sort((a, b) => comparePullRequests(a, b, sortOrder));
   }, [pullRequests, sortOrder]);
 
   const loadData = async () => {
@@ -118,6 +117,18 @@ function RepositoryDetailContent() {
 
     void loadData();
 
+    // Automatically sync pull requests from GitHub on repository load
+    if (params?.id) {
+      void api
+        .syncPullRequests(params.id)
+        .then((res) => {
+          if (mounted && res.success && res.pullRequests.length > 0) {
+            setPullRequests(res.pullRequests);
+          }
+        })
+        .catch(() => {});
+    }
+
     // Auto-poll every 5 seconds to keep PRs and findings live for this repository
     const interval = setInterval(() => {
       if (params?.id) {
@@ -148,8 +159,20 @@ function RepositoryDetailContent() {
     try {
       const commits = await api.getPullRequestCommits(repoId, pullNumber);
       if (commits && commits.length > 0) {
+        const pr = pullRequests.find((p) => p.id === prId);
+        const { enrichedCommits, resolvedFindings, hasResolved } = enrichPRWithRefreshedCommits(pr, commits);
+
         setPullRequests((prev) =>
-          prev.map((item) => (item.id === prId ? { ...item, commits } : item))
+          prev.map((item) =>
+            item.id === prId
+              ? {
+                  ...item,
+                  commits: enrichedCommits,
+                  historicalFindings: resolvedFindings,
+                  hasResolvedViolations: hasResolved,
+                }
+              : item
+          )
         );
       }
     } catch (e) {
@@ -506,7 +529,7 @@ function RepositoryDetailContent() {
                     title="Toggle PR numerical order"
                   >
                     <ArrowUpDown className="h-3.5 w-3.5 text-blue-600 dark:text-blue-500" />
-                    <span>Order: {sortOrder === "asc" ? "#1 → #N" : "#N → #1"}</span>
+                    <span>Order: {sortOrder === "desc" ? "Latest First (#N → #1)" : "Oldest First (#1 → #N)"}</span>
                   </button>
                 </div>
               </CardHeader>

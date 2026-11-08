@@ -242,7 +242,7 @@ async def github_webhook(
             base_branch = pr_data.get("base", {}).get("ref", "main")
             installation_id = inst_data.get("id")
 
-            repo = db.query(Repository).filter(Repository.full_name == full_name).first()
+            repo = db.query(Repository).filter(func.lower(Repository.full_name) == full_name.lower()).first()
             if not repo:
                 logger.info("Repository %s not monitored by Secura, ignoring PR #%s", full_name, pull_number)
                 return {"status": "unmonitored", "repository": full_name}
@@ -331,7 +331,7 @@ async def github_webhook(
             installation_id = inst_data.get("id")
             after_sha = payload.get("after")
 
-            repo = db.query(Repository).filter(Repository.full_name == full_name).first()
+            repo = db.query(Repository).filter(func.lower(Repository.full_name) == full_name.lower()).first()
             if not repo:
                 logger.info("Repository %s not monitored by Secura, ignoring push event", full_name)
                 return {"status": "unmonitored", "repository": full_name}
@@ -364,7 +364,7 @@ async def github_webhook(
             pull_requests_list = cr_data.get("pull_requests") or []
             pr_num = pull_requests_list[0].get("number") if pull_requests_list else None
 
-            repo = db.query(Repository).filter(Repository.full_name == full_name).first()
+            repo = db.query(Repository).filter(func.lower(Repository.full_name) == full_name.lower()).first()
             if repo and head_sha:
                 target_sha = head_sha[:12] if len(head_sha) >= 12 else head_sha
                 scan = (

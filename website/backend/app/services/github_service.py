@@ -243,23 +243,62 @@ def trigger_pr_comment(
         return None
 
 
-def get_repository_pull_requests(
+_DISCOVERED_INST_CACHE: Dict[Tuple[str, str], Tuple[Optional[int], float]] = {}
+
+
+def _get_github_auth_headers(
     installation_id: Optional[int],
     owner: str,
     repo: str,
-    state: str = "all",
-    per_page: int = 50,
-) -> List[Dict[str, Any]]:
-    """
-    Fetch all pull requests (open, merged, closed) for a repository.
-    Tries GitHub App installation token first, with automatic fallback to public API.
-    """
+    user_token: Optional[str] = None,
+) -> Dict[str, str]:
+    """Obtain standard headers for GitHub API requests with auto-discovery of installation tokens."""
     token = None
     if installation_id:
         try:
             token = create_installation_token(installation_id)
         except Exception as exc:
             logger.warning("Could not obtain installation token for %s: %s", installation_id, exc)
+
+    if not token and user_token:
+        token = user_token
+
+    # Check memory cache for auto-discovered installation ID
+    cache_k = (owner.lower(), repo.lower())
+    now = time.time()
+    if not token:
+        cached = _DISCOVERED_INST_CACHE.get(cache_k)
+        if cached:
+            found_id, exp_t = cached
+            if now < exp_t and found_id:
+                try:
+                    token = create_installation_token(found_id)
+                except Exception:
+                    pass
+
+    if not token and cache_k not in _DISCOVERED_INST_CACHE:
+        try:
+            app_jwt = create_app_jwt()
+            inst_resp = requests.get(
+                f"{GITHUB_API_URL}/repos/{owner}/{repo}/installation",
+                headers={
+                    "Authorization": f"Bearer {app_jwt}",
+                    "Accept": "application/vnd.github+json",
+                    "X-GitHub-Api-Version": "2022-11-28",
+                    "User-Agent": "Secura-Security-Scanner",
+                },
+                timeout=3,
+            )
+            if inst_resp.ok:
+                found_id = inst_resp.json().get("id")
+                if found_id:
+                    _DISCOVERED_INST_CACHE[cache_k] = (found_id, time.time() + 3600)
+                    token = create_installation_token(found_id)
+            else:
+                _DISCOVERED_INST_CACHE[cache_k] = (None, time.time() + 300)
+        except Exception as inst_err:
+            logger.debug("Could not auto-discover installation for %s/%s: %s", owner, repo, inst_err)
+            _DISCOVERED_INST_CACHE[cache_k] = (None, time.time() + 300)
 
     headers = {
         "Accept": "application/vnd.github+json",
@@ -268,6 +307,22 @@ def get_repository_pull_requests(
     }
     if token:
         headers["Authorization"] = f"Bearer {token}"
+    return headers
+
+
+def get_repository_pull_requests(
+    installation_id: Optional[int],
+    owner: str,
+    repo: str,
+    state: str = "all",
+    per_page: int = 50,
+    user_token: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    """
+    Fetch all pull requests (open, merged, closed) for a repository.
+    Tries GitHub App installation token first, with automatic fallback to public API.
+    """
+    headers = _get_github_auth_headers(installation_id, owner, repo, user_token=user_token)
 
     url = f"{GITHUB_API_URL}/repos/{owner}/{repo}/pulls"
     try:
@@ -275,10 +330,25 @@ def get_repository_pull_requests(
             url,
             headers=headers,
             params={"state": state, "per_page": min(per_page, 100), "sort": "updated", "direction": "desc"},
-            timeout=15,
+            timeout=6,
         )
         if response.ok:
             return response.json()
+        if response.status_code in (401, 403) and "Authorization" in headers:
+            logger.info("GitHub pulls API returned %s with token for %s/%s; attempting unauthenticated fallback", response.status_code, owner, repo)
+            fallback_headers = {
+                "Accept": "application/vnd.github+json",
+                "X-GitHub-Api-Version": "2022-11-28",
+                "User-Agent": "Secura-Security-Scanner",
+            }
+            fallback_resp = requests.get(
+                url,
+                headers=fallback_headers,
+                params={"state": state, "per_page": min(per_page, 100), "sort": "updated", "direction": "desc"},
+                timeout=6,
+            )
+            if fallback_resp.ok:
+                return fallback_resp.json()
         logger.warning(
             "GitHub pulls API responded with status %s for %s/%s: %s",
             response.status_code,
@@ -296,52 +366,10 @@ def get_open_pull_requests(
     installation_id: Optional[int],
     owner: str,
     repo: str,
+    user_token: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """Fetch open pull requests for a repository."""
-    return get_repository_pull_requests(installation_id, owner, repo, state="open")
-
-
-def _get_github_auth_headers(
-    installation_id: Optional[int],
-    owner: str,
-    repo: str,
-) -> Dict[str, str]:
-    """Obtain standard headers for GitHub API requests with auto-discovery of installation tokens."""
-    token = None
-    if installation_id:
-        try:
-            token = create_installation_token(installation_id)
-        except Exception as exc:
-            logger.warning("Could not obtain installation token for %s: %s", installation_id, exc)
-
-    if not token:
-        try:
-            app_jwt = create_app_jwt()
-            inst_resp = requests.get(
-                f"{GITHUB_API_URL}/repos/{owner}/{repo}/installation",
-                headers={
-                    "Authorization": f"Bearer {app_jwt}",
-                    "Accept": "application/vnd.github+json",
-                    "X-GitHub-Api-Version": "2022-11-28",
-                    "User-Agent": "Secura-Security-Scanner",
-                },
-                timeout=10,
-            )
-            if inst_resp.ok:
-                found_id = inst_resp.json().get("id")
-                if found_id:
-                    token = create_installation_token(found_id)
-        except Exception as inst_err:
-            logger.debug("Could not auto-discover installation for %s/%s: %s", owner, repo, inst_err)
-
-    headers = {
-        "Accept": "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2022-11-28",
-        "User-Agent": "Secura-Security-Scanner",
-    }
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
-    return headers
+    return get_repository_pull_requests(installation_id, owner, repo, state="open", user_token=user_token)
 
 
 def get_pull_request_commits(
@@ -349,38 +377,40 @@ def get_pull_request_commits(
     owner: str,
     repo: str,
     pull_number: int,
+    user_token: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """
     Fetch all commits associated with a GitHub Pull Request.
-    Tries GitHub App installation token first, with automatic fallback to public API.
+    Tries GitHub App installation token first, with automatic fallback to user token and public API.
     """
-    headers = _get_github_auth_headers(installation_id, owner, repo)
+    headers = _get_github_auth_headers(installation_id, owner, repo, user_token=user_token)
     url = f"{GITHUB_API_URL}/repos/{owner}/{repo}/pulls/{pull_number}/commits"
     try:
         response = requests.get(
             url,
             headers=headers,
             params={"per_page": 100},
-            timeout=15,
+            timeout=6,
         )
         if response.ok:
             data = response.json()
-            commits = []
-            for c in data:
-                sha = c.get("sha", "")
-                commit_info = c.get("commit", {})
-                author_info = commit_info.get("author", {})
-                gh_author = c.get("author", {}) or {}
-                commits.append({
-                    "sha": sha[:7] if sha else "HEAD",
-                    "full_sha": sha,
-                    "message": commit_info.get("message", "Commit update"),
-                    "author": gh_author.get("login") or author_info.get("name") or "developer",
-                    "author_avatar": gh_author.get("avatar_url"),
-                    "date": author_info.get("date"),
-                    "html_url": c.get("html_url") or f"https://github.com/{owner}/{repo}/commit/{sha}",
-                })
-            return commits
+        elif response.status_code in (401, 403) and "Authorization" in headers:
+            logger.info("GitHub PR commits API returned %s with token for %s/%s #%s; attempting unauthenticated fallback", response.status_code, owner, repo, pull_number)
+            fallback_headers = {
+                "Accept": "application/vnd.github+json",
+                "X-GitHub-Api-Version": "2022-11-28",
+                "User-Agent": "Secura-Security-Scanner",
+            }
+            fallback_resp = requests.get(
+                url,
+                headers=fallback_headers,
+                params={"per_page": 100},
+                timeout=6,
+            )
+            if fallback_resp.ok:
+                data = fallback_resp.json()
+            else:
+                return []
         else:
             logger.warning(
                 "GitHub returned HTTP %s for PR commits %s/%s #%s: %s",
@@ -390,7 +420,24 @@ def get_pull_request_commits(
                 pull_number,
                 response.text[:200],
             )
-        return []
+            return []
+
+        commits = []
+        for c in data:
+            sha = c.get("sha", "")
+            commit_info = c.get("commit", {})
+            author_info = commit_info.get("author", {})
+            gh_author = c.get("author", {}) or {}
+            commits.append({
+                "sha": sha[:7] if sha else "HEAD",
+                "full_sha": sha,
+                "message": commit_info.get("message", "Commit update"),
+                "author": gh_author.get("login") or author_info.get("name") or "developer",
+                "author_avatar": gh_author.get("avatar_url"),
+                "date": author_info.get("date"),
+                "html_url": c.get("html_url") or f"https://github.com/{owner}/{repo}/commit/{sha}",
+            })
+        return commits
     except Exception as exc:
         logger.error("Failed to fetch PR commits for %s/%s #%s: %s", owner, repo, pull_number, exc)
         return []
@@ -409,6 +456,11 @@ def _make_check_run_finding(
     """Helper to build standardized finding dictionaries without code duplication."""
     clean_rule = rule_id.strip() if rule_id else "SECRET"
     clean_path = f_path.strip().strip("`") if f_path else "unknown"
+    if "secura-pr-" in clean_path:
+        _, _, remainder = clean_path.partition("secura-pr-")
+        if "/" in remainder:
+            clean_path = remainder.partition("/")[2]
+
     upper_sev = (severity or "HIGH").upper()
     valid_sev = upper_sev if upper_sev in ("CRITICAL", "HIGH", "MEDIUM", "LOW") else "HIGH"
 
@@ -434,15 +486,16 @@ def get_commit_check_runs(
     owner: str,
     repo: str,
     commit_sha: str,
+    user_token: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """
     Fetch GitHub Check Runs and annotations for a specific commit SHA.
     Enables retrieving detections made by GitHub Actions or GitHub App for historical commits.
     """
-    headers = _get_github_auth_headers(installation_id, owner, repo)
+    headers = _get_github_auth_headers(installation_id, owner, repo, user_token=user_token)
     url = f"{GITHUB_API_URL}/repos/{owner}/{repo}/commits/{commit_sha}/check-runs"
     try:
-        response = requests.get(url, headers=headers, params={"per_page": 50}, timeout=15)
+        response = requests.get(url, headers=headers, params={"per_page": 50}, timeout=6)
         if not response.ok:
             return []
         data = response.json()
@@ -488,13 +541,14 @@ def get_commit_check_runs(
                     summary_text = (output.get("summary") or "") + "\n" + (output.get("text") or "")
                     lines = [ln.strip() for ln in summary_text.splitlines() if ln.strip()]
 
-                    # Pattern 1: Secura list format: **[CRITICAL] AWS Access Key** in `app/config.py:12`
+                    # Pattern 1: Secura list format: **[CRITICAL] AWS Access Key** in `app/config.py:12` or [HIGH] Hardcoded Credential in path:12
                     for line in lines:
-                        if line.startswith("**[") and "** in " in line:
-                            prefix, _, target = line.partition("** in ")
-                            if prefix.startswith("**[") and "]" in prefix:
-                                sev_str, _, rule_name = prefix[3:].partition("]")
-                                target = target.strip().strip("`")
+                        clean_ln = line.strip().strip("*").strip()
+                        if clean_ln.startswith("[") and " in " in clean_ln:
+                            prefix, _, target = clean_ln.partition(" in ")
+                            if prefix.startswith("[") and "]" in prefix:
+                                sev_str, _, rule_name = prefix[1:].partition("]")
+                                target = target.strip().strip("`").strip("*")
                                 path_part, _, line_part = target.rpartition(":")
                                 line_no = int(line_part) if line_part.isdigit() else 1
                                 file_target = path_part if line_part.isdigit() else target

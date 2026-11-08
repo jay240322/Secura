@@ -357,7 +357,7 @@ function mapBackendPullRequest(p: Record<string, unknown>): PullRequest {
 // ─── API Client Class ────────────────────────────────────────────────────────
 
 class ApiClient {
-  private async fetchWithTimeout(url: string, options: RequestInit = {}, timeoutMs = 15000): Promise<Response> {
+  private async fetchWithTimeout(url: string, options: RequestInit = {}, timeoutMs = 20000): Promise<Response> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
     const headers = new Headers(options.headers || {});
@@ -468,7 +468,7 @@ class ApiClient {
   } | null> {
     if (!repositoryId) return null;
     try {
-      const res = await this.fetchWithTimeout(`${API_BASE}/repositories/${encodeURIComponent(repositoryId)}/overview`);
+      const res = await this.fetchWithTimeout(`${API_BASE}/repositories/${encodeURIComponent(repositoryId)}/overview`, {}, 25000);
       if (!res.ok) return null;
       const data = await res.json();
       const repo = data.repository ? mapBackendRepository(data.repository) : null;

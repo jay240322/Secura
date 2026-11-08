@@ -189,6 +189,7 @@ SAFE_PREFIXES = (
     "env(",
     "config(",
     "get(",
+    "getattr(",
     "get_env(",
     "dotenv",
     "settings.",
