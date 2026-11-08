@@ -98,6 +98,112 @@ async def github_webhook(
             "event": "ping",
         }
 
+    # Handle push events (e.g. commits merged or pushed directly to main)
+    if x_github_event == "push":
+        repository = payload.get("repository", {})
+        installation = payload.get("installation", {})
+        repository_name = repository.get("full_name")
+        installation_id = installation.get("id")
+        head_sha = payload.get("after")
+
+        if (
+            not repository_name
+            or not installation_id
+            or not head_sha
+            or head_sha == "0000000000000000000000000000000000000000"
+        ):
+            return {
+                "status": "ignored",
+                "event": "push",
+                "reason": "missing_required_fields_or_deleted_branch",
+            }
+
+        owner, repo = repository_name.split("/", 1)
+        try:
+            logger.info("Processing push event for %s (%s)", repository_name, head_sha[:7])
+            installation_token = create_installation_token(installation_id)
+
+            # Start in-progress check run
+            check_run_id = None
+            try:
+                init_check = create_check_run(
+                    installation_token=installation_token,
+                    owner=owner,
+                    repo=repo,
+                    head_sha=head_sha,
+                    status="in_progress",
+                )
+                check_run_id = init_check.get("id")
+            except Exception as e:
+                logger.warning("Could not set push check run to in_progress: %s", e)
+
+            # Gather changed files across all commits in push
+            changed_files_map = {}
+            all_commits = list(payload.get("commits", []))
+            head_commit = payload.get("head_commit")
+            if head_commit:
+                all_commits.append(head_commit)
+
+            for commit in all_commits:
+                for f in commit.get("added", []):
+                    changed_files_map[f] = {"filename": f, "status": "added"}
+                for f in commit.get("modified", []):
+                    changed_files_map[f] = {"filename": f, "status": "modified"}
+                for f in commit.get("removed", []):
+                    changed_files_map[f] = {"filename": f, "status": "removed"}
+
+            changed_files = list(changed_files_map.values())
+
+            def fetch_file_content(filename):
+                encoded_path = quote(filename, safe="/")
+                return get_repository_file_content(
+                    installation_token=installation_token,
+                    owner=owner,
+                    repo=repo,
+                    path=encoded_path,
+                    ref=head_sha,
+                )
+
+            scan_output = scan_github_pull_request(
+                changed_files=changed_files,
+                fetch_file_content=fetch_file_content,
+            )
+            result = scan_output["result"]
+            findings = scan_output["findings"]
+
+            if check_run_id:
+                update_check_run(
+                    installation_token=installation_token,
+                    owner=owner,
+                    repo=repo,
+                    check_run_id=check_run_id,
+                    status="completed",
+                    findings=findings,
+                    result=result,
+                )
+            else:
+                create_check_run(
+                    installation_token=installation_token,
+                    owner=owner,
+                    repo=repo,
+                    head_sha=head_sha,
+                    status="completed",
+                    findings=findings,
+                    result=result,
+                )
+
+            logger.info("Completed push check run for %s (%s findings)", repository_name, len(findings))
+            return {
+                "status": "success",
+                "event": "push",
+                "repository": repository_name,
+                "commit": head_sha,
+                "findings": len(findings),
+            }
+        except Exception as exc:
+            logger.exception("Error processing push event for %s: %s", repository_name, exc)
+            return {"status": "error", "error": str(exc)}
+
     if x_github_event != "pull_request":
         logger.info(
             "Ignoring unsupported GitHub event: %s",

@@ -59,7 +59,7 @@ def build_check_output(
 
     if has_violations or findings:
         conclusion = "failure"
-        title = "Secura Security Gate: FAILED - Unsafe to merge"
+        title = f"Failed - {len(findings)} security finding(s) detected (Score: {score}/100)"
 
         summary_lines = [
             "## ❌ MERGE BLOCKED: Unsafe to merge into main\n",
@@ -103,7 +103,7 @@ def build_check_output(
 
     else:
         conclusion = "success"
-        title = "Secura Security Gate: PASSED - Safe to merge"
+        title = f"Passed - 0 secrets detected (Score: {score}/100)"
         summary = (
             "## ✅ Secura Security Gate: PASSED\n\n"
             "Secura scanned all changed files and detected no exposed secrets "
