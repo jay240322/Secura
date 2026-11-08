@@ -456,9 +456,10 @@ def _make_check_run_finding(
     """Helper to build standardized finding dictionaries without code duplication."""
     clean_rule = rule_id.strip() if rule_id else "SECRET"
     clean_path = f_path.strip().strip("`") if f_path else "unknown"
-    if "/tmp/" in clean_path:
-        import re
-        clean_path = re.sub(r"^.*?/tmp/[^/]+/", "", clean_path)
+    if "secura-pr-" in clean_path:
+        _, _, remainder = clean_path.partition("secura-pr-")
+        if "/" in remainder:
+            clean_path = remainder.partition("/")[2]
 
     upper_sev = (severity or "HIGH").upper()
     valid_sev = upper_sev if upper_sev in ("CRITICAL", "HIGH", "MEDIUM", "LOW") else "HIGH"
