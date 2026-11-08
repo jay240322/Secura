@@ -196,6 +196,29 @@ def get_pull_request_files(
 
     return files
 
+
+def get_commit_files(
+    installation_token: str | None,
+    owner: str,
+    repo: str,
+    commit_sha: str,
+) -> list[dict]:
+    """Fetch files changed in a single GitHub commit via GET /repos/{owner}/{repo}/commits/{commit_sha}."""
+    url = f"{GITHUB_API_URL}/repos/{owner}/{repo}/commits/{commit_sha}"
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        "User-Agent": "Secura-Security-Scanner",
+    }
+    if installation_token:
+        headers["Authorization"] = f"Bearer {installation_token}"
+
+    response = requests.get(url, headers=headers, timeout=15)
+    response.raise_for_status()
+    commit_data = response.json()
+    return commit_data.get("files", [])
+
+
 def get_repository_file_content(
     installation_token: str | None,
     owner: str,
