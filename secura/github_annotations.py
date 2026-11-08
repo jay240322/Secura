@@ -99,26 +99,28 @@ def main():
     if not batches:
         batches = [[]]
 
+    score = report.get("score", 100 if conclusion == "success" else 0)
+
     for index, batch in enumerate(batches, start=1):
-        name = "Secura Code Annotations"
+        name = "Secura Security Scanner"
         if len(batches) > 1:
             name += f" ({index}/{len(batches)})"
 
         if conclusion == "failure":
-            title = "Secura Security Gate: FAILED - Unsafe to merge"
+            title = f"Failed - {len(findings)} finding(s) detected (Score: {score}/100)"
             summary = (
                 f"❌ **MERGE BLOCKED: Unsafe to merge into main.**\n\n"
-                f"Secura found **{len(findings)} security finding(s)**. "
-                f"Security score: `{report.get('score', 0)}/100`.\n\n"
+                f"Secura detected **{len(findings)} security finding(s)**. "
+                f"Security score: `{score}/100`.\n\n"
                 "Review the findings and annotations below. Remove all hardcoded "
                 "secrets and policy violations before merging this branch into main."
             )
         else:
-            title = "Secura Security Gate: PASSED - Safe to merge"
+            title = f"Passed - 0 secrets detected (Score: 100/100)"
             summary = (
                 "✅ **Secura Security Gate: PASSED**\n\n"
                 "Secura detected no secrets or policy violations. "
-                "This branch is safe to merge into main."
+                "This commit is clean and safe to merge into main."
             )
 
         payload = {

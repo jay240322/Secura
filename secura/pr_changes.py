@@ -37,7 +37,7 @@ def is_scannable_file(filename_or_path: str | Path) -> bool:
 def get_changed_files(base_ref="origin/main") -> list[str]:
     """Return added, copied, modified, and renamed files relative to base_ref."""
     refs_to_try = [base_ref]
-    if base_ref == "origin/main":
+    if base_ref in ("origin/main", "main"):
         refs_to_try.extend(["main", "HEAD~1"])
 
     last_error = None
@@ -56,11 +56,13 @@ def get_changed_files(base_ref="origin/main") -> list[str]:
                 capture_output=True,
                 text=True,
             )
-            return [
+            files = [
                 filename
                 for filename in result.stdout.split("\0")
                 if filename
             ]
+            if files or ref == refs_to_try[-1]:
+                return files
         except subprocess.CalledProcessError as exc:
             last_error = exc
             continue
