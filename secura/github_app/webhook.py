@@ -10,6 +10,7 @@ from requests.exceptions import RequestException
 
 from secura.github_app.auth import (
     create_installation_token,
+    get_commit_files,
     get_pull_request_files,
     get_repository_file_content,
 )
@@ -43,9 +44,15 @@ def _scan_and_publish_check_run(
     repo: str,
     head_sha: str,
     changed_files: list[dict],
+    details_url: str | None = None,
+    name: str = "Secura Security Gate",
 ) -> tuple[dict, list[dict], dict]:
     """Execute in-progress check, scan files, and publish completed check run."""
     check_run_id = None
+    if not details_url:
+        dashboard_base = os.environ.get("SECURA_DASHBOARD_URL", "https://secura.app").rstrip("/")
+        details_url = f"{dashboard_base}/findings?repo={quote(f'{owner}/{repo}', safe='')}&sha={head_sha}"
+
     try:
         init_check = create_check_run(
             installation_token=installation_token,
@@ -53,6 +60,8 @@ def _scan_and_publish_check_run(
             repo=repo,
             head_sha=head_sha,
             status="in_progress",
+            name=name,
+            details_url=details_url,
         )
         check_run_id = init_check.get("id")
     except Exception as exc:
@@ -82,8 +91,10 @@ def _scan_and_publish_check_run(
                 owner=owner,
                 repo=repo,
                 check_run_id=check_run_id,
+                status="completed",
                 findings=findings,
                 result=result,
+                details_url=details_url,
             )
         else:
             check_run = create_check_run(
@@ -92,8 +103,10 @@ def _scan_and_publish_check_run(
                 repo=repo,
                 head_sha=head_sha,
                 status="completed",
+                name=name,
                 findings=findings,
                 result=result,
+                details_url=details_url,
             )
         return result, findings, check_run
     except Exception as exc:
@@ -104,9 +117,11 @@ def _scan_and_publish_check_run(
                     owner=owner,
                     repo=repo,
                     check_run_id=check_run_id,
+                    status="completed",
                     conclusion="failure",
                     title="Secura Security Gate: Scan error",
                     summary=f"An unexpected error occurred during scan: {exc}",
+                    details_url=details_url,
                 )
             except Exception:
                 pass
@@ -178,59 +193,89 @@ async def github_webhook(
     if x_github_event == "push":
         repository = payload.get("repository", {})
         installation = payload.get("installation", {})
-        repository_name = repository.get("full_name")
+        repo_full_name = repository.get("full_name")
         installation_id = installation.get("id")
         head_sha = payload.get("after")
+        is_deleted = bool(payload.get("deleted", False))
 
         if (
-            not repository_name
-            or not installation_id
+            is_deleted
             or not head_sha
             or head_sha == "0000000000000000000000000000000000000000"
         ):
+            logger.info("Ignoring push event for deleted branch on %s (head_sha: %s)", repo_full_name, head_sha)
             return {
                 "status": "ignored",
                 "event": "push",
-                "reason": "missing_required_fields_or_deleted_branch",
+                "reason": "branch_deletion",
             }
 
-        owner, repo = repository_name.split("/", 1)
+        if not repo_full_name or not installation_id:
+            logger.warning("Push event missing repository full_name or installation_id")
+            return {
+                "status": "ignored",
+                "event": "push",
+                "reason": "missing_required_fields",
+            }
+
+        owner, repo = repo_full_name.split("/", 1)
         try:
-            logger.info("Processing push event for %s (%s)", repository_name, head_sha[:7])
+            logger.info("Processing push event for %s (%s)", repo_full_name, head_sha[:7])
+            # Authenticate using our GitHub App installation token
             installation_token = create_installation_token(installation_id)
 
-            changed_files_map = {}
-            all_commits = list(payload.get("commits", []))
-            if payload.get("head_commit"):
-                all_commits.append(payload.get("head_commit"))
+            # Fetch changed files for the pushed commit via GET https://api.github.com/repos/{repo_full_name}/commits/{head_sha}
+            try:
+                changed_files = get_commit_files(
+                    installation_token=installation_token,
+                    owner=owner,
+                    repo=repo,
+                    commit_sha=head_sha,
+                )
+            except Exception as api_err:
+                logger.warning("Could not fetch commit files via API: %s, checking commits payload", api_err)
+                changed_files = []
 
-            for commit in all_commits:
-                for f in commit.get("added", []):
-                    changed_files_map[f] = {"filename": f, "status": "added"}
-                for f in commit.get("modified", []):
-                    changed_files_map[f] = {"filename": f, "status": "modified"}
-                for f in commit.get("removed", []):
-                    changed_files_map[f] = {"filename": f, "status": "removed"}
+            if not changed_files:
+                changed_files_map = {}
+                all_commits = list(payload.get("commits", []))
+                if payload.get("head_commit"):
+                    all_commits.append(payload.get("head_commit"))
 
-            result, findings, _ = _scan_and_publish_check_run(
+                for commit in all_commits:
+                    for f in commit.get("added", []):
+                        changed_files_map[f] = {"filename": f, "status": "added"}
+                    for f in commit.get("modified", []):
+                        changed_files_map[f] = {"filename": f, "status": "modified"}
+                    for f in commit.get("removed", []):
+                        changed_files_map[f] = {"filename": f, "status": "removed"}
+                changed_files = list(changed_files_map.values())
+
+            # Create in_progress check run, scan files, and complete check run with details_url
+            dashboard_url = f"https://secura.app/findings?repo={repo_full_name}&sha={head_sha}"
+            result, findings, check_run = _scan_and_publish_check_run(
                 installation_token=installation_token,
                 owner=owner,
                 repo=repo,
                 head_sha=head_sha,
-                changed_files=list(changed_files_map.values()),
+                changed_files=changed_files,
+                details_url=dashboard_url,
+                name="Secura Security Gate",
             )
 
-            logger.info("Completed push check run for %s (%s findings)", repository_name, len(findings))
+            conclusion = check_run.get("conclusion")
+            logger.info("Completed push check run for %s (%s findings, conclusion: %s)", repo_full_name, len(findings), conclusion)
             return {
-                "status": "success",
+                "status": "completed",
                 "event": "push",
-                "repository": repository_name,
+                "repository": repo_full_name,
                 "commit": head_sha,
-                "findings": len(findings),
+                "conclusion": conclusion,
+                "findings_count": len(findings),
             }
         except Exception as exc:
-            logger.exception("Error processing push event for %s: %s", repository_name, exc)
-            return {"status": "error", "error": str(exc)}
+            logger.exception("Error processing push event for %s: %s", repo_full_name, exc)
+            return {"status": "error", "event": "push", "error": str(exc)}
 
     if x_github_event != "pull_request":
         logger.info(

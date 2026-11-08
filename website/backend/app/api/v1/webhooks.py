@@ -366,6 +366,10 @@ async def github_webhook(
             inst_data = payload.get("installation", {})
             installation_id = inst_data.get("id")
             after_sha = payload.get("after")
+            is_deleted = bool(payload.get("deleted", False))
+
+            if is_deleted or not after_sha or after_sha == "0000000000000000000000000000000000000000":
+                return {"status": "ignored", "event": "push", "reason": "branch_deletion"}
 
             repo = _find_or_enroll_repo(db, full_name, installation_id, repo_data)
             if not repo:

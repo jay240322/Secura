@@ -199,10 +199,14 @@ def trigger_check_run(
     status: str = "in_progress",
     findings: Optional[List[Dict[str, Any]]] = None,
     result: Optional[Dict[str, Any]] = None,
+    name: str = "Secura Security Gate",
+    details_url: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
     """Create or update GitHub Check Run using existing Secura checks module."""
     try:
         token = create_installation_token(installation_id)
+        if not details_url:
+            details_url = f"https://secura.app/findings?repo={owner}/{repo}&sha={head_sha}"
         return create_check_run(
             installation_token=token,
             owner=owner,
@@ -211,6 +215,8 @@ def trigger_check_run(
             status=status,
             findings=findings,
             result=result,
+            name=name,
+            details_url=details_url,
         )
     except Exception as exc:
         logger.error("Failed to trigger GitHub Check Run: %s", exc)

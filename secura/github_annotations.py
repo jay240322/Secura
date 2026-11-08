@@ -128,6 +128,7 @@ def main():
             "head_sha": head_sha,
             "status": "completed",
             "conclusion": conclusion,
+            "details_url": f"https://secura.app/findings?repo={repository}&sha={head_sha}",
             "output": {
                 "title": title,
                 "summary": summary,

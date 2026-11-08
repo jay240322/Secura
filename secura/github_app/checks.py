@@ -172,6 +172,7 @@ def create_check_run(
     title: str | None = None,
     summary: str | None = None,
     name: str = "Secura Security Gate",
+    details_url: str | None = None,
 ) -> dict:
     """
     Create a GitHub Check Run for a Secura security scan.
@@ -199,6 +200,9 @@ def create_check_run(
             "conclusion": final_conclusion,
             "output": output_payload,
         }
+
+    if details_url:
+        payload["details_url"] = details_url
 
     response = requests.post(
         url,
@@ -243,6 +247,7 @@ def update_check_run(
     conclusion: str | None = None,
     title: str | None = None,
     summary: str | None = None,
+    details_url: str | None = None,
 ) -> dict:
     """
     Update an existing GitHub Check Run with completed scan results.
@@ -253,6 +258,14 @@ def update_check_run(
 
     url = f"{GITHUB_API_URL}/repos/{owner}/{repo}/check-runs/{check_run_id}"
 
+    patch_payload = {
+        "status": status,
+        "conclusion": final_conclusion,
+        "output": output_payload,
+    }
+    if details_url:
+        patch_payload["details_url"] = details_url
+
     response = requests.patch(
         url,
         headers={
@@ -260,11 +273,7 @@ def update_check_run(
             "Accept": "application/vnd.github+json",
             "X-GitHub-Api-Version": "2022-11-28",
         },
-        json={
-            "status": status,
-            "conclusion": final_conclusion,
-            "output": output_payload,
-        },
+        json=patch_payload,
         timeout=15,
     )
 
