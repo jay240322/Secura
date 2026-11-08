@@ -153,12 +153,14 @@ def to_finding_response(
 @router.get("", response_model=List[FindingResponse])
 def list_findings(
     repository_id: Optional[str] = None,
+    repo_name: Optional[str] = None,
+    pull_number: Optional[int] = None,
     scan_id: Optional[str] = None,
     severity: Optional[str] = None,
     status: Optional[str] = None,
     search: Optional[str] = None,
     skip: int = Query(0, ge=0),
-    limit: int = Query(50, ge=1, le=100),
+    limit: int = Query(200, ge=1, le=1000),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -183,6 +185,16 @@ def list_findings(
 
     if repository_id:
         query = query.filter(Finding.repository_id == repository_id)
+    if repo_name:
+        query = query.filter(
+            or_(
+                func.lower(Repository.name) == repo_name.lower(),
+                func.lower(Repository.full_name) == repo_name.lower(),
+                func.lower(Repository.full_name).endswith(f"/{repo_name.lower()}"),
+            )
+        )
+    if pull_number is not None:
+        query = query.join(Scan, Finding.scan_id == Scan.id).filter(Scan.pull_number == pull_number).distinct()
     if scan_id:
         query = query.filter(Finding.scan_id == scan_id)
     if severity:

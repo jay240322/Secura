@@ -16,16 +16,14 @@ import {
   ChevronDown,
   ChevronUp,
   KeyRound,
-  FileCode2,
   GitCommit,
   History,
   Sparkles,
   Check,
-  AlertTriangle,
 } from "lucide-react";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { Loader } from "@/components/ui/loader";
-import type { PullRequest, PRFinding } from "@/types";
+import type { PullRequest } from "@/types";
 
 function shasMatch(a?: string | null, b?: string | null): boolean {
   if (!a || !b) return false;
@@ -46,7 +44,10 @@ export function CheckIcon({
   state?: PullRequest["state"];
 }) {
   if (state === "merged") {
-    return <GitMerge className="h-5 w-5 text-violet-600 dark:text-violet-400 shrink-0" />;
+    return <GitMerge className="h-5 w-5 text-purple-600 dark:text-purple-400 shrink-0" />;
+  }
+  if (state === "closed") {
+    return <XCircle className="h-5 w-5 text-slate-400 dark:text-zinc-600 shrink-0" />;
   }
   if (status === "success")
     return <CheckCircle2 className="h-5 w-5 text-emerald-600 dark:text-emerald-400 shrink-0" />;
@@ -59,122 +60,26 @@ export function CheckIcon({
 
 export function StateBadge({ state }: { state?: PullRequest["state"] }) {
   if (state === "merged") {
-    return null;
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-semibold bg-purple-50 text-purple-700 ring-1 ring-purple-200 dark:bg-purple-950/40 dark:text-purple-300 dark:ring-purple-800/40">
+        <GitMerge className="h-3 w-3 shrink-0" />
+        <span>Merged</span>
+      </span>
+    );
   }
   if (state === "closed") {
     return (
       <span className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-medium bg-slate-100 text-slate-700 ring-1 ring-slate-200 dark:bg-zinc-900 dark:text-zinc-400 dark:ring-zinc-800">
-        <X className="h-3 w-3" />
+        <X className="h-3 w-3 shrink-0" />
         <span>Closed</span>
       </span>
     );
   }
   return (
     <span className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-medium bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:ring-emerald-800/40">
-      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 shrink-0" />
       <span>Open</span>
     </span>
-  );
-}
-
-export function PRFindingItem({
-  finding,
-  isResolved = false,
-  resolvedInCommit,
-  detectedInCommit,
-  remediateUrl,
-}: {
-  finding: PRFinding;
-  isResolved?: boolean;
-  resolvedInCommit?: string | null;
-  detectedInCommit?: string | null;
-  remediateUrl?: string | null;
-}) {
-  const sev = (finding.severity || "HIGH").toUpperCase();
-  const sevClass =
-    sev === "CRITICAL"
-      ? "bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300 border-rose-200 dark:border-rose-900/40"
-      : sev === "HIGH"
-      ? "bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 border-amber-200 dark:border-amber-900/40"
-      : "bg-yellow-50 text-yellow-700 dark:bg-yellow-950/40 dark:text-yellow-300 border-yellow-200 dark:border-yellow-900/40";
-
-  return (
-    <div
-      className={`rounded-xl border p-3 text-xs shadow-2xs space-y-2 transition-colors ${
-        isResolved
-          ? "border-emerald-200/80 dark:border-emerald-950/60 bg-white dark:bg-zinc-950"
-          : "border-slate-200/80 dark:border-zinc-800 bg-white dark:bg-zinc-900/60"
-      }`}
-    >
-      <div className="flex items-center gap-2 flex-wrap justify-between">
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="font-mono text-[10px] font-bold text-slate-800 dark:text-zinc-200 bg-slate-100 dark:bg-zinc-900 px-2 py-0.5 rounded border border-slate-200 dark:border-zinc-800">
-            {finding.ruleId || "SECRET"}
-          </span>
-          <span className="font-semibold text-slate-900 dark:text-white">
-            {finding.findingType || "Secret"}
-          </span>
-          <span className={`text-[10px] uppercase font-bold px-1.5 py-0.5 rounded-md border ${sevClass}`}>
-            {sev}
-          </span>
-          {isResolved ? (
-            <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 flex items-center gap-1">
-              <Check className="h-2.5 w-2.5" />
-              <span>Solved</span>
-            </span>
-          ) : (
-            <span className="text-[10px] uppercase font-bold px-1.5 py-0.5 rounded-md bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300">
-              Blocked
-            </span>
-          )}
-        </div>
-
-        {detectedInCommit && resolvedInCommit && (
-          <span className="text-[11px] font-mono text-slate-600 dark:text-zinc-400 bg-slate-50 dark:bg-zinc-900 px-2 py-0.5 rounded border border-slate-200 dark:border-zinc-800">
-            Detected in <code className="font-bold text-rose-600 dark:text-rose-400">{detectedInCommit}</code>
-            {" → "}
-            Solved in <code className="font-bold text-emerald-600 dark:text-emerald-400">{resolvedInCommit}</code>
-          </span>
-        )}
-      </div>
-
-      <p className="text-[11px] font-mono text-slate-600 dark:text-zinc-400 flex items-center gap-1.5">
-        <FileCode2 className="h-3.5 w-3.5 text-slate-400 dark:text-zinc-500 shrink-0" />
-        <span className="text-slate-800 dark:text-zinc-200 font-semibold">{finding.filePath}</span>
-        <span>:</span>
-        <span className="text-blue-600 dark:text-blue-400">Line {finding.lineNumber}</span>
-      </p>
-
-      {finding.risk && (
-        <p className="text-[11px] text-slate-600 dark:text-zinc-400">
-          <strong className="text-slate-800 dark:text-zinc-200">Risk:</strong> {finding.risk}
-        </p>
-      )}
-
-      {isResolved ? (
-        <p className="text-[11px] text-emerald-700 dark:text-emerald-400 flex items-center gap-1 font-medium bg-emerald-50 dark:bg-emerald-950/40 px-2 py-1 rounded border border-emerald-200 dark:border-emerald-900/40">
-          <Check className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
-          <span>
-            Secret removed in commit <code className="font-bold">{resolvedInCommit || "latest"}</code> and verified safe by Secura scanner.
-          </span>
-        </p>
-      ) : finding.recommendation ? (
-        <div className="flex items-center justify-between gap-2 flex-wrap pt-0.5">
-          <p className="text-[11px] text-rose-700 dark:text-rose-400 flex items-center gap-1 font-medium bg-rose-50 dark:bg-rose-950/40 px-2 py-1 rounded border border-rose-200 dark:border-rose-900/40">
-            <AlertTriangle className="h-3.5 w-3.5 text-rose-600 shrink-0" />
-            <span>Remediation: {finding.recommendation}</span>
-          </p>
-          {remediateUrl && (
-            <Link
-              href={remediateUrl}
-              className="px-3 py-1 text-[11px] font-medium rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 hover:bg-slate-100 dark:hover:bg-zinc-800 text-slate-700 dark:text-zinc-300 hover:text-slate-900 dark:hover:text-white transition-colors"
-            >
-              Remediate →
-            </Link>
-          )}
-        </div>
-      ) : null}
-    </div>
   );
 }
 
@@ -197,8 +102,6 @@ export function PullRequestRow({
 }: PullRequestRowProps) {
   const [expanded, setExpanded] = useState(false);
   const [activeTab, setActiveTab] = useState<"commits" | "scan-runs" | "findings">("commits");
-  const [expandedCommitSha, setExpandedCommitSha] = useState<string | null>(null);
-  const [expandedScanRunId, setExpandedScanRunId] = useState<string | null>(null);
 
   const findings = pr.findings || [];
   const commits = pr.commits || [];
@@ -229,14 +132,6 @@ export function PullRequestRow({
     }
   };
 
-  const toggleCommitFindings = (sha: string) => {
-    setExpandedCommitSha((prev) => (prev === sha ? null : sha));
-  };
-
-  const toggleScanRunFindings = (id: string) => {
-    setExpandedScanRunId((prev) => (prev === id ? null : id));
-  };
-
   return (
     <div className="rounded-2xl border border-slate-200/80 bg-white/80 backdrop-blur-md p-4 sm:p-5 shadow-xs transition-all duration-200 hover:border-slate-300 hover:shadow-md dark:border-zinc-800/80 dark:bg-zinc-950/80 dark:backdrop-blur-md dark:hover:border-zinc-700">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
@@ -257,7 +152,7 @@ export function PullRequestRow({
                 <ExternalLink className="h-3.5 w-3.5 opacity-50 shrink-0" />
               </a>
               <StateBadge state={pr.state} />
-              {pr.checkRunStatus && pr.checkRunStatus !== "success" && (
+              {pr.state === "open" && pr.checkRunStatus && pr.checkRunStatus !== "success" && (
                 <StatusBadge status={pr.checkRunStatus} />
               )}
 
@@ -354,7 +249,7 @@ export function PullRequestRow({
                 )}
               </div>
             )}
-            {pr.checkRunStatus === "in_progress" && (
+            {pr.state === "open" && pr.checkRunStatus === "in_progress" && (
               <p className="text-xs text-blue-600 dark:text-blue-400 flex items-center gap-1 justify-end">
                 <Loader2 className="h-3 w-3 animate-spin shrink-0" />
                 <span>Scanning PR…</span>
@@ -369,20 +264,36 @@ export function PullRequestRow({
           </div>
 
           <div className="flex items-center gap-1.5">
-            {/* Scan PR Button */}
-            <button
-              onClick={() => void onScan(pr)}
-              disabled={isScanning || pr.checkRunStatus === "in_progress"}
-              title="Trigger on-demand security scan for this pull request"
-              className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-slate-700 dark:text-zinc-300 hover:bg-slate-50 dark:hover:bg-zinc-800 hover:text-slate-900 dark:hover:text-white shadow-xs transition-all disabled:opacity-50"
-            >
-              {isScanning ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin text-blue-600 dark:text-blue-400" />
-              ) : (
-                <Play className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
-              )}
-              <span className="hidden sm:inline">Scan</span>
-            </button>
+            {/* View Findings Direct Link */}
+            {(pr.totalFindings > 0 || historicalFindings.length > 0 || findings.length > 0) && (
+              <Link
+                href={`/findings?repo=${encodeURIComponent(pr.repository)}&pr=${pr.number}`}
+                className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold rounded-xl border border-rose-200 dark:border-rose-900/60 bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 hover:bg-rose-100 dark:hover:bg-rose-900/60 shadow-xs transition-colors shrink-0"
+                title={`View all findings for PR #${pr.number} on the Findings page`}
+              >
+                <KeyRound className="h-3.5 w-3.5 text-rose-600 dark:text-rose-400 shrink-0" />
+                <span className="hidden sm:inline">View Findings</span>
+                <span className="sm:hidden">Findings</span>
+                <ExternalLink className="h-3 w-3 opacity-60 shrink-0" />
+              </Link>
+            )}
+
+            {/* Scan PR Button (only for open PRs) */}
+            {pr.state === "open" && (
+              <button
+                onClick={() => void onScan(pr)}
+                disabled={isScanning || pr.checkRunStatus === "in_progress"}
+                title="Trigger on-demand security scan for this pull request"
+                className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-slate-700 dark:text-zinc-300 hover:bg-slate-50 dark:hover:bg-zinc-800 hover:text-slate-900 dark:hover:text-white shadow-xs transition-all disabled:opacity-50"
+              >
+                {isScanning ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin text-blue-600 dark:text-blue-400" />
+                ) : (
+                  <Play className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+                )}
+                <span className="hidden sm:inline">Scan</span>
+              </button>
+            )}
 
             {/* Details / Findings Toggle Button */}
             <button
@@ -450,22 +361,17 @@ export function PullRequestRow({
               </button>
             )}
 
-            <button
-              onClick={() => setActiveTab("findings")}
-              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${
-                activeTab === "findings"
-                  ? "bg-[#EDE9E6] text-[#281C59] dark:bg-zinc-800 dark:text-white shadow-2xs"
-                  : "text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white"
-              }`}
-            >
-              <KeyRound className="h-3.5 w-3.5" />
-              <span>Findings ({findings.length + historicalFindings.length})</span>
-              {historicalFindings.length > 0 && (
-                <span className="text-[10px] bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 px-1.5 rounded-full font-bold">
-                  {historicalFindings.length} solved
-                </span>
-              )}
-            </button>
+            {(findings.length > 0 || historicalFindings.length > 0 || pr.totalFindings > 0) && (
+              <Link
+                href={`/findings?repo=${encodeURIComponent(pr.repository)}&pr=${pr.number}`}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg text-rose-700 dark:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/40 border border-rose-200/80 dark:border-rose-900/40 transition-colors shadow-2xs"
+                title={`Open all findings for PR #${pr.number} on the Findings page`}
+              >
+                <KeyRound className="h-3.5 w-3.5 text-rose-600 dark:text-rose-400" />
+                <span>View Secrets in Findings Page ({findings.length + historicalFindings.length || pr.totalFindings})</span>
+                <ExternalLink className="h-3 w-3 opacity-60" />
+              </Link>
+            )}
 
             <div className="ml-auto flex items-center gap-3">
               {onRefreshCommits && (
@@ -506,7 +412,6 @@ export function PullRequestRow({
                       (commit.criticalFindings || 0) > 0 ||
                       (commit.totalFindings || 0) > 0;
                     const isPassed = commit.scanResult === "passed";
-                    const isExpandedCommit = expandedCommitSha === commit.sha;
 
                     let commitFindings = commit.findings && commit.findings.length > 0 ? [...commit.findings] : [];
                     if (commitFindings.length === 0) {
@@ -564,26 +469,12 @@ export function PullRequestRow({
                         }`}
                       >
                         <div className="p-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-                          {canToggle ? (
-                            <button
-                              type="button"
-                              onClick={() => toggleCommitFindings(commit.sha)}
-                              aria-expanded={isExpandedCommit}
-                              className="flex items-start gap-2.5 min-w-0 flex-1 text-left bg-transparent border-0 p-0 cursor-pointer focus:outline-hidden group"
-                            >
-                              <span className="font-mono text-[11px] font-bold text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/40 px-2 py-0.5 rounded-lg border border-blue-200 dark:border-blue-900/40 shrink-0 mt-0.5">
-                                {commit.sha}
-                              </span>
-                              {commitDetails}
-                            </button>
-                          ) : (
-                            <div className="flex items-start gap-2.5 min-w-0 flex-1">
-                              <span className="font-mono text-[11px] font-bold text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/40 px-2 py-0.5 rounded-lg border border-blue-200 dark:border-blue-900/40 shrink-0 mt-0.5">
-                                {commit.sha}
-                              </span>
-                              {commitDetails}
-                            </div>
-                          )}
+                          <div className="flex items-start gap-2.5 min-w-0 flex-1">
+                            <span className="font-mono text-[11px] font-bold text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/40 px-2 py-0.5 rounded-lg border border-blue-200 dark:border-blue-900/40 shrink-0 mt-0.5">
+                              {commit.sha}
+                            </span>
+                            {commitDetails}
+                          </div>
 
                           {/* Per-Commit Status & Actions */}
                           <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
@@ -602,15 +493,15 @@ export function PullRequestRow({
                                     <span>Solved in latest commit</span>
                                   </span>
                                 )}
-                                <button
-                                  type="button"
-                                  onClick={() => toggleCommitFindings(commit.sha)}
-                                  aria-expanded={isExpandedCommit}
-                                  className="text-[11px] font-semibold text-rose-700 dark:text-rose-300 hover:underline flex items-center gap-0.5 cursor-pointer ml-1"
+                                <Link
+                                  href={`/findings?repo=${encodeURIComponent(pr.repository)}&pr=${pr.number}`}
+                                  className="inline-flex items-center gap-1 text-[11px] font-semibold text-rose-700 dark:text-rose-300 hover:underline bg-rose-50 dark:bg-rose-950/40 px-2.5 py-1 rounded-lg border border-rose-200 dark:border-rose-900/50 shadow-2xs"
+                                  title={`View all ${findingsCount} secrets for PR #${pr.number} on the Findings page`}
                                 >
-                                  <span>{isExpandedCommit ? "Hide" : "View"} Secrets ({findingsCount})</span>
-                                  {isExpandedCommit ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-                                </button>
+                                  <KeyRound className="h-3 w-3 text-rose-600 dark:text-rose-400 shrink-0" />
+                                  <span>View Secrets ({findingsCount})</span>
+                                  <ExternalLink className="h-2.5 w-2.5 opacity-70 shrink-0" />
+                                </Link>
                               </div>
                             ) : (commit.resolvesPriorViolations || (commit.isHead && isResolvedInHead)) ? (
                               <div className="flex items-center gap-1.5 flex-wrap justify-end">
@@ -639,44 +530,6 @@ export function PullRequestRow({
                             )}
                           </div>
                         </div>
-
-                        {/* Expandable Per-Commit Findings */}
-                        {isExpandedCommit && (
-                          <div className="border-t border-rose-100 dark:border-rose-900/40 bg-rose-50/40 dark:bg-rose-950/20 p-3 space-y-2.5">
-                            <div className="flex items-center justify-between gap-1.5 flex-wrap text-xs font-semibold text-rose-900 dark:text-rose-200">
-                              <span className="flex items-center gap-1.5 font-bold">
-                                <ShieldAlert className="h-4 w-4 text-rose-600 shrink-0" />
-                                <span>Secrets detected in commit <code className="font-mono bg-rose-100 dark:bg-rose-950 px-1 py-0.5 rounded font-bold">{commit.sha}</code> (Blocked merge):</span>
-                              </span>
-                              {(commit.isResolved || (isResolvedInHead && !commit.isHead)) && (
-                                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-950 px-2.5 py-0.5 rounded-full border border-emerald-300 dark:border-emerald-700 shadow-2xs">
-                                  <Check className="h-3 w-3" />
-                                  <span>Solved: Removed in commit <code className="font-mono">{commit.resolvedInCommit || pr.commitSha?.slice(0, 7)}</code></span>
-                                </span>
-                              )}
-                            </div>
-
-                            {commitFindings.length > 0 ? (
-                              commitFindings.map((finding) => (
-                                <PRFindingItem
-                                  key={finding.id}
-                                  finding={finding}
-                                  isResolved={commit.isResolved || (isResolvedInHead && !commit.isHead) || finding.isResolved}
-                                  resolvedInCommit={finding.resolvedInCommit || commit.resolvedInCommit || pr.commitSha?.slice(0, 7)}
-                                />
-                              ))
-                            ) : (
-                              <div className="rounded-lg border border-rose-200 dark:border-rose-900/40 bg-white dark:bg-zinc-950 p-2.5 text-xs text-slate-600 dark:text-zinc-400">
-                                <p className="font-medium text-rose-700 dark:text-rose-300">
-                                  Security scanner detected violations in this commit.
-                                </p>
-                                <p className="mt-0.5 text-[11px]">
-                                  Pushing a clean commit removes the secrets and unblocks pull request merging.
-                                </p>
-                              </div>
-                            )}
-                          </div>
-                        )}
                       </div>
                     );
                   })}
@@ -695,7 +548,6 @@ export function PullRequestRow({
               <div className="space-y-2">
                 {scanRuns.map((run, index) => {
                   const isRunFailed = run.scanResult === "failed" || run.criticalFindings > 0 || run.totalFindings > 0;
-                  const isExpandedRun = expandedScanRunId === run.id;
                   const runNumber = scanRuns.length - index;
 
                   return (
@@ -739,28 +591,17 @@ export function PullRequestRow({
                         </div>
 
                         {run.findings.length > 0 && (
-                          <button
-                            type="button"
-                            onClick={() => toggleScanRunFindings(run.id)}
-                            aria-expanded={isExpandedRun}
-                            className="text-xs font-semibold text-rose-700 dark:text-rose-300 hover:underline flex items-center gap-1 shrink-0"
+                          <Link
+                            href={`/findings?repo=${encodeURIComponent(pr.repository)}&pr=${pr.number}`}
+                            className="inline-flex items-center gap-1 text-xs font-semibold text-rose-700 dark:text-rose-300 hover:underline bg-rose-50 dark:bg-rose-950/40 px-2.5 py-1 rounded-lg border border-rose-200 dark:border-rose-900/50 shrink-0 shadow-2xs"
+                            title={`View all ${run.findings.length} findings for PR #${pr.number} on the Findings page`}
                           >
-                            <span>{isExpandedRun ? "Hide" : "View"} {run.findings.length} findings</span>
-                            {isExpandedRun ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-                          </button>
+                            <KeyRound className="h-3.5 w-3.5 text-rose-600 dark:text-rose-400 shrink-0" />
+                            <span>View {run.findings.length} Secrets on Findings Page</span>
+                            <ExternalLink className="h-3 w-3 opacity-70 shrink-0" />
+                          </Link>
                         )}
                       </div>
-
-                      {isExpandedRun && run.findings.length > 0 && (
-                        <div className="border-t border-rose-100 dark:border-rose-900/40 bg-rose-50/40 dark:bg-rose-950/20 p-3 space-y-2">
-                          {run.findings.map((f) => (
-                            <PRFindingItem
-                              key={f.id}
-                              finding={f}
-                            />
-                          ))}
-                        </div>
-                      )}
                     </div>
                   );
                 })}
@@ -768,92 +609,34 @@ export function PullRequestRow({
             </div>
           )}
 
-          {/* TAB 3: FINDINGS (CURRENT & HISTORICAL RESOLVED) */}
+          {/* TAB 3: FINDINGS (CENTRAL DASHBOARD LINK) */}
           {activeTab === "findings" && (
-            <div className="space-y-4">
-              {/* If all secrets are solved in latest commit */}
-              {findings.length === 0 && historicalFindings.length > 0 && (
-                <div className="p-3.5 rounded-xl border border-emerald-200 dark:border-emerald-900/60 bg-emerald-50/70 dark:bg-emerald-950/30 text-xs text-emerald-800 dark:text-emerald-300 flex items-start gap-2.5 shadow-2xs">
-                  <ShieldCheck className="h-5 w-5 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
-                  <div className="space-y-1">
-                    <p className="font-bold text-slate-900 dark:text-white text-xs">
-                      All Detected Secrets Solved & Verified Clean!
-                    </p>
-                    <p className="text-[11px] leading-relaxed text-emerald-800 dark:text-emerald-300">
-                      The {historicalFindings.length} secret{historicalFindings.length > 1 ? "s" : ""} detected in prior commits were successfully removed in commit{" "}
-                      <code className="font-mono bg-emerald-100 dark:bg-emerald-900/60 px-1 py-0.5 rounded font-bold">
-                        {pr.commitSha ? pr.commitSha.slice(0, 7) : "HEAD"}
-                      </code>
-                      . All security gates have passed and this pull request is safe to merge.
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              {/* Current Active Head Findings (if any) */}
-              {findings.length > 0 && (
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between text-xs text-slate-600 dark:text-zinc-400">
-                    <span className="font-semibold text-slate-900 dark:text-white flex items-center gap-1.5">
-                      <KeyRound className="h-3.5 w-3.5 text-rose-600 dark:text-rose-400" />
-                      <span>Active Violations on Head Commit ({findings.length})</span>
-                    </span>
-                    <Link
-                      href={`/findings?repo=${encodeURIComponent(pr.repository)}`}
-                      className="text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1 text-[11px] font-medium"
-                    >
-                      <span>Repository Findings</span>
-                      <ExternalLink className="h-3 w-3" />
-                    </Link>
-                  </div>
-
-                  <div className="space-y-2">
-                    {findings.map((finding) => (
-                      <PRFindingItem
-                        key={finding.id}
-                        finding={finding}
-                        remediateUrl={`/findings?repo=${encodeURIComponent(pr.repository)}`}
-                      />
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Historical Resolved Findings from Prior Commits */}
-              {historicalFindings.length > 0 && (
-                <div className="space-y-2 pt-2 border-t border-slate-200/80 dark:border-zinc-800">
-                  <div className="flex items-center justify-between gap-1.5 text-xs text-slate-700 dark:text-zinc-300 font-semibold">
-                    <span className="flex items-center gap-1.5">
-                      <Sparkles className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
-                      <span className="text-slate-900 dark:text-white font-bold">
-                        Solved / Remediated Secrets from Prior Commits ({historicalFindings.length})
-                      </span>
-                    </span>
-                    <span className="text-[11px] font-medium text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 px-2 py-0.5 rounded-lg border border-emerald-200 dark:border-emerald-800/60">
-                      Clean in commit {pr.commitSha ? pr.commitSha.slice(0, 7) : "HEAD"}
-                    </span>
-                  </div>
-                  <div className="space-y-2">
-                    {historicalFindings.map((hf) => (
-                      <PRFindingItem
-                        key={hf.id}
-                        finding={hf}
-                        isResolved
-                        detectedInCommit={hf.detectedInCommit || (hf.commitSha ? hf.commitSha.slice(0, 7) : "earlier commit")}
-                        resolvedInCommit={hf.resolvedInCommit || pr.commitSha?.slice(0, 7)}
-                      />
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* If both active findings and historical findings are 0 */}
-              {findings.length === 0 && historicalFindings.length === 0 && (
-                <div className="p-3 text-center rounded-xl border border-emerald-200 dark:border-emerald-900/40 bg-emerald-50 dark:bg-emerald-950/30 text-xs text-emerald-700 dark:text-emerald-300 flex items-center justify-center gap-2">
-                  <ShieldCheck className="h-4 w-4 shrink-0" />
-                  <span>No exposed secrets or SAST vulnerabilities detected on this pull request. Safe to merge!</span>
-                </div>
-              )}
+            <div className="p-6 rounded-2xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 text-center space-y-3">
+              <div className="mx-auto w-10 h-10 rounded-full bg-rose-100 dark:bg-rose-950/60 flex items-center justify-center text-rose-600 dark:text-rose-400">
+                <KeyRound className="h-5 w-5" />
+              </div>
+              <div className="space-y-1">
+                <h4 className="text-sm font-bold text-slate-900 dark:text-white">
+                  Security Findings for PR #{pr.number}
+                </h4>
+                <p className="text-xs text-slate-500 dark:text-zinc-400 max-w-md mx-auto leading-relaxed">
+                  {findings.length > 0
+                    ? `${findings.length} active secret(s) detected. View all detailed code snippets, line numbers, and remediation guidance on the dedicated Findings page.`
+                    : historicalFindings.length > 0
+                    ? `${historicalFindings.length} secret(s) previously detected were successfully solved in commit ${pr.commitSha ? pr.commitSha.slice(0, 7) : "HEAD"}.`
+                    : "All security checks have passed and 0 secrets were detected on this pull request."}
+                </p>
+              </div>
+              <div className="pt-2">
+                <Link
+                  href={`/findings?repo=${encodeURIComponent(pr.repository)}&pr=${pr.number}`}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold bg-rose-600 hover:bg-rose-700 text-white shadow-xs transition-colors"
+                >
+                  <KeyRound className="h-3.5 w-3.5" />
+                  <span>View All Secrets on Findings Page ({findings.length + historicalFindings.length || pr.totalFindings})</span>
+                  <ExternalLink className="h-3 w-3" />
+                </Link>
+              </div>
             </div>
           )}
         </div>

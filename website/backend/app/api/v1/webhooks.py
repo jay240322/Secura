@@ -264,6 +264,10 @@ async def github_webhook(
                         s.pr_merged_at = now_utc
                     else:
                         s.pr_closed_at = now_utc
+                    if s.scan_status in ("running", "pending"):
+                        s.scan_status = "completed"
+                    if s.scan_result == "pending":
+                        s.scan_result = "passed"
                 db.commit()
 
                 if not is_merged:
