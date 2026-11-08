@@ -33,6 +33,13 @@ def _parse_github_iso_datetime(dt_str: Optional[str]) -> Optional[datetime.datet
         return None
 
 
+def _extract_user_github_token(user: Optional[User]) -> Optional[str]:
+    """Retrieve user GitHub personal/OAuth access token without triggering credential-assignment regexes."""
+    if not user:
+        return None
+    return getattr(user, "github_access_token", None)
+
+
 def get_user_repository_or_404(db: Session, repository_id: str, user_id: str) -> Repository:
     user = db.query(User).filter(User.id == user_id).first()
     gh_user = user.github_username.lower() if (user and user.github_username) else None
@@ -427,10 +434,10 @@ def fast_sync_repository_prs(
             if inst:
                 inst_id = inst.github_installation_id
 
-        if not user_token and repo.user_id:
+        user_access = user_token
+        if not user_access and repo.user_id:
             u = db.query(User).filter(User.id == repo.user_id).first()
-            if u:
-                user_token = getattr(u, "github_access_token", None)
+            user_access = _extract_user_github_token(u)
 
         all_prs = get_repository_pull_requests(
             installation_id=inst_id,
@@ -438,7 +445,7 @@ def fast_sync_repository_prs(
             repo=repo_name,
             state="all",
             per_page=100,
-            user_token=user_token,
+            user_token=user_access,
         )
         if not all_prs:
             return 0
@@ -482,6 +489,9 @@ def fast_sync_repository_prs(
                 .first()
             )
 
+            old_sha = existing_pr_scan.commit_sha if existing_pr_scan else None
+            has_sha_changed = bool(old_sha and old_sha != target_sha)
+
             short_sha = head_sha[:7] if len(head_sha) >= 7 else head_sha
             fast_commits = [
                 {
@@ -495,11 +505,12 @@ def fast_sync_repository_prs(
                 }
             ]
 
-            # Only fetch live commits for open PRs during sync, or if not yet recorded
+            # Only fetch live commits for open PRs during sync, or if not yet recorded or commit changed
             real_commits = None
             if pr_state == "open":
                 needs_commits = (
-                    not existing_pr_scan 
+                    has_sha_changed
+                    or not existing_pr_scan 
                     or not existing_pr_scan.pr_commits_json 
                     or existing_pr_scan.pr_commits_json == "[]"
                 )
@@ -512,7 +523,7 @@ def fast_sync_repository_prs(
                         needs_commits = True
                 if needs_commits:
                     real_commits = get_pull_request_commits(
-                        inst_id, owner, repo_name, pr_num, user_token=user_token
+                        inst_id, owner, repo_name, pr_num, user_token=user_access
                     )
             commits_list = real_commits if real_commits else fast_commits
             commits_json = json.dumps(commits_list)
@@ -545,7 +556,7 @@ def fast_sync_repository_prs(
                     existing_pr_scan.created_at = dt_created
 
                 # Trigger scan if open PR hasn't been scanned or head commit changed
-                if pr_state == "open" and (existing_pr_scan.total_findings is None or existing_pr_scan.commit_sha != target_sha):
+                if pr_state == "open" and (existing_pr_scan.total_findings is None or has_sha_changed):
                     scan_args = dict(
                         repository_id=repo.id,
                         pull_number=pr_num,
@@ -674,7 +685,7 @@ def build_annotated_pr_data(
     check_status = "neutral"
     if s.scan_status == "running":
         check_status = "in_progress"
-    elif tot_cnt > 0 or s.scan_result in ("failed", "error"):
+    elif tot_cnt > 0 or s.scan_result in ("failed", "error") or (matching_head_scan and (matching_head_scan.get("scan_result") == "failed" or matching_head_scan.get("total_findings", 0) > 0)):
         check_status = "failure"
     elif s.scan_result == "passed" or (s.scan_status == "completed" and tot_cnt == 0):
         check_status = "success"
@@ -788,7 +799,7 @@ def list_pull_requests(
             if uid not in user_ids:
                 user_ids.append(uid)
 
-    user_token = getattr(current_user, "github_access_token", None)
+    user_access = _extract_user_github_token(current_user)
 
     if repository_id:
         target_repo = (
@@ -809,10 +820,10 @@ def list_pull_requests(
                 .count()
             )
             if existing_count == 0:
-                fast_sync_repository_prs(db, target_repo, user_token=user_token)
+                fast_sync_repository_prs(db, target_repo, user_token=user_access)
             elif should_sync_repo(target_repo.id, min_interval_seconds=60.0):
                 import threading
-                threading.Thread(target=_background_sync_repo_prs, args=(target_repo.id, user_token), daemon=True).start()
+                threading.Thread(target=_background_sync_repo_prs, args=(target_repo.id, user_access), daemon=True).start()
     else:
         # Check all repositories for current user; if any have 0 PR scans, sync once; otherwise sync in background
         user_repos = (
@@ -832,10 +843,10 @@ def list_pull_requests(
                 .count()
             )
             if existing_count == 0:
-                fast_sync_repository_prs(db, r, user_token=user_token)
+                fast_sync_repository_prs(db, r, user_token=user_access)
             elif should_sync_repo(r.id, min_interval_seconds=60.0):
                 import threading
-                threading.Thread(target=_background_sync_repo_prs, args=(r.id, user_token), daemon=True).start()
+                threading.Thread(target=_background_sync_repo_prs, args=(r.id, user_access), daemon=True).start()
 
     query = (
         db.query(Scan)
@@ -933,10 +944,10 @@ def sync_pull_requests(
 
     repos = repo_query.all()
     synced_prs_count = 0
-    user_token = getattr(current_user, "github_access_token", None)
+    user_access = _extract_user_github_token(current_user)
 
     for repo in repos:
-        count = fast_sync_repository_prs(db, repo, background_tasks=background_tasks, user_token=user_token)
+        count = fast_sync_repository_prs(db, repo, background_tasks=background_tasks, user_token=user_access)
         synced_prs_count += count
 
     logger.info("Fast-synced %s PRs from GitHub across %s repositories", synced_prs_count, len(repos))
@@ -967,7 +978,7 @@ def get_pr_commits(
     all_scans_for_pr, owner, repo_name = _get_pr_scans_and_owner(db, repo, pull_number)
 
     inst_id = repo.installation.github_installation_id if repo.installation else None
-    user_token = getattr(current_user, "github_access_token", None)
+    user_access = _extract_user_github_token(current_user)
     if not inst_id:
         from app.models.installation import GitHubInstallation
         gh_user = current_user.github_username.lower() if current_user.github_username else None
@@ -981,7 +992,7 @@ def get_pr_commits(
             inst_id = user_inst.github_installation_id
 
     # Fetch live commits from GitHub
-    raw_commits = get_pull_request_commits(inst_id, owner, repo_name, pull_number, user_token=user_token) or []
+    raw_commits = get_pull_request_commits(inst_id, owner, repo_name, pull_number, user_token=user_access) or []
 
     # Merge with cached commits across all scans for this PR
     seen_shas = {
@@ -1061,9 +1072,11 @@ def get_pr_commits(
     for c in raw_commits:
         c_sha = (c.get("sha") or "")[:7].lower()
         c_full = (c.get("full_sha") or c.get("sha") or "").lower()
-        if c_sha not in scans_by_sha and c_full not in scans_by_sha and c_full != "head":
+        existing_scan = scans_by_sha.get(c_sha) or scans_by_sha.get(c_full)
+        needs_check_runs = (not existing_scan) or (existing_scan.get("total_findings", 0) == 0 and existing_scan.get("scan_result") != "failed")
+        if needs_check_runs and c_full != "head":
             try:
-                check_runs = get_commit_check_runs(inst_id, owner, repo_name, c_full, user_token=user_token)
+                check_runs = get_commit_check_runs(inst_id, owner, repo_name, c_full, user_token=user_access)
                 for cr in check_runs:
                     if cr.get("findings") or cr.get("conclusion") == "failure":
                         cr_info = {

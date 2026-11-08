@@ -456,6 +456,10 @@ def _make_check_run_finding(
     """Helper to build standardized finding dictionaries without code duplication."""
     clean_rule = rule_id.strip() if rule_id else "SECRET"
     clean_path = f_path.strip().strip("`") if f_path else "unknown"
+    if "/tmp/" in clean_path:
+        import re
+        clean_path = re.sub(r"^.*?/tmp/[^/]+/", "", clean_path)
+
     upper_sev = (severity or "HIGH").upper()
     valid_sev = upper_sev if upper_sev in ("CRITICAL", "HIGH", "MEDIUM", "LOW") else "HIGH"
 
@@ -536,13 +540,14 @@ def get_commit_check_runs(
                     summary_text = (output.get("summary") or "") + "\n" + (output.get("text") or "")
                     lines = [ln.strip() for ln in summary_text.splitlines() if ln.strip()]
 
-                    # Pattern 1: Secura list format: **[CRITICAL] AWS Access Key** in `app/config.py:12`
+                    # Pattern 1: Secura list format: **[CRITICAL] AWS Access Key** in `app/config.py:12` or [HIGH] Hardcoded Credential in path:12
                     for line in lines:
-                        if line.startswith("**[") and "** in " in line:
-                            prefix, _, target = line.partition("** in ")
-                            if prefix.startswith("**[") and "]" in prefix:
-                                sev_str, _, rule_name = prefix[3:].partition("]")
-                                target = target.strip().strip("`")
+                        clean_ln = line.strip().strip("*").strip()
+                        if clean_ln.startswith("[") and " in " in clean_ln:
+                            prefix, _, target = clean_ln.partition(" in ")
+                            if prefix.startswith("[") and "]" in prefix:
+                                sev_str, _, rule_name = prefix[1:].partition("]")
+                                target = target.strip().strip("`").strip("*")
                                 path_part, _, line_part = target.rpartition(":")
                                 line_no = int(line_part) if line_part.isdigit() else 1
                                 file_target = path_part if line_part.isdigit() else target

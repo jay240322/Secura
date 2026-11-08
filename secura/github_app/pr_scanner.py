@@ -83,6 +83,19 @@ def scan_pull_request_files(
             )
         )
 
+    # Normalize finding file paths to be relative to root
+    relative_findings = []
+    for f in findings:
+        f_copy = dict(f)
+        if "file" in f_copy:
+            try:
+                p = Path(f_copy["file"]).resolve()
+                if p == root or root in p.parents:
+                    f_copy["file"] = str(p.relative_to(root)).replace("\\", "/")
+            except Exception:
+                pass
+        relative_findings.append(f_copy)
+
     # Evaluate findings using repository custom policy if present, else default
     repo_policy = root / "config" / "security-policy.yml"
     if repo_policy.is_file():
@@ -90,11 +103,11 @@ def scan_pull_request_files(
     else:
         policy = load_policy()
 
-    result = evaluate_policy(findings, policy)
+    result = evaluate_policy(relative_findings, policy)
 
     return {
         "result": result,
-        "findings": enrich_findings(findings),
+        "findings": enrich_findings(relative_findings),
     }
 
 

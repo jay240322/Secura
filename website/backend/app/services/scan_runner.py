@@ -519,11 +519,12 @@ def execute_pr_scan(
             if inst:
                 inst_id = inst.github_installation_id
 
+        user_access = None
         if repo.user_id:
             from app.models.user import User
             u = db.query(User).filter(User.id == repo.user_id).first()
             if u:
-                user_token = getattr(u, "github_access_token", None)
+                user_access = getattr(u, "github_access_token", None)
 
         # Store PR commits (fetch all commits from GitHub)
         try:
@@ -534,7 +535,7 @@ def execute_pr_scan(
                 except Exception:
                     curr_commits = []
             from app.services.github_service import get_pull_request_commits
-            raw_commits = get_pull_request_commits(inst_id, owner, repo_name, pull_number, user_token=user_token)
+            raw_commits = get_pull_request_commits(inst_id, owner, repo_name, pull_number, user_token=user_access)
             if raw_commits and (len(curr_commits) <= 1 or len(raw_commits) >= len(curr_commits)):
                 scan.pr_commits_json = json.dumps(raw_commits)
                 db.commit()
@@ -565,8 +566,8 @@ def execute_pr_scan(
                 token = create_installation_token(inst_id)
             except Exception as token_err:
                 logger.warning("Could not obtain installation token for %s: %s", inst_id, token_err)
-        if not token and user_token:
-            token = user_token
+        if not token and user_access:
+            token = user_access
 
         try:
             pr_files = get_pull_request_files(token, owner, repo_name, pull_number)
@@ -682,7 +683,14 @@ def record_pr_scan_results(
     """
     db: Session = SessionLocal()
     try:
-        repo = db.query(Repository).filter(Repository.full_name == repository_name).first()
+        repo = (
+            db.query(Repository)
+            .filter(
+                (func.lower(Repository.full_name) == repository_name.lower())
+                | (Repository.name == repository_name.split("/")[-1])
+            )
+            .first()
+        )
         if not repo:
             from app.models.installation import GitHubInstallation
             from app.models.user import User
