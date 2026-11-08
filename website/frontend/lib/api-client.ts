@@ -6,7 +6,6 @@ import {
   PullRequest,
   PRCommit,
   PRFinding,
-  PRScanRun,
   DashboardSummary,
   FindingOverTime,
   FindingBySeverity,
@@ -16,7 +15,6 @@ import {
   ScanStatus,
   ScanResult,
   User,
-  AuthResponse,
 } from "@/types";
 
 const rawApiBase =
@@ -323,11 +321,15 @@ function mapBackendPullRequest(p: Record<string, unknown>): PullRequest {
     mergedAt: p.merged_at ? String(p.merged_at) : (p.mergedAt ? String(p.mergedAt) : null),
     closedAt: p.closed_at ? String(p.closed_at) : (p.closedAt ? String(p.closedAt) : null),
     scanStatus: (p.scan_status as "pending" | "running" | "completed" | "failed") || (p.scanStatus as "pending" | "running" | "completed" | "failed") || "completed",
-    checkRunStatus: (p.check_run_status as "success" | "failure" | "in_progress" | "neutral") || (p.checkRunStatus as "success" | "failure" | "in_progress" | "neutral") || "success",
+    checkRunStatus: (p.check_run_status as "success" | "failure" | "in_progress" | "neutral") ||
+      (p.checkRunStatus as "success" | "failure" | "in_progress" | "neutral") ||
+      (p.scan_result === "failed" || Number(p.total_findings ?? p.totalFindings ?? 0) > 0 ? "failure" : "success"),
     totalFindings: Number(p.total_findings ?? p.totalFindings ?? 0),
     criticalFindings: Number(p.critical_findings ?? p.criticalFindings ?? 0),
     highFindings: Number(p.high_findings ?? p.highFindings ?? 0),
-    score: p.score !== undefined && p.score !== null ? Number(p.score) : 100,
+    score: (p.check_run_status === "failure" || p.scan_result === "failed" || Number(p.total_findings ?? p.totalFindings ?? 0) > 0)
+      ? (p.score !== undefined && p.score !== null && Number(p.score) < 100 ? Number(p.score) : 0)
+      : (p.score !== undefined && p.score !== null ? Number(p.score) : 100),
     createdAt: String(p.created_at || p.createdAt || new Date().toISOString()),
     htmlUrl: String(p.html_url || p.htmlUrl || "https://github.com"),
     findings: findingsRaw.map(mapBackendFindingItem),

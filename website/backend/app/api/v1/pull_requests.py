@@ -526,6 +526,42 @@ def fast_sync_repository_prs(
                         inst_id, owner, repo_name, pr_num, user_token=user_access
                     )
             commits_list = real_commits if real_commits else fast_commits
+
+            # Live check: query GitHub Check Runs for open PR's head commit to detect failures/findings live
+            cr_findings = []
+            cr_failed = False
+            cr_in_progress = False
+
+            if pr_state == "open" and head_sha and head_sha != "HEAD":
+                try:
+                    head_check_runs = get_commit_check_runs(
+                        inst_id, owner, repo_name, head_sha, user_token=user_access
+                    )
+                    for cr in head_check_runs:
+                        c_concl = (cr.get("conclusion") or "").lower()
+                        c_stat = (cr.get("status") or "").lower()
+                        if c_concl in ("failure", "action_required", "timed_out", "cancelled"):
+                            cr_failed = True
+                        elif c_stat in ("in_progress", "queued"):
+                            cr_in_progress = True
+                        if cr.get("findings"):
+                            cr_findings.extend(cr["findings"])
+                except Exception as cr_err:
+                    logger.debug("Could not fetch check runs for PR #%s: %s", pr_num, cr_err)
+
+            if cr_failed or cr_findings:
+                for c in commits_list:
+                    c_sha_match = (c.get("sha") == short_sha) or (c.get("full_sha") == head_sha)
+                    if c_sha_match:
+                        c["scan_result"] = "failed"
+                        c["check_run_status"] = "failure"
+                        c["score"] = 0
+                        if cr_findings:
+                            c["findings"] = cr_findings
+                            c["total_findings"] = len(cr_findings)
+                            c["critical_findings"] = sum(1 for f in cr_findings if f.get("severity") == "CRITICAL")
+                            c["high_findings"] = sum(1 for f in cr_findings if f.get("severity") == "HIGH")
+
             commits_json = json.dumps(commits_list)
 
             if existing_pr_scan:
@@ -536,6 +572,20 @@ def fast_sync_repository_prs(
                 existing_pr_scan.pr_title = title
                 existing_pr_scan.pr_author = author
                 existing_pr_scan.pr_html_url = html_url
+
+                if cr_failed or cr_findings:
+                    existing_pr_scan.scan_status = "completed"
+                    existing_pr_scan.scan_result = "failed"
+                    existing_pr_scan.score = 0
+                    if cr_findings:
+                        existing_pr_scan.total_findings = len(cr_findings)
+                        existing_pr_scan.critical_count = sum(1 for f in cr_findings if f.get("severity") == "CRITICAL")
+                        existing_pr_scan.high_count = sum(1 for f in cr_findings if f.get("severity") == "HIGH")
+                        from app.services.scan_runner import _reconcile_pr_findings_in_db
+                        _reconcile_pr_findings_in_db(db, repo.id, existing_pr_scan.id, pr_num, cr_findings)
+                elif cr_in_progress and existing_pr_scan.scan_result != "failed":
+                    existing_pr_scan.scan_status = "running"
+                    existing_pr_scan.scan_result = "pending"
 
                 curr_stored = []
                 if existing_pr_scan.pr_commits_json:
@@ -590,14 +640,21 @@ def fast_sync_repository_prs(
                     pr_merged_at=dt_merged,
                     pr_closed_at=dt_closed,
                     pr_commits_json=commits_json,
-                    scan_status="running" if pr_state == "open" else "completed",
-                    scan_result="pending" if pr_state == "open" else "passed",
-                    score=100,
+                    scan_status="completed" if (cr_failed or pr_state != "open") else ("running" if cr_in_progress else "completed"),
+                    scan_result="failed" if cr_failed else ("pending" if (pr_state == "open" and cr_in_progress) else "passed"),
+                    score=0 if cr_failed else 100,
+                    total_findings=len(cr_findings) if cr_findings else 0,
+                    critical_count=sum(1 for f in cr_findings if f.get("severity") == "CRITICAL") if cr_findings else 0,
+                    high_count=sum(1 for f in cr_findings if f.get("severity") == "HIGH") if cr_findings else 0,
                     created_at=dt_created or datetime.datetime.now(datetime.timezone.utc),
                 )
                 db.add(new_scan)
+                db.flush()
+                if cr_findings:
+                    from app.services.scan_runner import _reconcile_pr_findings_in_db
+                    _reconcile_pr_findings_in_db(db, repo.id, new_scan.id, pr_num, cr_findings)
 
-                if pr_state == "open":
+                if pr_state == "open" and not cr_failed:
                     scan_args = dict(
                         repository_id=repo.id,
                         pull_number=pr_num,
@@ -821,7 +878,7 @@ def list_pull_requests(
             )
             if existing_count == 0:
                 fast_sync_repository_prs(db, target_repo, user_token=user_access)
-            elif should_sync_repo(target_repo.id, min_interval_seconds=60.0):
+            elif should_sync_repo(target_repo.id, min_interval_seconds=8.0):
                 import threading
                 threading.Thread(target=_background_sync_repo_prs, args=(target_repo.id, user_access), daemon=True).start()
     else:
@@ -844,7 +901,7 @@ def list_pull_requests(
             )
             if existing_count == 0:
                 fast_sync_repository_prs(db, r, user_token=user_access)
-            elif should_sync_repo(r.id, min_interval_seconds=60.0):
+            elif should_sync_repo(r.id, min_interval_seconds=12.0):
                 import threading
                 threading.Thread(target=_background_sync_repo_prs, args=(r.id, user_access), daemon=True).start()
 

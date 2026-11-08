@@ -25,7 +25,7 @@ import {
 } from "lucide-react";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { Loader } from "@/components/ui/loader";
-import type { PullRequest, PRCommit, PRFinding, PRScanRun } from "@/types";
+import type { PullRequest, PRFinding } from "@/types";
 
 function shasMatch(a?: string | null, b?: string | null): boolean {
   if (!a || !b) return false;
@@ -360,8 +360,9 @@ export function PullRequestRow({
                 <span>Scanning PR…</span>
               </p>
             )}
-            {pr.checkRunStatus === "failure" && pr.totalFindings > 0 && (
+            {pr.checkRunStatus === "failure" && (
               <p className="text-[11px] text-rose-600 dark:text-rose-400 flex items-center gap-1 justify-end font-semibold">
+                <ShieldAlert className="h-3.5 w-3.5 shrink-0" />
                 <span>Merge Blocked</span>
               </p>
             )}
