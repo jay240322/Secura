@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { SeverityBadge } from "@/components/ui/severity-badge";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { Loader } from "@/components/ui/loader";
-import { api } from "@/lib/api-client";
+import { api, sanitizeFindingDisplay } from "@/lib/api-client";
 import type { Finding } from "@/types";
 import {
   AlertTriangle,
@@ -95,34 +95,9 @@ function FindingDetailContent() {
     );
   }
 
-  // Clean values to guarantee "Unknown" or "UNKNOWN" is never rendered
-  let displayType = (finding.type || "").trim();
-  let displayRule = (finding.ruleId || "").trim();
-  const rawPath = (finding.filePath || (finding as any).file || "").trim();
-  const rawStatus = (finding.status || "").toLowerCase().trim();
-  const rawRepo = (finding.repository || "").trim();
-
-  if (!displayType || displayType.toLowerCase() === "unknown") {
-    if (displayRule && displayRule.toLowerCase() !== "unknown") {
-      displayType = displayRule
-        .split("_")
-        .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
-        .join(" ");
-    } else {
-      displayType = "Hardcoded Secret";
-    }
-  }
-
-  if (!displayRule || displayRule.toLowerCase() === "unknown") {
-    displayRule = displayType.toUpperCase().replace(/\s+/g, "_").replace(/-/g, "_");
-  }
-
-  const displayPath = (!rawPath || rawPath.toLowerCase() === "unknown" || rawPath === "`unknown`")
-    ? "source_file"
-    : rawPath;
-  const lineNo = finding.lineNumber || (finding as any).line || 1;
-  const displayStatus = (!rawStatus || rawStatus === "unknown") ? "open" : finding.status;
-  const displayRepo = (!rawRepo || rawRepo.toLowerCase() === "unknown") ? "Repository" : rawRepo;
+  const { displayType, displayRule, displayPath, lineNo, displayStatus, displayRepo: rawCleanRepo } =
+    sanitizeFindingDisplay(finding);
+  const displayRepo = rawCleanRepo || "Repository";
 
   return (
     <div className="max-w-4xl mx-auto space-y-5">

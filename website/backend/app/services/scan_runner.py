@@ -465,6 +465,26 @@ def _reconcile_pr_findings_in_db(
             curr_scan.score = 100
 
 
+def extract_findings_from_commits(commits_list: list) -> list:
+    """Extract and normalize all findings across commit records."""
+    all_findings = []
+    if not isinstance(commits_list, list):
+        return all_findings
+    for c in commits_list:
+        if not isinstance(c, dict):
+            continue
+        c_sha = c.get("full_sha") or c.get("sha")
+        short_c_sha = (c.get("sha") or "")[:7] if c.get("sha") else None
+        for f in (c.get("findings") or []):
+            f_dict = dict(f)
+            if not f_dict.get("commit_sha"):
+                f_dict["commit_sha"] = c_sha
+            if not f_dict.get("detected_in_commit"):
+                f_dict["detected_in_commit"] = short_c_sha
+            all_findings.append(f_dict)
+    return all_findings
+
+
 def execute_pr_scan(
     repository_id: str,
     pull_number: int,

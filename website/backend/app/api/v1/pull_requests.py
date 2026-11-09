@@ -1015,6 +1015,32 @@ def _get_pr_scans_and_owner(db: Session, repo: Repository, pull_number: int) -> 
     return scans, owner, repo_name
 
 
+def _create_persistent_pr_scan(db: Session, repo: Repository, pull_number: int) -> Scan:
+    """Create and persist a default PR scan record if none exists."""
+    scan = Scan(
+        repository_id=repo.id,
+        commit_sha="HEAD",
+        branch=f"pr-{pull_number}",
+        base_branch=repo.default_branch or "main",
+        pull_number=pull_number,
+        pr_title=f"Pull Request #{pull_number}",
+        pr_author=repo.owner or "developer",
+        pr_html_url=f"https://github.com/{repo.full_name}/pull/{pull_number}",
+        pr_state="open",
+        scan_status="completed",
+        scan_result="passed",
+        score=100,
+        total_findings=0,
+        critical_count=0,
+        high_count=0,
+        created_at=datetime.datetime.now(datetime.timezone.utc),
+    )
+    db.add(scan)
+    db.commit()
+    db.refresh(scan)
+    return scan
+
+
 @router.get("/{repository_id}/{pull_number}/commits", response_model=List[Dict[str, Any]])
 def get_pr_commits(
     repository_id: str,
@@ -1046,27 +1072,7 @@ def get_pr_commits(
 
     # Ensure scan record exists directly in database
     if not scan:
-        scan = Scan(
-            repository_id=repo.id,
-            commit_sha="HEAD",
-            branch=f"pr-{pull_number}",
-            base_branch=repo.default_branch or "main",
-            pull_number=pull_number,
-            pr_title=f"Pull Request #{pull_number}",
-            pr_author=repo.owner or "developer",
-            pr_html_url=f"https://github.com/{repo.full_name}/pull/{pull_number}",
-            pr_state="open",
-            scan_status="completed",
-            scan_result="passed",
-            score=100,
-            total_findings=0,
-            critical_count=0,
-            high_count=0,
-            created_at=datetime.datetime.now(datetime.timezone.utc),
-        )
-        db.add(scan)
-        db.commit()
-        db.refresh(scan)
+        scan = _create_persistent_pr_scan(db, repo, pull_number)
         all_scans_for_pr = [scan]
 
     # Query live GitHub Check Runs on commits to capture findings live
@@ -1178,22 +1184,14 @@ def get_pr_commits(
 
     if scan and annotated:
         # Collect and store all findings from commits and check runs directly in the database
-        all_pr_findings = []
-        for c in annotated:
-            for f in (c.get("findings") or []):
-                f_dict = dict(f)
-                if not f_dict.get("commit_sha"):
-                    f_dict["commit_sha"] = c.get("full_sha") or c.get("sha")
-                if not f_dict.get("detected_in_commit"):
-                    f_dict["detected_in_commit"] = (c.get("sha") or "")[:7]
-                all_pr_findings.append(f_dict)
+        from app.services.scan_runner import _reconcile_pr_findings_in_db, extract_findings_from_commits
+        all_pr_findings = extract_findings_from_commits(annotated)
         for hf in all_historical:
             all_pr_findings.append(dict(hf))
         for lf in live_findings_to_persist:
             all_pr_findings.append(dict(lf))
 
         if all_pr_findings:
-            from app.services.scan_runner import _reconcile_pr_findings_in_db
             _reconcile_pr_findings_in_db(db, repo.id, scan.id, pull_number, all_pr_findings)
 
         scan.pr_commits_json = json.dumps(annotated)
@@ -1313,27 +1311,7 @@ def get_pull_request_detail(
         scan = get_latest_pr_scan(db, repo.id, pull_number)
 
     if not scan:
-        scan = Scan(
-            repository_id=repo.id,
-            commit_sha="HEAD",
-            branch=f"pr-{pull_number}",
-            base_branch=repo.default_branch or "main",
-            pull_number=pull_number,
-            pr_title=f"Pull Request #{pull_number}",
-            pr_author=repo.owner or "developer",
-            pr_html_url=f"https://github.com/{repo.full_name}/pull/{pull_number}",
-            pr_state="open",
-            scan_status="completed",
-            scan_result="passed",
-            score=100,
-            total_findings=0,
-            critical_count=0,
-            high_count=0,
-            created_at=datetime.datetime.now(datetime.timezone.utc),
-        )
-        db.add(scan)
-        db.commit()
-        db.refresh(scan)
+        scan = _create_persistent_pr_scan(db, repo, pull_number)
 
     all_scans_for_pr, owner, _ = _get_pr_scans_and_owner(db, repo, pull_number)
     return build_annotated_pr_data(db, scan, repo.full_name, owner, all_scans_for_pr)

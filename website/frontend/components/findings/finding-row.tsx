@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Check } from "lucide-react";
 import { SeverityBadge } from "@/components/ui/severity-badge";
 import { StatusBadge } from "@/components/ui/status-badge";
+import { sanitizeFindingDisplay } from "@/lib/api-client";
 import type { Finding } from "@/types";
 
 export function FindingRow({
@@ -17,34 +18,8 @@ export function FindingRow({
   const detectedSha = finding.detectedInCommit || (finding.commitSha ? finding.commitSha.slice(0, 7) : null);
   const resolvedSha = finding.resolvedInCommit;
 
-  // Clean values to guarantee "Unknown" or "UNKNOWN" is never rendered
-  let displayType = (finding.type || "").trim();
-  let displayRule = (finding.ruleId || "").trim();
-  const rawPath = (finding.filePath || (finding as any).file || "").trim();
-  const rawStatus = (finding.status || "").toLowerCase().trim();
-  const rawRepo = (finding.repository || "").trim();
-
-  if (!displayType || displayType.toLowerCase() === "unknown") {
-    if (displayRule && displayRule.toLowerCase() !== "unknown") {
-      displayType = displayRule
-        .split("_")
-        .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
-        .join(" ");
-    } else {
-      displayType = "Hardcoded Secret";
-    }
-  }
-
-  if (!displayRule || displayRule.toLowerCase() === "unknown") {
-    displayRule = displayType.toUpperCase().replace(/\s+/g, "_").replace(/-/g, "_");
-  }
-
-  const displayPath = (!rawPath || rawPath.toLowerCase() === "unknown" || rawPath === "`unknown`")
-    ? "source_file"
-    : rawPath;
-  const lineNo = finding.lineNumber || (finding as any).line || 1;
-  const displayStatus = (!rawStatus || rawStatus === "unknown") ? "open" : finding.status;
-  const displayRepo = (!rawRepo || rawRepo.toLowerCase() === "unknown") ? "" : rawRepo;
+  const { displayType, displayRule, displayPath, lineNo, displayStatus, displayRepo } =
+    sanitizeFindingDisplay(finding);
 
   return (
     <Link

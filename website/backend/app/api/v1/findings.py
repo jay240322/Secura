@@ -234,17 +234,9 @@ def list_findings(
                 try:
                     c_list = json.loads(s.pr_commits_json)
                     if isinstance(c_list, list):
-                        c_finds = []
-                        for c in c_list:
-                            for f in (c.get("findings") or []):
-                                f_dict = dict(f)
-                                if not f_dict.get("commit_sha"):
-                                    f_dict["commit_sha"] = c.get("full_sha") or c.get("sha")
-                                if not f_dict.get("detected_in_commit"):
-                                    f_dict["detected_in_commit"] = (c.get("sha") or "")[:7]
-                                c_finds.append(f_dict)
+                        from app.services.scan_runner import _reconcile_pr_findings_in_db, extract_findings_from_commits
+                        c_finds = extract_findings_from_commits(c_list)
                         if c_finds:
-                            from app.services.scan_runner import _reconcile_pr_findings_in_db
                             _reconcile_pr_findings_in_db(db, s.repository_id, s.id, pull_number, c_finds)
                             db.commit()
                 except Exception:
