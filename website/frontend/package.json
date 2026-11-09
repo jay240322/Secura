@@ -25,7 +25,8 @@
     "zod": "4.6.6"
   },
   "devDependencies": {
-    "@tailwindcss/turbopack": "4.0.0",
+    "@tailwindcss/postcss": "^4.0.0",
+    "postcss": "^8.4.49",
     "@types/node": "20.17.0",
     "@types/react": "19.0.0",
     "@types/react-dom": "19.0.0",
