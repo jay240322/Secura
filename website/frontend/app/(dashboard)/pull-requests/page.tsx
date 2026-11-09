@@ -65,18 +65,34 @@ export default function PullRequestsPage() {
     }
   };
 
+  const handleRepoChange = (newRepoId: string) => {
+    setSelectedRepoId(newRepoId);
+    setLoading(true);
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      if (newRepoId === "all") {
+        url.searchParams.delete("repo");
+      } else {
+        url.searchParams.set("repo", newRepoId);
+      }
+      window.history.replaceState({}, "", url.toString());
+    }
+    void loadData(newRepoId);
+  };
+
   const loadData = async (repoId?: string) => {
     try {
-      const activeRepoId = repoId !== undefined ? repoId : (selectedRepoId === "all" ? undefined : selectedRepoId);
+      const activeRepoId =
+        repoId !== undefined
+          ? (repoId === "all" ? undefined : repoId)
+          : (selectedRepoId === "all" ? undefined : selectedRepoId);
 
       const [prRes, repoRes] = await Promise.all([
         api.getPullRequests(activeRepoId),
         api.getRepositories(),
       ]);
-      if (prRes.isLive || prRes.pullRequests.length > 0) {
-        setPullRequests(prRes.pullRequests);
-      }
-      setRepos(repoRes.repositories);
+      setPullRequests(prRes.pullRequests || []);
+      setRepos(repoRes.repositories || []);
     } catch (e) {
       console.error("Failed to fetch pull requests:", e);
     } finally {
@@ -84,21 +100,39 @@ export default function PullRequestsPage() {
     }
   };
 
+  // 1. Initial mount: read preselected repository from URL search params once
   useEffect(() => {
-    let mounted = true;
-
-    // Check URL parameters for preselected repository
     if (typeof window !== "undefined") {
       const urlParams = new URLSearchParams(window.location.search);
       const repoParam = urlParams.get("repo");
-      if (repoParam && selectedRepoId !== repoParam) {
+      if (repoParam && repoParam !== "all") {
         setSelectedRepoId(repoParam);
       }
     }
+  }, []);
 
-    void loadData();
+  // 2. Normalize selectedRepoId if it was specified by name or slug from URL
+  useEffect(() => {
+    if (selectedRepoId !== "all" && repos.length > 0) {
+      const match = repos.find(
+        (r) =>
+          r.id === selectedRepoId ||
+          r.name.toLowerCase() === selectedRepoId.toLowerCase() ||
+          r.fullName.toLowerCase() === selectedRepoId.toLowerCase()
+      );
+      if (match && selectedRepoId !== match.id) {
+        setSelectedRepoId(match.id);
+      }
+    }
+  }, [repos, selectedRepoId]);
 
-    // Automatically sync pull requests from GitHub on initial load
+  // 3. React to selectedRepoId change: load data, trigger sync, and setup live auto-poll
+  useEffect(() => {
+    let mounted = true;
+
+    void loadData(selectedRepoId);
+
+    // Automatically sync pull requests from GitHub on selection
     const syncTargetRepo = selectedRepoId === "all" ? undefined : selectedRepoId;
     void api
       .syncPullRequests(syncTargetRepo)
@@ -109,18 +143,18 @@ export default function PullRequestsPage() {
       })
       .catch(() => { });
 
-    // Live auto-polling every 5 seconds for newly scanned PRs
+    // Live auto-polling every 3 seconds for fast status updates (open, merged, closed)
     const interval = setInterval(() => {
       const repoId = selectedRepoId === "all" ? undefined : selectedRepoId;
       void api
         .getPullRequests(repoId)
         .then((res) => {
-          if (mounted && res.isLive && res.pullRequests && res.pullRequests.length > 0) {
+          if (mounted && res.isLive && res.pullRequests) {
             setPullRequests(res.pullRequests);
           }
         })
         .catch(() => { });
-    }, 5000);
+    }, 3000);
 
     return () => {
       mounted = false;
@@ -176,10 +210,25 @@ export default function PullRequestsPage() {
     return pullRequests
       .filter((pr) => {
         // 1. Repo filter
-        if (selectedRepoId !== "all" && pr.repositoryId !== selectedRepoId) {
-          // Also check repo full name match
-          const matchingRepo = repos.find((r) => r.id === selectedRepoId);
-          if (matchingRepo && pr.repository !== matchingRepo.fullName && pr.repository !== matchingRepo.name) {
+        if (selectedRepoId !== "all") {
+          const matchRepo = repos.find(
+            (r) =>
+              r.id === selectedRepoId ||
+              r.name.toLowerCase() === selectedRepoId.toLowerCase() ||
+              r.fullName.toLowerCase() === selectedRepoId.toLowerCase()
+          );
+          const targetId = matchRepo ? matchRepo.id : selectedRepoId;
+          const targetName = (matchRepo ? matchRepo.name : selectedRepoId).toLowerCase();
+          const targetFullName = (matchRepo ? matchRepo.fullName : selectedRepoId).toLowerCase();
+
+          const prRepo = (pr.repository || "").toLowerCase();
+          const matchesId = Boolean(pr.repositoryId && pr.repositoryId === targetId);
+          const matchesName =
+            prRepo === targetName ||
+            prRepo === targetFullName ||
+            targetFullName.endsWith(`/${prRepo}`);
+
+          if (!matchesId && !matchesName) {
             return false;
           }
         }
@@ -205,16 +254,38 @@ export default function PullRequestsPage() {
       .sort((a, b) => comparePullRequests(a, b, sortOrder));
   }, [pullRequests, selectedRepoId, selectedState, searchQuery, repos, sortOrder]);
 
-  // Aggregate stats across currently filtered PR set
-  const failed = pullRequests.filter((p) => p.checkRunStatus === "failure" || p.criticalFindings > 0);
-  const passed = pullRequests.filter((p) => p.checkRunStatus === "success" && p.criticalFindings === 0);
-  const mergedCount = pullRequests.filter((p) => (p.state || "").toLowerCase() === "merged").length;
-  const openCount = pullRequests.filter((p) => (p.state || "open").toLowerCase() === "open").length;
-  const closedCount = pullRequests.filter((p) => (p.state || "").toLowerCase() === "closed").length;
+  // Aggregate stats across currently selected repository (or all repos)
+  const repoPRs = useMemo(() => {
+    if (selectedRepoId === "all") return pullRequests;
+    const matchRepo = repos.find(
+      (r) =>
+        r.id === selectedRepoId ||
+        r.name.toLowerCase() === selectedRepoId.toLowerCase() ||
+        r.fullName.toLowerCase() === selectedRepoId.toLowerCase()
+    );
+    const targetId = matchRepo ? matchRepo.id : selectedRepoId;
+    const targetName = (matchRepo ? matchRepo.name : selectedRepoId).toLowerCase();
+    const targetFullName = (matchRepo ? matchRepo.fullName : selectedRepoId).toLowerCase();
+
+    return pullRequests.filter((pr) => {
+      const prRepo = (pr.repository || "").toLowerCase();
+      return (
+        (pr.repositoryId && pr.repositoryId === targetId) ||
+        prRepo === targetName ||
+        prRepo === targetFullName ||
+        targetFullName.endsWith(`/${prRepo}`)
+      );
+    });
+  }, [pullRequests, selectedRepoId, repos]);
+
+  const failed = repoPRs.filter((p) => p.checkRunStatus === "failure" || p.criticalFindings > 0);
+  const passed = repoPRs.filter((p) => p.checkRunStatus === "success" && p.criticalFindings === 0);
+  const mergedCount = repoPRs.filter((p) => (p.state || "").toLowerCase() === "merged").length;
+  const openCount = repoPRs.filter((p) => (p.state || "open").toLowerCase() === "open").length;
+  const closedCount = repoPRs.filter((p) => (p.state || "").toLowerCase() === "closed").length;
 
   return (
     <div className="max-w-screen-xl mx-auto space-y-5">
-      {/* Page Header */}
       {/* Page Header */}
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div>
@@ -231,7 +302,7 @@ export default function PullRequestsPage() {
             <Filter className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 dark:text-zinc-500 pointer-events-none" />
             <select
               value={selectedRepoId}
-              onChange={(e) => setSelectedRepoId(e.target.value)}
+              onChange={(e) => handleRepoChange(e.target.value)}
               suppressHydrationWarning
               className="appearance-none rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 pl-8 pr-8 py-2 text-xs font-medium text-slate-800 dark:text-zinc-200 hover:border-slate-300 dark:hover:border-zinc-700 focus:outline-none focus:border-blue-500 transition-colors cursor-pointer shadow-xs"
             >
@@ -316,7 +387,7 @@ export default function PullRequestsPage() {
                   : "text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-100"
               }`}
             >
-              All ({pullRequests.length})
+              All ({repoPRs.length})
             </button>
             <button
               onClick={() => setSelectedState("open")}
@@ -403,7 +474,7 @@ export default function PullRequestsPage() {
                 <button
                   onClick={() => {
                     setSelectedState("all");
-                    setSelectedRepoId("all");
+                    handleRepoChange("all");
                     setSearchQuery("");
                   }}
                   className="mt-4 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700 transition-all shadow-xs"

@@ -284,23 +284,29 @@ async def github_webhook(
                 import datetime
                 is_merged = bool(pr_data.get("merged", False))
                 pr_state = "merged" if is_merged else "closed"
+                now_utc = datetime.datetime.now(datetime.timezone.utc)
+                dt_merged = now_utc if is_merged else None
+                dt_closed = now_utc if not is_merged else None
+
+                from app.api.v1.pull_requests import _update_pr_scans_state, _last_repo_sync
+                _last_repo_sync[repo.id] = 0.0
+
                 pr_scans = (
                     db.query(Scan)
                     .filter(Scan.repository_id == repo.id, Scan.pull_number == pull_number)
                     .all()
                 )
-                now_utc = datetime.datetime.now(datetime.timezone.utc)
-                for s in pr_scans:
-                    s.pr_state = pr_state
-                    if is_merged:
-                        s.pr_merged_at = now_utc
-                    else:
-                        s.pr_closed_at = now_utc
-                    if s.scan_status in ("running", "pending"):
-                        s.scan_status = "completed"
-                    if s.scan_result == "pending":
-                        s.scan_result = "passed"
-                db.commit()
+                if pr_scans:
+                    _update_pr_scans_state(db, repo.id, pull_number, pr_state, dt_merged, dt_closed)
+                    db.commit()
+                else:
+                    from app.api.v1.pull_requests import fast_sync_repository_prs
+                    fast_sync_repository_prs(db, repo)
+                    pr_scans = (
+                        db.query(Scan)
+                        .filter(Scan.repository_id == repo.id, Scan.pull_number == pull_number)
+                        .all()
+                    )
 
                 if not is_merged:
                     # PR closed without merging -> mark any remaining open findings as resolved so they don't block

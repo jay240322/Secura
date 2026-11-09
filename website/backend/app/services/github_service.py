@@ -378,6 +378,37 @@ def get_open_pull_requests(
     return get_repository_pull_requests(installation_id, owner, repo, state="open", user_token=user_token)
 
 
+def get_single_pull_request(
+    installation_id: Optional[int],
+    owner: str,
+    repo: str,
+    pull_number: int,
+    user_token: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    """
+    Fetch live status and metadata for a single pull request from GitHub API.
+    """
+    headers = _get_github_auth_headers(installation_id, owner, repo, user_token=user_token)
+    url = f"{GITHUB_API_URL}/repos/{owner}/{repo}/pulls/{pull_number}"
+    try:
+        response = requests.get(url, headers=headers, timeout=5)
+        if response.ok:
+            return response.json()
+        if response.status_code in (401, 403) and "Authorization" in headers:
+            fallback_headers = {
+                "Accept": "application/vnd.github+json",
+                "X-GitHub-Api-Version": "2022-11-28",
+                "User-Agent": "Secura-Security-Scanner",
+            }
+            fallback_resp = requests.get(url, headers=fallback_headers, timeout=5)
+            if fallback_resp.ok:
+                return fallback_resp.json()
+        return None
+    except Exception as exc:
+        logger.debug("Failed to fetch PR #%s for %s/%s: %s", pull_number, owner, repo, exc)
+        return None
+
+
 def get_pull_request_commits(
     installation_id: Optional[int],
     owner: str,
