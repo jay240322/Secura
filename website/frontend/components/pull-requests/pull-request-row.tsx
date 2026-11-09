@@ -212,10 +212,14 @@ export function PullRequestRow({
               </button>
               <span>·</span>
               <span className="text-slate-500 dark:text-zinc-400">
-                {pr.state === "merged" && pr.mergedAt
-                  ? `Merged on ${new Date(pr.mergedAt).toLocaleDateString()}`
-                  : pr.state === "closed" && pr.closedAt
-                    ? `Closed on ${new Date(pr.closedAt).toLocaleDateString()}`
+                {pr.state === "merged"
+                  ? pr.mergedAt
+                    ? `Merged on ${new Date(pr.mergedAt).toLocaleDateString()}`
+                    : "Merged"
+                  : pr.state === "closed"
+                    ? pr.closedAt
+                      ? `Closed on ${new Date(pr.closedAt).toLocaleDateString()}`
+                      : "Closed"
                     : `Opened ${new Date(pr.createdAt).toLocaleDateString()}`}
               </span>
             </p>

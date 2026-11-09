@@ -16,6 +16,7 @@ from app.services.github_service import (
     get_repository_pull_requests,
     get_pull_request_commits,
     get_commit_check_runs,
+    get_single_pull_request,
 )
 from app.services.scan_runner import execute_pr_scan
 
@@ -40,20 +41,42 @@ def _extract_user_github_token(user: Optional[User]) -> Optional[str]:
     return getattr(user, "github_access_token", None)
 
 
+def _resolve_target_repository(
+    db: Session,
+    repo_identifier: Optional[str],
+    user_ids: Optional[List[str]] = None,
+    gh_handle: Optional[str] = None,
+) -> Optional[Repository]:
+    """Resolve a repository by UUID, repository name, or full_name."""
+    if not repo_identifier:
+        return None
+    clean = str(repo_identifier).strip()
+    if not clean or clean.lower() in ("all", "undefined", "null"):
+        return None
+
+    name_conditions = or_(
+        Repository.id == clean,
+        func.lower(Repository.name) == clean.lower(),
+        func.lower(Repository.full_name) == clean.lower(),
+        func.lower(Repository.full_name).endswith(f"/{clean.lower()}"),
+    )
+
+    if user_ids or gh_handle:
+        user_cond = or_(
+            Repository.user_id.in_(user_ids) if user_ids else False,
+            (func.lower(Repository.owner) == gh_handle) if gh_handle else False,
+        )
+        found = db.query(Repository).filter(user_cond, name_conditions).first()
+        if found:
+            return found
+
+    return db.query(Repository).filter(name_conditions).first()
+
+
 def get_user_repository_or_404(db: Session, repository_id: str, user_id: str) -> Repository:
     user = db.query(User).filter(User.id == user_id).first()
     gh_user = user.github_username.lower() if (user and user.github_username) else None
-    repo = (
-        db.query(Repository)
-        .filter(
-            Repository.id == repository_id,
-            or_(
-                Repository.user_id == user_id,
-                (func.lower(Repository.owner) == gh_user) if gh_user else False,
-            ),
-        )
-        .first()
-    )
+    repo = _resolve_target_repository(db, repository_id, user_ids=[user_id], gh_handle=gh_user)
     if not repo:
         raise HTTPException(status_code=404, detail="Repository not found")
     return repo
@@ -372,14 +395,70 @@ def annotate_pr_commits(
 _last_repo_sync: Dict[str, float] = {}
 
 
-def should_sync_repo(repo_id: str, min_interval_seconds: float = 20.0) -> bool:
+def should_sync_repo(repo_id: str, min_interval_seconds: float = 20.0, force: bool = False) -> bool:
     import time
-    last_time = _last_repo_sync.get(repo_id, 0.0)
     now = time.time()
+    if force:
+        _last_repo_sync[repo_id] = now
+        return True
+    last_time = _last_repo_sync.get(repo_id, 0.0)
     if now - last_time >= min_interval_seconds:
         _last_repo_sync[repo_id] = now
         return True
     return False
+
+
+def _update_pr_scans_state(
+    db: Session,
+    repo_id: str,
+    pull_number: int,
+    pr_state: str,
+    dt_merged: Optional[datetime.datetime] = None,
+    dt_closed: Optional[datetime.datetime] = None,
+) -> None:
+    """Update pr_state and merge timestamps across all scan records for a PR."""
+    scans = (
+        db.query(Scan)
+        .filter(Scan.repository_id == repo_id, Scan.pull_number == pull_number)
+        .all()
+    )
+    for sc in scans:
+        sc.pr_state = pr_state
+        if dt_merged:
+            sc.pr_merged_at = dt_merged
+        if dt_closed:
+            sc.pr_closed_at = dt_closed
+        if pr_state in ("merged", "closed"):
+            if sc.scan_status in ("running", "pending"):
+                sc.scan_status = "completed"
+            if sc.scan_result == "pending":
+                sc.scan_result = "passed"
+    db.flush()
+
+
+def _sync_live_pr_state(
+    db: Session,
+    repo: Repository,
+    pull_number: int,
+    inst_id: Optional[int],
+    owner: str,
+    repo_name: str,
+    user_token: Optional[str] = None,
+) -> Optional[str]:
+    """Fetch live status of a single PR from GitHub and reconcile into DB immediately."""
+    live_pr = get_single_pull_request(inst_id, owner, repo_name, pull_number, user_token=user_token)
+    if not live_pr:
+        return None
+    is_merged = live_pr.get("merged_at") is not None
+    pr_state = "merged" if is_merged else (live_pr.get("state") or "open")
+    dt_merged = _parse_github_iso_datetime(live_pr.get("merged_at"))
+    dt_closed = _parse_github_iso_datetime(live_pr.get("closed_at"))
+    _update_pr_scans_state(db, repo.id, pull_number, pr_state, dt_merged, dt_closed)
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+    return pr_state
 
 
 def fast_sync_repository_prs(
@@ -403,6 +482,12 @@ def fast_sync_repository_prs(
         )
         if not owner or not repo_name:
             return 0
+
+        if not inst_id and getattr(repo, "installation_id", None):
+            from app.models.installation import GitHubInstallation
+            inst = db.query(GitHubInstallation).filter(GitHubInstallation.id == repo.installation_id).first()
+            if inst:
+                inst_id = inst.github_installation_id
 
         if not inst_id:
             from app.models.installation import GitHubInstallation
@@ -593,8 +678,10 @@ def fast_sync_repository_prs(
                     existing_pr_scan.pr_merged_at = dt_merged
                 if dt_closed:
                     existing_pr_scan.pr_closed_at = dt_closed
-                if dt_created:
+                if dt_created and not existing_pr_scan.created_at:
                     existing_pr_scan.created_at = dt_created
+
+                _update_pr_scans_state(db, repo.id, pr_num, pr_state, dt_merged, dt_closed)
 
                 # Trigger scan if open PR hasn't been scanned or head commit changed
                 if pr_state == "open" and (existing_pr_scan.total_findings is None or has_sha_changed):
@@ -684,7 +771,17 @@ def build_annotated_pr_data(
     repo_scans_cache: Optional[Dict[Tuple[str, str], Scan]] = None,
 ) -> Dict[str, Any]:
     pr_num = s.pull_number
-    pr_state = s.pr_state or ("merged" if s.pr_merged_at else ("closed" if s.pr_closed_at else "open"))
+    has_merged = any(sc.pr_state == "merged" or sc.pr_merged_at is not None for sc in all_scans_for_pr)
+    has_closed = any(sc.pr_state == "closed" or sc.pr_closed_at is not None for sc in all_scans_for_pr)
+    if has_merged:
+        pr_state = "merged"
+    elif has_closed:
+        pr_state = "closed"
+    else:
+        pr_state = s.pr_state or ("merged" if s.pr_merged_at else ("closed" if s.pr_closed_at else "open"))
+
+    dt_merged_val = next((sc.pr_merged_at for sc in all_scans_for_pr if sc.pr_merged_at is not None), s.pr_merged_at)
+    dt_closed_val = next((sc.pr_closed_at for sc in all_scans_for_pr if sc.pr_closed_at is not None), s.pr_closed_at)
     serialized_findings = [serialize_pr_finding(f, commit_sha=s.commit_sha) for f in s.findings]
 
     # Collect cached commits for this PR across all scans
@@ -796,8 +893,8 @@ def build_annotated_pr_data(
         "commit_sha": s.commit_sha,
         "author": s.pr_author or (owner or "developer"),
         "state": pr_state,
-        "merged_at": s.pr_merged_at.isoformat() if s.pr_merged_at else None,
-        "closed_at": s.pr_closed_at.isoformat() if s.pr_closed_at else None,
+        "merged_at": dt_merged_val.isoformat() if dt_merged_val else None,
+        "closed_at": dt_closed_val.isoformat() if dt_closed_val else None,
         "scan_status": s.scan_status,
         "check_run_status": check_status,
         "total_findings": tot_cnt,
@@ -849,31 +946,31 @@ def list_pull_requests(
 
     user_access = _extract_user_github_token(current_user)
 
-    if repository_id:
-        target_repo = (
-            db.query(Repository)
+    target_repo = _resolve_target_repository(db, repository_id, user_ids=user_ids, gh_handle=gh_handle)
+    if target_repo:
+        existing_count = (
+            db.query(Scan.id)
             .filter(
-                Repository.id == repository_id,
-                or_(
-                    Repository.user_id.in_(user_ids),
-                    (func.lower(Repository.owner) == gh_handle) if gh_handle else False,
-                ),
+                Scan.repository_id == target_repo.id,
+                Scan.pull_number.isnot(None),
+            )
+            .count()
+        )
+        has_open_prs = (
+            db.query(Scan.id)
+            .filter(
+                Scan.repository_id == target_repo.id,
+                Scan.pull_number.isnot(None),
+                or_(Scan.pr_state == "open", Scan.pr_state.is_(None)),
             )
             .first()
+            is not None
         )
-        if target_repo:
-            existing_count = (
-                db.query(Scan)
-                .filter(Scan.repository_id == target_repo.id, Scan.pull_number.isnot(None))
-                .count()
-            )
-            if existing_count == 0:
-                fast_sync_repository_prs(db, target_repo, user_token=user_access)
-            elif should_sync_repo(target_repo.id, min_interval_seconds=8.0):
-                import threading
-                threading.Thread(target=_background_sync_repo_prs, args=(target_repo.id, user_access), daemon=True).start()
+        sync_interval = 3.0 if has_open_prs else 10.0
+        if existing_count == 0 or should_sync_repo(target_repo.id, min_interval_seconds=sync_interval):
+            fast_sync_repository_prs(db, target_repo, user_token=user_access)
     else:
-        # Check all repositories for current user; if any have 0 PR scans, sync once; otherwise sync in background
+        # Check all repositories for current user; sync fast if open PRs exist or interval elapsed
         user_repos = (
             db.query(Repository)
             .filter(
@@ -885,31 +982,45 @@ def list_pull_requests(
             .all()
         )
         for r in user_repos:
+            has_open_prs = (
+                db.query(Scan.id)
+                .filter(
+                    Scan.repository_id == r.id,
+                    Scan.pull_number.isnot(None),
+                    or_(Scan.pr_state == "open", Scan.pr_state.is_(None)),
+                )
+                .first()
+                is not None
+            )
             existing_count = (
-                db.query(Scan)
-                .filter(Scan.repository_id == r.id, Scan.pull_number.isnot(None))
+                db.query(Scan.id)
+                .filter(
+                    Scan.repository_id == r.id,
+                    Scan.pull_number.isnot(None),
+                )
                 .count()
             )
-            if existing_count == 0:
+            sync_interval = 3.0 if has_open_prs else 15.0
+            if existing_count == 0 or should_sync_repo(r.id, min_interval_seconds=sync_interval):
                 fast_sync_repository_prs(db, r, user_token=user_access)
-            elif should_sync_repo(r.id, min_interval_seconds=12.0):
-                import threading
-                threading.Thread(target=_background_sync_repo_prs, args=(r.id, user_access), daemon=True).start()
 
     query = (
         db.query(Scan)
         .options(joinedload(Scan.repository), selectinload(Scan.findings))
         .join(Repository)
         .filter(
-            or_(
-                Repository.user_id.in_(user_ids),
-                (func.lower(Repository.owner) == gh_handle) if gh_handle else False,
-            ),
             Scan.pull_number.isnot(None),
         )
     )
-    if repository_id:
-        query = query.filter(Scan.repository_id == repository_id)
+    if target_repo:
+        query = query.filter(Scan.repository_id == target_repo.id)
+    else:
+        query = query.filter(
+            or_(
+                Repository.user_id.in_(user_ids),
+                (func.lower(Repository.owner) == gh_handle) if gh_handle else False,
+            )
+        )
 
     if state and state.lower() != "all":
         target_state = state.lower()
@@ -983,16 +1094,21 @@ def sync_pull_requests(
             if uid not in user_ids:
                 user_ids.append(uid)
 
-    repo_query = db.query(Repository).filter(
-        or_(
-            Repository.user_id.in_(user_ids),
-            (func.lower(Repository.owner) == gh_handle) if gh_handle else False,
-        ),
-    )
-    if repository_id:
-        repo_query = repo_query.filter(Repository.id == repository_id)
+    target_repo = _resolve_target_repository(db, repository_id, user_ids=user_ids, gh_handle=gh_handle)
+    if target_repo:
+        repos = [target_repo]
+    else:
+        repos = (
+            db.query(Repository)
+            .filter(
+                or_(
+                    Repository.user_id.in_(user_ids),
+                    (func.lower(Repository.owner) == gh_handle) if gh_handle else False,
+                ),
+            )
+            .all()
+        )
 
-    repos = repo_query.all()
     synced_prs_count = 0
     user_access = _extract_user_github_token(current_user)
 
@@ -1001,7 +1117,12 @@ def sync_pull_requests(
         synced_prs_count += count
 
     logger.info("Fast-synced %s PRs from GitHub across %s repositories", synced_prs_count, len(repos))
-    return list_pull_requests(repository_id=repository_id, state=None, db=db, current_user=current_user)
+    return list_pull_requests(
+        repository_id=target_repo.id if target_repo else None,
+        state=None,
+        db=db,
+        current_user=current_user,
+    )
 
 
 def _get_pr_scans_and_owner(db: Session, repo: Repository, pull_number: int) -> Tuple[List[Scan], str, str]:
@@ -1069,6 +1190,10 @@ def get_pr_commits(
 
     # Fetch live commits from GitHub
     raw_commits = get_pull_request_commits(inst_id, owner, repo_name, pull_number, user_token=user_access) or []
+
+    # Sync live PR state directly from GitHub
+    if inst_id or user_access:
+        _sync_live_pr_state(db, repo, pull_number, inst_id, owner, repo_name, user_token=user_access)
 
     # Ensure scan record exists directly in database
     if not scan:
@@ -1303,9 +1428,14 @@ def get_pull_request_detail(
     Get detailed information, security score, and detected secrets for a specific Pull Request.
     """
     repo = get_user_repository_or_404(db, repository_id, current_user.id)
-    scan = get_latest_pr_scan(db, repo.id, pull_number)
     user_access = _extract_user_github_token(current_user)
+    inst_id = repo.installation.github_installation_id if repo.installation else None
+    owner, repo_name = repo.full_name.split("/", 1) if "/" in repo.full_name else (repo.owner, repo.name)
 
+    if inst_id or user_access:
+        _sync_live_pr_state(db, repo, pull_number, inst_id, owner, repo_name, user_token=user_access)
+
+    scan = get_latest_pr_scan(db, repo.id, pull_number)
     if not scan:
         fast_sync_repository_prs(db, repo, user_token=user_access)
         scan = get_latest_pr_scan(db, repo.id, pull_number)
