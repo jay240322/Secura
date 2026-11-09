@@ -5,7 +5,7 @@ import { SeverityBadge } from "@/components/ui/severity-badge";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { FindingRow } from "@/components/findings/finding-row";
 import { Loader } from "@/components/ui/loader";
-import { api } from "@/lib/api-client";
+import { api, cleanRepoDisplay } from "@/lib/api-client";
 import type { Finding, FindingStatus, Severity } from "@/types";
 import {
   ChevronRight,
@@ -64,8 +64,16 @@ function FindingsContent() {
     let mounted = true;
     async function fetchFindings() {
       try {
+        const cleanApiRepo =
+          repoFilter &&
+          repoFilter.toLowerCase() !== "all" &&
+          repoFilter.toLowerCase() !== "repository" &&
+          repoFilter.toLowerCase() !== "unknown"
+            ? cleanRepoDisplay(repoFilter)
+            : undefined;
+
         const res = await api.getFindings({
-          repoName: repoFilter || undefined,
+          repoName: cleanApiRepo,
           pullNumber: prFilter !== null ? prFilter : undefined,
           status: statusFilter || undefined,
         });
@@ -94,8 +102,16 @@ function FindingsContent() {
 
   const handleRefresh = async () => {
     try {
+      const cleanApiRepo =
+        repoFilter &&
+        repoFilter.toLowerCase() !== "all" &&
+        repoFilter.toLowerCase() !== "repository" &&
+        repoFilter.toLowerCase() !== "unknown"
+          ? cleanRepoDisplay(repoFilter)
+          : undefined;
+
       const res = await api.getFindings({
-        repoName: repoFilter || undefined,
+        repoName: cleanApiRepo,
         pullNumber: prFilter !== null ? prFilter : undefined,
         status: statusFilter || undefined,
       });
@@ -107,9 +123,27 @@ function FindingsContent() {
   };
 
   const repos = useMemo(() => {
-    const set = new Set(findings.map((f) => f.repository).filter(Boolean));
-    if (repoFilter) set.add(repoFilter);
-    return [...set];
+    const set = new Set<string>();
+    for (const f of findings) {
+      const cr = cleanRepoDisplay(f.repository);
+      if (
+        cr &&
+        cr.toLowerCase() !== "unknown" &&
+        cr.toLowerCase() !== "repository" &&
+        cr.toLowerCase() !== "undefined"
+      ) {
+        set.add(cr);
+      }
+    }
+    if (
+      repoFilter &&
+      repoFilter.toLowerCase() !== "unknown" &&
+      repoFilter.toLowerCase() !== "repository" &&
+      repoFilter.toLowerCase() !== "all"
+    ) {
+      set.add(cleanRepoDisplay(repoFilter));
+    }
+    return Array.from(set);
   }, [findings, repoFilter]);
 
   const filtered = useMemo(() => {
@@ -119,16 +153,20 @@ function FindingsContent() {
           return false;
         }
       }
-      if (
-        query &&
-        !f.type.toLowerCase().includes(query.toLowerCase()) &&
-        !f.filePath.toLowerCase().includes(query.toLowerCase()) &&
-        !f.repository.toLowerCase().includes(query.toLowerCase()) &&
-        !(f.ruleId && f.ruleId.toLowerCase().includes(query.toLowerCase())) &&
-        !(f.detectedInCommit && f.detectedInCommit.toLowerCase().includes(query.toLowerCase())) &&
-        !(f.resolvedInCommit && f.resolvedInCommit.toLowerCase().includes(query.toLowerCase()))
-      )
-        return false;
+      if (query) {
+        const q = query.toLowerCase();
+        const typeMatch = (f.type || "").toLowerCase().includes(q);
+        const fileMatch = (f.filePath || "").toLowerCase().includes(q);
+        const repoRaw = (f.repository || "").toLowerCase();
+        const repoClean = cleanRepoDisplay(f.repository).toLowerCase();
+        const repoMatch = repoRaw.includes(q) || repoClean.includes(q);
+        const ruleMatch = (f.ruleId || "").toLowerCase().includes(q);
+        const commitMatch = (f.detectedInCommit || "").toLowerCase().includes(q);
+        const resolvedMatch = (f.resolvedInCommit || "").toLowerCase().includes(q);
+        if (!typeMatch && !fileMatch && !repoMatch && !ruleMatch && !commitMatch && !resolvedMatch) {
+          return false;
+        }
+      }
       if (severityFilter && f.severity !== severityFilter) return false;
       if (statusFilter) {
         if (statusFilter === "resolved" || statusFilter === "solved") {
@@ -137,7 +175,18 @@ function FindingsContent() {
           return false;
         }
       }
-      if (repoFilter && f.repository !== repoFilter) return false;
+      if (
+        repoFilter &&
+        repoFilter.toLowerCase() !== "all" &&
+        repoFilter.toLowerCase() !== "repository" &&
+        repoFilter.toLowerCase() !== "unknown"
+      ) {
+        const targetClean = (cleanRepoDisplay(repoFilter) || repoFilter).toLowerCase().split("/").pop() || "";
+        const fClean = (cleanRepoDisplay(f.repository) || f.repository || "").toLowerCase().split("/").pop() || "";
+        if (targetClean && fClean && targetClean !== fClean) {
+          return false;
+        }
+      }
       return true;
     });
   }, [findings, query, severityFilter, statusFilter, repoFilter, prFilter]);
@@ -162,9 +211,9 @@ function FindingsContent() {
             <div className="min-w-0 flex-1">
               <p className="text-xs font-semibold flex items-center gap-2 flex-wrap">
                 <span>Findings for Pull Request #{prFilter}</span>
-                {repoFilter && (
+                {repoFilter && cleanRepoDisplay(repoFilter) !== "Repository" && (
                   <span className="font-mono text-[11px] text-blue-700 dark:text-blue-300 font-normal">
-                    · {repoFilter}
+                    · {cleanRepoDisplay(repoFilter)}
                   </span>
                 )}
               </p>
@@ -304,7 +353,7 @@ function FindingsContent() {
           ) : (
             <div className="divide-y divide-slate-100 dark:divide-zinc-800/80">
               {filtered.map((finding) => (
-                <FindingRow key={finding.id} finding={finding} />
+                <FindingRow key={finding.id} finding={finding} showRepo={true} />
               ))}
             </div>
           )}

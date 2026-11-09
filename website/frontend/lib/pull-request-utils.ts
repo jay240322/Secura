@@ -78,14 +78,12 @@ export function enrichPRWithRefreshedCommits(
       if (matched.length > 0) {
         return { ...c, findings: matched, isResolved: true };
       }
-      if (resolvedFindings.length > 0 && commits.filter((x) => x.scanResult === "failed" || x.isResolved).length <= 1) {
-        return { ...c, findings: resolvedFindings, isResolved: true };
-      }
     }
     return c;
   });
 
-  const hasResolved = (pr?.hasResolvedViolations) || resolvedFindings.length > 0;
+  const isHeadPassed = pr?.checkRunStatus === "success" && (pr?.totalFindings === 0);
+  const hasResolved = Boolean(resolvedFindings.length > 0 && isHeadPassed);
 
   return {
     enrichedCommits,

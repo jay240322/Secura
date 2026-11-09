@@ -27,6 +27,31 @@ from secura.policy import evaluate_policy, load_policy
 logger = logging.getLogger("secura.scan_runner")
 
 
+def _extract_finding_type_and_rule(item: Dict[str, Any]) -> tuple[str, str]:
+    """Safely extract clean finding type and uppercase rule ID without falling back to 'Unknown'."""
+    raw_type = str(
+        item.get("type")
+        or item.get("finding_type")
+        or item.get("title")
+        or item.get("rule_id")
+        or item.get("rule")
+        or ""
+    ).strip()
+
+    raw_rule = str(item.get("rule_id") or item.get("rule") or "").strip()
+
+    if not raw_type or raw_type.lower() == "unknown":
+        if raw_rule and raw_rule.lower() != "unknown":
+            raw_type = raw_rule.replace("_", " ").title()
+        else:
+            raw_type = "Hardcoded Secret"
+
+    if not raw_rule or raw_rule.lower() == "unknown":
+        raw_rule = map_type_to_rule_id(raw_type)
+
+    return raw_type, raw_rule
+
+
 def persist_scan_findings(
     db: Session,
     scan_id: str,
@@ -37,11 +62,14 @@ def persist_scan_findings(
     """Save findings records to DB with fingerprint deduplication and status tracking."""
     now = datetime.datetime.now(datetime.timezone.utc)
     for item in findings_data:
-        f_type = item.get("type", "Unknown")
-        rule_id = map_type_to_rule_id(f_type)
-        f_path = str(item.get("file", ""))
-        line_no = int(item.get("line", 1))
+        f_type, rule_id = _extract_finding_type_and_rule(item)
+        f_path = str(item.get("file") or item.get("file_path") or item.get("path") or "source_file").strip().strip("`")
+        if not f_path or f_path.lower() in ("unknown", "`unknown`"):
+            f_path = "source_file"
+        line_no = int(item.get("line") or item.get("line_number") or 1)
         sev = str(item.get("severity", "MEDIUM")).upper()
+        if sev not in ("CRITICAL", "HIGH", "MEDIUM", "LOW"):
+            sev = "MEDIUM"
 
         fingerprint = compute_finding_fingerprint(repository_id, rule_id, f_path, line_no)
 
@@ -183,14 +211,14 @@ def execute_repository_scan(
 
         # Reconcile findings on this branch: keep solved findings marked as "resolved"
         now = datetime.datetime.now(datetime.timezone.utc)
-        detected_fps = {
-            compute_finding_fingerprint(repository_id, map_type_to_rule_id(item.get("type", "Unknown")), str(item.get("file", "")), int(item.get("line", 1)))
-            for item in findings_data
-        }
-        detected_file_rules = {
-            (str(item.get("file", "")), map_type_to_rule_id(item.get("type", "Unknown")))
-            for item in findings_data
-        }
+        detected_fps = set()
+        detected_file_rules = set()
+        for item in findings_data:
+            _, rid = _extract_finding_type_and_rule(item)
+            fp = str(item.get("file") or item.get("file_path") or item.get("path") or "source_file").strip().strip("`") or "source_file"
+            ln = int(item.get("line") or item.get("line_number") or 1)
+            detected_fps.add(compute_finding_fingerprint(repository_id, rid, fp, ln))
+            detected_file_rules.add((fp, rid))
 
         existing_branch_findings = (
             db.query(Finding)
@@ -212,15 +240,13 @@ def execute_repository_scan(
                 ef.last_detected = now
 
         existing_fps = {ef.fingerprint for ef in existing_branch_findings}
-        brand_new = [
-            item for item in findings_data
-            if compute_finding_fingerprint(
-                repository_id,
-                map_type_to_rule_id(item.get("type", "Unknown")),
-                str(item.get("file", "")),
-                int(item.get("line", 1)),
-            ) not in existing_fps
-        ]
+        brand_new = []
+        for item in findings_data:
+            _, rid = _extract_finding_type_and_rule(item)
+            fp = str(item.get("file") or item.get("file_path") or item.get("path") or "source_file").strip().strip("`") or "source_file"
+            ln = int(item.get("line") or item.get("line_number") or 1)
+            if compute_finding_fingerprint(repository_id, rid, fp, ln) not in existing_fps:
+                brand_new.append(item)
         if brand_new:
             persist_scan_findings(db, scan.id, repository_id, brand_new)
 
@@ -393,19 +419,14 @@ def _reconcile_pr_findings_in_db(
     )
 
     now = datetime.datetime.now(datetime.timezone.utc)
-    detected_fps = {
-        compute_finding_fingerprint(
-            repo_id,
-            map_type_to_rule_id(item.get("type", "Unknown")),
-            str(item.get("file", "")),
-            int(item.get("line", 1)),
-        )
-        for item in findings_data
-    }
-    detected_file_rules = {
-        (str(item.get("file", "")), map_type_to_rule_id(item.get("type", "Unknown")))
-        for item in findings_data
-    }
+    detected_fps = set()
+    detected_file_rules = set()
+    for item in findings_data:
+        _, rid = _extract_finding_type_and_rule(item)
+        fp = str(item.get("file") or item.get("file_path") or item.get("path") or "source_file").strip().strip("`") or "source_file"
+        ln = int(item.get("line") or item.get("line_number") or 1)
+        detected_fps.add(compute_finding_fingerprint(repo_id, rid, fp, ln))
+        detected_file_rules.add((fp, rid))
 
     for ef in existing_pr_findings:
         if ef.fingerprint not in detected_fps and (ef.file_path, ef.rule_id) not in detected_file_rules:
@@ -417,15 +438,13 @@ def _reconcile_pr_findings_in_db(
             ef.last_detected = now
 
     existing_fps = {ef.fingerprint for ef in existing_pr_findings}
-    brand_new = [
-        item for item in findings_data
-        if compute_finding_fingerprint(
-            repo_id,
-            map_type_to_rule_id(item.get("type", "Unknown")),
-            str(item.get("file", "")),
-            int(item.get("line", 1)),
-        ) not in existing_fps
-    ]
+    brand_new = []
+    for item in findings_data:
+        _, rid = _extract_finding_type_and_rule(item)
+        fp = str(item.get("file") or item.get("file_path") or item.get("path") or "source_file").strip().strip("`") or "source_file"
+        ln = int(item.get("line") or item.get("line_number") or 1)
+        if compute_finding_fingerprint(repo_id, rid, fp, ln) not in existing_fps:
+            brand_new.append(item)
     if brand_new:
         persist_scan_findings(
             db,

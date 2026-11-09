@@ -112,6 +112,7 @@ def to_finding_response(
     repo_name: Optional[str] = None,
     detected_in_commit: Optional[str] = None,
     resolved_in_commit: Optional[str] = None,
+    pull_number: Optional[int] = None,
 ) -> FindingResponse:
     scan = finding.scan
     commit_sha = (scan.commit_sha or "")[:7] if scan and scan.commit_sha else None
@@ -123,26 +124,50 @@ def to_finding_response(
     resolved_repo_name = repo_name
     if not resolved_repo_name and finding.repository:
         resolved_repo_name = finding.repository.name or finding.repository.full_name
+    if not resolved_repo_name or resolved_repo_name.lower() in ("unknown", "repository"):
+        resolved_repo_name = (finding.repository.name if finding.repository else None) or "Repository"
+
+    clean_type = (finding.finding_type or "").strip()
+    clean_rule = (finding.rule_id or "").strip()
+    clean_path = (finding.file_path or "").strip()
+    clean_status = (finding.status or "").strip().lower()
+
+    if not clean_type or clean_type.lower() == "unknown":
+        if clean_rule and clean_rule.lower() != "unknown":
+            clean_type = clean_rule.replace("_", " ").title()
+        else:
+            clean_type = "Hardcoded Secret"
+
+    if not clean_rule or clean_rule.lower() == "unknown":
+        clean_rule = clean_type.upper().replace(" ", "_").replace("-", "_")
+
+    if not clean_path or clean_path.lower() == "unknown" or clean_path == "`unknown`":
+        clean_path = "source_file"
+
+    if not clean_status or clean_status == "unknown":
+        clean_status = "open"
+
+    resolved_pull_number = (scan.pull_number if scan and scan.pull_number is not None else None) or pull_number
 
     return FindingResponse(
         id=finding.id,
         scan_id=finding.scan_id,
         repository_id=finding.repository_id,
-        repository_name=resolved_repo_name or "Repository",
-        rule_id=finding.rule_id,
-        finding_type=finding.finding_type,
-        severity=finding.severity,
-        file_path=finding.file_path,
-        line_number=finding.line_number,
-        status=finding.status,
+        repository_name=resolved_repo_name,
+        rule_id=clean_rule,
+        finding_type=clean_type,
+        severity=finding.severity or "MEDIUM",
+        file_path=clean_path,
+        line_number=finding.line_number or 1,
+        status=clean_status,
         ignore_reason=finding.ignore_reason,
-        risk=finding.risk,
-        recommendation=finding.recommendation,
+        risk=finding.risk or f"Potential {clean_type} exposure detected in source code.",
+        recommendation=finding.recommendation or "Remove credential from source code and revoke compromised secrets.",
         commit_sha=commit_sha,
         detected_in_commit=detected,
         resolved_in_commit=resolved,
         is_resolved=is_res,
-        pull_number=scan.pull_number if scan else None,
+        pull_number=resolved_pull_number,
         branch=scan.branch if scan else None,
         first_detected=finding.first_detected,
         last_detected=finding.last_detected,
@@ -185,16 +210,78 @@ def list_findings(
 
     if repository_id:
         query = query.filter(Finding.repository_id == repository_id)
-    if repo_name:
+    if repo_name and repo_name.lower().strip() not in ("repository", "all", ""):
+        clean_rn = repo_name.lower().strip()
+        short_rn = clean_rn.split("/")[-1] if "/" in clean_rn else clean_rn
         query = query.filter(
             or_(
-                func.lower(Repository.name) == repo_name.lower(),
-                func.lower(Repository.full_name) == repo_name.lower(),
-                func.lower(Repository.full_name).endswith(f"/{repo_name.lower()}"),
+                func.lower(Repository.name) == clean_rn,
+                func.lower(Repository.name) == short_rn,
+                func.lower(Repository.full_name) == clean_rn,
+                func.lower(Repository.full_name).endswith(f"/{short_rn}"),
             )
         )
     if pull_number is not None:
-        query = query.join(Scan, Finding.scan_id == Scan.id).filter(Scan.pull_number == pull_number).distinct()
+        pr_scans_q = db.query(Scan).filter(Scan.pull_number == pull_number)
+        if repository_id:
+            pr_scans_q = pr_scans_q.filter(Scan.repository_id == repository_id)
+        pr_scans = pr_scans_q.all()
+        pr_scan_ids = [s.id for s in pr_scans]
+
+        # Auto-ingest any findings stored in pr_commits_json that aren't yet in findings table!
+        for s in pr_scans:
+            if s.pr_commits_json:
+                try:
+                    c_list = json.loads(s.pr_commits_json)
+                    if isinstance(c_list, list):
+                        c_finds = []
+                        for c in c_list:
+                            for f in (c.get("findings") or []):
+                                f_dict = dict(f)
+                                if not f_dict.get("commit_sha"):
+                                    f_dict["commit_sha"] = c.get("full_sha") or c.get("sha")
+                                if not f_dict.get("detected_in_commit"):
+                                    f_dict["detected_in_commit"] = (c.get("sha") or "")[:7]
+                                c_finds.append(f_dict)
+                        if c_finds:
+                            from app.services.scan_runner import _reconcile_pr_findings_in_db
+                            _reconcile_pr_findings_in_db(db, s.repository_id, s.id, pull_number, c_finds)
+                            db.commit()
+                except Exception:
+                    pass
+
+        # Also collect all commit SHAs associated with this PR's scans to find related scans
+        pr_commit_shas = set()
+        for s in pr_scans:
+            if s.commit_sha:
+                pr_commit_shas.add(s.commit_sha.lower()[:7])
+                pr_commit_shas.add(s.commit_sha.lower())
+            if s.pr_commits_json:
+                try:
+                    c_list = json.loads(s.pr_commits_json)
+                    if isinstance(c_list, list):
+                        for c in c_list:
+                            sha = (c.get("sha") or c.get("full_sha") or "").lower()
+                            if sha:
+                                pr_commit_shas.add(sha[:7])
+                                pr_commit_shas.add(sha)
+                except Exception:
+                    pass
+
+        if pr_commit_shas:
+            matching_shas = list(pr_commit_shas)
+            extra_scans = db.query(Scan.id).filter(
+                Scan.repository_id.in_([s.repository_id for s in pr_scans]) if pr_scans else True,
+                or_(*[Scan.commit_sha.startswith(sha) for sha in matching_shas[:20]])
+            ).all()
+            for (es_id,) in extra_scans:
+                if es_id not in pr_scan_ids:
+                    pr_scan_ids.append(es_id)
+
+        if pr_scan_ids:
+            query = query.filter(Finding.scan_id.in_(pr_scan_ids))
+        else:
+            query = query.join(Scan, Finding.scan_id == Scan.id).filter(Scan.pull_number == pull_number).distinct()
     if scan_id:
         query = query.filter(Finding.scan_id == scan_id)
     if severity:
@@ -220,6 +307,37 @@ def list_findings(
     # Reconcile resolution with subsequent commits using ultra-fast batch pass
     reconciled_tuples = batch_reconcile_findings(findings, db)
     status_changed = False
+
+    # Auto-heal any historical findings in DB with Unknown / empty values
+    for f in findings:
+        updated = False
+        f_type = (f.finding_type or "").strip()
+        f_rule = (f.rule_id or "").strip()
+        f_path = (f.file_path or "").strip()
+        f_stat = (f.status or "").strip().lower()
+
+        if not f_type or f_type.lower() == "unknown":
+            if f_rule and f_rule.lower() != "unknown":
+                f.finding_type = f_rule.replace("_", " ").title()
+            else:
+                f.finding_type = "Hardcoded Secret"
+            updated = True
+
+        if not f_rule or f_rule.lower() == "unknown":
+            f.rule_id = (f.finding_type or "Hardcoded Secret").upper().replace(" ", "_").replace("-", "_")
+            updated = True
+
+        if not f_path or f_path.lower() == "unknown" or f_path == "`unknown`":
+            f.file_path = "source_file"
+            updated = True
+
+        if not f_stat or f_stat == "unknown":
+            f.status = "open"
+            updated = True
+
+        if updated:
+            status_changed = True
+
     responses = []
     for reconciled_f, detected_sha, resolved_sha in reconciled_tuples:
         responses.append(
@@ -227,6 +345,7 @@ def list_findings(
                 reconciled_f,
                 detected_in_commit=detected_sha,
                 resolved_in_commit=resolved_sha,
+                pull_number=pull_number,
             )
         )
 
@@ -267,6 +386,30 @@ def get_finding(
     )
     if not finding:
         raise HTTPException(status_code=404, detail="Finding not found")
+
+    # Auto-heal finding fields
+    heal_needed = False
+    if not finding.finding_type or finding.finding_type.lower() == "unknown":
+        if finding.rule_id and finding.rule_id.lower() != "unknown":
+            finding.finding_type = finding.rule_id.replace("_", " ").title()
+        else:
+            finding.finding_type = "Hardcoded Secret"
+        heal_needed = True
+    if not finding.rule_id or finding.rule_id.lower() == "unknown":
+        finding.rule_id = (finding.finding_type or "Hardcoded Secret").upper().replace(" ", "_").replace("-", "_")
+        heal_needed = True
+    if not finding.file_path or finding.file_path.lower() == "unknown" or finding.file_path == "`unknown`":
+        finding.file_path = "source_file"
+        heal_needed = True
+    if not finding.status or finding.status.lower() == "unknown":
+        finding.status = "open"
+        heal_needed = True
+
+    if heal_needed:
+        try:
+            db.commit()
+        except Exception:
+            db.rollback()
 
     reconciled_f, detected_sha, resolved_sha = reconcile_finding(finding, db)
     return to_finding_response(

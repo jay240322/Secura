@@ -102,7 +102,9 @@ def get_insights(
         .all()
     )
     for rid, sev, cnt in repo_sev_rows:
-        r_label = repo_name_map.get(rid, "Unknown")
+        r_label = repo_name_map.get(rid) or "Repository"
+        if r_label.lower() == "unknown":
+            r_label = "Repository"
         if r_label not in by_repo_dict:
             by_repo_dict[r_label] = {"total": 0, "critical": 0, "high": 0}
         by_repo_dict[r_label]["total"] += cnt

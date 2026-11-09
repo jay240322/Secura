@@ -3,7 +3,7 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 
-// ─── Custom 3-Bar Jumping Loader Component (From Uiverse.io by Donewenfu) ───────
+// ─── Modern Clean Spinner Component ──────────────────────────────────────────
 export function Loader({
   className = "",
   size = "md",
@@ -11,14 +11,31 @@ export function Loader({
   className?: string;
   size?: "sm" | "md" | "lg";
 }) {
-  const scale =
-    size === "sm" ? "scale-75" : size === "lg" ? "scale-125" : "scale-100";
+  const sizeClasses =
+    size === "sm" ? "h-4 w-4" : size === "lg" ? "h-8 w-8" : "h-5 w-5";
 
   return (
-    <div className={`relative inline-flex items-center justify-center w-[120px] h-[80px] overflow-visible ${scale} ${className}`}>
-      <div className="loader">
-        <div className="jimu-primary-loading" />
-      </div>
+    <div className={`inline-flex items-center justify-center ${className}`}>
+      <svg
+        className={`animate-spin text-blue-600 dark:text-blue-500 ${sizeClasses}`}
+        xmlns="http://www.w3.org/2000/svg"
+        fill="none"
+        viewBox="0 0 24 24"
+      >
+        <circle
+          className="opacity-25"
+          cx="12"
+          cy="12"
+          r="10"
+          stroke="currentColor"
+          strokeWidth="3"
+        />
+        <path
+          className="opacity-75"
+          fill="currentColor"
+          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+        />
+      </svg>
     </div>
   );
 }
@@ -132,21 +149,19 @@ export function GlobalLoaderProvider({ children }: { children: React.ReactNode }
   return (
     <LoaderContext.Provider value={{ showLoader, hideLoader, isLoading }}>
       {children}
-      {/* ─── Global Page Navigation Overlay Loader (Uiverse.io Donewenfu) ── */}
+      {/* ─── Global Page Navigation Overlay Loader ── */}
       {isLoading && (
         <div
           role="status"
           aria-label="Loading page..."
-          className="fixed inset-0 z-[99999] pointer-events-none w-screen h-screen flex flex-col items-center justify-center bg-white/70 dark:bg-black/75 backdrop-blur-[6px] animate-in fade-in duration-150 select-none"
+          className="fixed inset-0 z-[99999] pointer-events-none w-screen h-screen flex flex-col items-center justify-center bg-white/60 dark:bg-black/60 backdrop-blur-xs animate-in fade-in duration-150 select-none"
         >
-          <div className="relative w-36 h-28 flex items-center justify-center overflow-visible">
-            <div className="loader">
-              <div className="jimu-primary-loading" />
-            </div>
+          <div className="flex flex-col items-center justify-center gap-2.5 p-4 rounded-2xl bg-white/90 dark:bg-zinc-900/90 shadow-lg border border-slate-200/80 dark:border-zinc-800">
+            <Loader size="lg" />
+            <p className="text-xs font-medium text-slate-600 dark:text-zinc-300">
+              Loading...
+            </p>
           </div>
-          <p className="mt-3 text-xs font-mono font-medium text-slate-600 dark:text-zinc-400 animate-pulse">
-            Loading...
-          </p>
         </div>
       )}
     </LoaderContext.Provider>

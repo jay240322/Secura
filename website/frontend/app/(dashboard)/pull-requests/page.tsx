@@ -259,9 +259,9 @@ export default function PullRequestsPage() {
 
       {/* Summary KPI Cards */}
       <div className="grid gap-4 sm:grid-cols-3">
-        <Card className="border-rose-200/80 dark:border-rose-900/40 bg-rose-50/40 dark:bg-rose-950/20">
+        <Card className="border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900">
           <div className="flex items-center gap-3.5">
-            <div className="rounded-xl bg-rose-100 dark:bg-rose-900/40 p-2.5 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800/60">
+            <div className="rounded-xl bg-rose-50 dark:bg-rose-950/50 p-2.5 text-rose-600 dark:text-rose-400 border border-rose-200/80 dark:border-rose-900/50">
               <ShieldAlert className="h-5 w-5" />
             </div>
             <div>
@@ -273,9 +273,9 @@ export default function PullRequestsPage() {
           </div>
         </Card>
 
-        <Card className="border-emerald-200/80 dark:border-emerald-900/40 bg-emerald-50/40 dark:bg-emerald-950/20">
+        <Card className="border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900">
           <div className="flex items-center gap-3.5">
-            <div className="rounded-xl bg-emerald-100 dark:bg-emerald-900/40 p-2.5 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/60">
+            <div className="rounded-xl bg-emerald-50 dark:bg-emerald-950/50 p-2.5 text-emerald-600 dark:text-emerald-400 border border-emerald-200/80 dark:border-emerald-900/50">
               <ShieldCheck className="h-5 w-5" />
             </div>
             <div>
@@ -287,9 +287,9 @@ export default function PullRequestsPage() {
           </div>
         </Card>
 
-        <Card className="border-violet-200/80 dark:border-violet-900/40 bg-violet-50/40 dark:bg-violet-950/20">
+        <Card className="border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900">
           <div className="flex items-center gap-3.5">
-            <div className="rounded-xl bg-violet-100 dark:bg-violet-900/40 p-2.5 text-violet-600 dark:text-violet-400 border border-violet-200 dark:border-violet-800/60">
+            <div className="rounded-xl bg-purple-50 dark:bg-purple-950/50 p-2.5 text-purple-600 dark:text-purple-400 border border-purple-200/80 dark:border-purple-900/50">
               <GitMerge className="h-5 w-5" />
             </div>
             <div>
@@ -306,14 +306,14 @@ export default function PullRequestsPage() {
       <Card>
         <CardHeader className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-zinc-800/80">
           {/* State Tabs */}
-          <div className="flex items-center gap-1 p-1 rounded-xl bg-[#EDE9E6] dark:bg-zinc-900 border border-[#EDE9E6] dark:border-zinc-800 text-xs font-medium">
+          <div className="flex items-center gap-1 p-1 rounded-xl bg-slate-100 dark:bg-zinc-800/80 border border-slate-200 dark:border-zinc-700/80 text-xs font-medium">
             <button
               onClick={() => setSelectedState("all")}
               suppressHydrationWarning
               className={`px-3 py-1.5 rounded-lg transition-all ${
                 selectedState === "all"
-                  ? "bg-white text-[#281C59] dark:bg-zinc-800 dark:text-zinc-100 shadow-xs font-semibold"
-                  : "text-slate-600 dark:text-zinc-400 hover:text-[#281C59] dark:hover:text-zinc-100"
+                  ? "bg-white text-slate-900 dark:bg-zinc-700 dark:text-zinc-100 shadow-xs font-semibold"
+                  : "text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-100"
               }`}
             >
               All ({pullRequests.length})
@@ -323,8 +323,8 @@ export default function PullRequestsPage() {
               suppressHydrationWarning
               className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 ${
                 selectedState === "open"
-                  ? "bg-white dark:bg-zinc-800 text-emerald-700 dark:text-emerald-400 shadow-xs ring-1 ring-emerald-200 dark:ring-emerald-800 font-semibold"
-                  : "text-slate-600 dark:text-zinc-400 hover:text-[#281C59] dark:hover:text-zinc-100"
+                  ? "bg-white dark:bg-zinc-700 text-emerald-700 dark:text-emerald-300 shadow-xs ring-1 ring-emerald-200 dark:ring-emerald-800 font-semibold"
+                  : "text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-100"
               }`}
             >
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
@@ -335,8 +335,8 @@ export default function PullRequestsPage() {
               suppressHydrationWarning
               className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 ${
                 selectedState === "merged"
-                  ? "bg-white dark:bg-zinc-800 text-violet-700 dark:text-violet-400 shadow-xs ring-1 ring-violet-200 dark:ring-violet-800 font-semibold"
-                  : "text-slate-600 dark:text-zinc-400 hover:text-[#281C59] dark:hover:text-zinc-100"
+                  ? "bg-white dark:bg-zinc-700 text-purple-700 dark:text-purple-300 shadow-xs ring-1 ring-purple-200 dark:ring-purple-800 font-semibold"
+                  : "text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-100"
               }`}
             >
               <GitMerge className="h-3 w-3" />
@@ -347,8 +347,8 @@ export default function PullRequestsPage() {
               suppressHydrationWarning
               className={`px-3 py-1.5 rounded-lg transition-all ${
                 selectedState === "closed"
-                  ? "bg-white dark:bg-zinc-800 text-slate-900 dark:text-zinc-100 shadow-xs ring-1 ring-slate-200 dark:ring-zinc-700 font-semibold"
-                  : "text-slate-600 dark:text-zinc-400 hover:text-[#281C59] dark:hover:text-zinc-100"
+                  ? "bg-white dark:bg-zinc-700 text-slate-900 dark:text-zinc-100 shadow-xs ring-1 ring-slate-200 dark:ring-zinc-600 font-semibold"
+                  : "text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-100"
               }`}
             >
               Closed ({closedCount})
@@ -360,10 +360,10 @@ export default function PullRequestsPage() {
             <button
               onClick={() => setSortOrder(sortOrder === "asc" ? "desc" : "asc")}
               suppressHydrationWarning
-              className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-xs font-medium text-slate-700 dark:text-zinc-300 hover:text-[#281C59] hover:bg-[#EDE9E6] shadow-xs transition-colors shrink-0"
+              className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-xs font-medium text-slate-700 dark:text-zinc-300 hover:bg-slate-50 dark:hover:bg-zinc-800 shadow-xs transition-colors shrink-0"
               title="Toggle Pull Request numerical order"
             >
-              <ArrowUpDown className="h-3.5 w-3.5 text-[#281C59] dark:text-blue-500" />
+              <ArrowUpDown className="h-3.5 w-3.5 text-blue-600 dark:text-blue-500" />
               <span>Order: {sortOrder === "desc" ? "Latest First (#N → #1)" : "Oldest First (#1 → #N)"}</span>
             </button>
 
@@ -376,7 +376,7 @@ export default function PullRequestsPage() {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 suppressHydrationWarning
-                className="w-full rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 pl-9 pr-3 py-1.5 text-xs text-slate-900 dark:text-zinc-100 placeholder:text-slate-400 dark:placeholder:text-zinc-500 focus:border-[#281C59] focus:outline-none transition-colors shadow-xs"
+                className="w-full rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 pl-9 pr-3 py-1.5 text-xs text-slate-900 dark:text-zinc-100 placeholder:text-slate-400 dark:placeholder:text-zinc-500 focus:border-blue-500 focus:outline-none transition-colors shadow-xs"
               />
             </div>
           </div>
@@ -406,7 +406,7 @@ export default function PullRequestsPage() {
                     setSelectedRepoId("all");
                     setSearchQuery("");
                   }}
-                  className="mt-4 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#281C59] text-white text-xs font-semibold hover:bg-[#281C59]/90 transition-all shadow-xs"
+                  className="mt-4 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700 transition-all shadow-xs"
                 >
                   <span>View All Pull Requests ({pullRequests.length})</span>
                 </button>
@@ -415,7 +415,7 @@ export default function PullRequestsPage() {
                 <button
                   onClick={() => void handleSyncPRs()}
                   disabled={syncLoading}
-                  className="mt-4 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#281C59] text-white text-xs font-semibold hover:bg-[#281C59]/90 transition-all shadow-xs disabled:opacity-50"
+                  className="mt-4 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700 transition-all shadow-xs disabled:opacity-50"
                 >
                   <RefreshCcw className={`h-3.5 w-3.5 ${syncLoading ? "animate-spin" : ""}`} />
                   <span>{syncLoading ? "Syncing PRs..." : "Sync Pull Requests from GitHub"}</span>

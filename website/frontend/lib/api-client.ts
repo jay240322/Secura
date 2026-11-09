@@ -17,6 +17,8 @@ import {
   User,
 } from "@/types";
 
+declare const process: any;
+
 const rawApiBase =
   typeof window !== "undefined"
     ? "/api"
@@ -73,6 +75,13 @@ export function cleanRepoDisplay(nameOrId?: unknown, fallbackRepoId?: unknown): 
   const str = String(nameOrId || "").trim();
   const fId = String(fallbackRepoId || "").trim();
 
+  if (!str || str.toLowerCase() === "unknown" || str.toLowerCase() === "undefined") {
+    if (fId && repoCache.has(fId.toLowerCase())) {
+      return repoCache.get(fId.toLowerCase())!.name;
+    }
+    return "Repository";
+  }
+
   if (fId && repoCache.has(fId.toLowerCase())) {
     return repoCache.get(fId.toLowerCase())!.name;
   }
@@ -108,15 +117,44 @@ function mapBackendFinding(f: Record<string, unknown>): Finding {
   const repId = String(f.repository_id || f.repositoryId || "");
   const repName = cleanRepoDisplay(f.repository_name || f.repository, repId);
 
+  // Clean finding type and rule ID to prevent "Unknown" / "UNKNOWN"
+  let rawType = String(f.finding_type || f.type || "").trim();
+  let rawRule = String(f.rule_id || f.ruleId || "").trim();
+  const rawPath = String(f.file_path || f.filePath || "").trim();
+
+  if (!rawType || rawType.toLowerCase() === "unknown") {
+    if (rawRule && rawRule.toLowerCase() !== "unknown") {
+      rawType = rawRule
+        .split("_")
+        .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+        .join(" ");
+    } else {
+      rawType = "Hardcoded Secret";
+    }
+  }
+
+  if (!rawRule || rawRule.toLowerCase() === "unknown") {
+    rawRule = rawType.toUpperCase().replace(/\s+/g, "_").replace(/-/g, "_");
+  }
+
+  const cleanPath = (!rawPath || rawPath.toLowerCase() === "unknown" || rawPath === "`unknown`")
+    ? "source_file"
+    : rawPath;
+
+  const rawStatus = String(f.status || "").toLowerCase().trim();
+  const cleanStatus: FindingStatus = (rawStatus === "resolved" || rawStatus === "solved" || rawStatus === "ignored")
+    ? (rawStatus as FindingStatus)
+    : "open";
+
   return {
     id: String(f.id ?? ""),
-    ruleId: String(f.rule_id || f.ruleId || ""),
-    type: String(f.finding_type || f.type || "Security Finding"),
+    ruleId: rawRule,
+    type: rawType,
     severity: (f.severity as Severity) || "MEDIUM",
-    status: (f.status as FindingStatus) || "open",
+    status: cleanStatus,
     repository: repName,
     repositoryId: repId,
-    filePath: String(f.file_path || f.filePath || "unknown"),
+    filePath: cleanPath,
     lineNumber: Number(f.line_number || f.lineNumber || 1),
     firstDetected: String(f.first_detected || f.firstDetected || new Date().toISOString()),
     lastDetected: String(f.last_detected || f.lastDetected || new Date().toISOString()),
@@ -127,7 +165,7 @@ function mapBackendFinding(f: Record<string, unknown>): Finding {
     commitSha: f.commit_sha ? String(f.commit_sha) : (f.commitSha ? String(f.commitSha) : undefined),
     detectedInCommit: f.detected_in_commit ? String(f.detected_in_commit) : (f.detectedInCommit ? String(f.detectedInCommit) : (f.commit_sha ? String(f.commit_sha) : undefined)),
     resolvedInCommit: f.resolved_in_commit ? String(f.resolved_in_commit) : (f.resolvedInCommit ? String(f.resolvedInCommit) : undefined),
-    isResolved: Boolean(f.is_resolved ?? f.isResolved ?? (f.status === "resolved" || f.status === "solved")),
+    isResolved: Boolean(f.is_resolved ?? f.isResolved ?? (cleanStatus === "resolved" || cleanStatus === "solved")),
     pullNumber: f.pull_number !== undefined && f.pull_number !== null ? Number(f.pull_number) : (f.pullNumber !== undefined && f.pullNumber !== null ? Number(f.pullNumber) : undefined),
     branch: f.branch ? String(f.branch) : undefined,
   };

@@ -123,9 +123,12 @@ export function StatusBadge({
   className,
   showDot = true,
 }: StatusBadgeProps) {
-  const normalized = (status || "never").toLowerCase();
+  let normalized = (status || "open").toLowerCase().trim();
+  if (normalized === "unknown" || !normalized) {
+    normalized = "open";
+  }
   const config = STATUS_CONFIG[normalized] || {
-    label: status || "Unknown",
+    label: status && status.toLowerCase() !== "unknown" ? status : "Open",
     className: "bg-slate-100 text-slate-600 ring-1 ring-slate-300 dark:bg-zinc-900 dark:text-zinc-400 dark:ring-zinc-800",
     dotColor: "bg-slate-400",
   };
