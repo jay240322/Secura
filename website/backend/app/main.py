@@ -54,6 +54,12 @@ async def lifespan(app: FastAPI):
                         dirty = True
                     if dirty:
                         db.commit()
+
+                # Storage optimization: prune resolved findings older than 30 days
+                from app.services.scanner_service import prune_stale_findings
+                with SessionLocal() as db:
+                    prune_stale_findings(db, retention_days=30)
+
             logger.info("Secura database tables and user records verified.")
         except Exception as e:
             logger.warning(f"Database table initialization warning: {e}")

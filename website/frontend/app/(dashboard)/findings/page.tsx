@@ -149,7 +149,7 @@ function FindingsContent() {
   const filtered = useMemo(() => {
     return findings.filter((f) => {
       if (prFilter !== null) {
-        if (f.pullNumber !== undefined && f.pullNumber !== null && f.pullNumber !== prFilter) {
+        if (f.pullNumber !== prFilter) {
           return false;
         }
       }
@@ -340,8 +340,14 @@ function FindingsContent() {
               {findings.length === 0 ? (
                 <>
                   <ShieldCheck className="h-10 w-10 mb-3 text-emerald-600 dark:text-emerald-400" />
-                  <p className="text-sm font-semibold text-slate-800 dark:text-zinc-200">No security findings</p>
-                  <p className="text-xs text-slate-500 dark:text-zinc-400 mt-1">All scanned repositories are clean and secure</p>
+                  <p className="text-sm font-semibold text-slate-800 dark:text-zinc-200">
+                    {prFilter !== null ? `No security findings in Pull Request #${prFilter}` : "No security findings"}
+                  </p>
+                  <p className="text-xs text-slate-500 dark:text-zinc-400 mt-1">
+                    {prFilter !== null
+                      ? "This pull request is clean. Zero exposed secrets or policy violations detected."
+                      : "All scanned repositories are clean and secure"}
+                  </p>
                 </>
               ) : (
                 <>

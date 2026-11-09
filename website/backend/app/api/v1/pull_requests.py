@@ -575,34 +575,35 @@ def fast_sync_repository_prs(
                 }
             ]
 
-            # Only fetch live commits for open PRs during sync, or if not yet recorded or commit changed
+            # Fetch live commits from GitHub if missing or only placeholder commit recorded
             real_commits = None
-            if pr_state == "open":
-                needs_commits = (
-                    has_sha_changed
-                    or not existing_pr_scan 
-                    or not existing_pr_scan.pr_commits_json 
-                    or existing_pr_scan.pr_commits_json == "[]"
-                )
-                if not needs_commits and existing_pr_scan and existing_pr_scan.pr_commits_json:
-                    try:
-                        p_cm = json.loads(existing_pr_scan.pr_commits_json)
-                        if len(p_cm) <= 1:
-                            needs_commits = True
-                    except Exception:
+            needs_commits = (
+                has_sha_changed
+                or not existing_pr_scan 
+                or not existing_pr_scan.pr_commits_json 
+                or existing_pr_scan.pr_commits_json == "[]"
+            )
+            if not needs_commits and existing_pr_scan and existing_pr_scan.pr_commits_json:
+                try:
+                    p_cm = json.loads(existing_pr_scan.pr_commits_json)
+                    if len(p_cm) <= 1:
                         needs_commits = True
-                if needs_commits:
-                    real_commits = get_pull_request_commits(
-                        inst_id, owner, repo_name, pr_num, user_token=user_access
-                    )
+                except Exception:
+                    needs_commits = True
+
+            # Open PRs always fetch if needed; for merged/closed PRs, fetch up to 10 recent PRs to keep sync rapid
+            if needs_commits and (pr_state == "open" or synced_count < 10):
+                real_commits = get_pull_request_commits(
+                    inst_id, owner, repo_name, pr_num, user_token=user_access
+                )
             commits_list = real_commits if real_commits else fast_commits
 
-            # Live check: query GitHub Check Runs for open PR's head commit to detect failures/findings live
+            # Query GitHub Check Runs for PR's head commit to detect findings live (both open and recent PRs)
             cr_findings = []
             cr_failed = False
             cr_in_progress = False
 
-            if pr_state == "open" and head_sha and head_sha != "HEAD":
+            if head_sha and head_sha != "HEAD" and (pr_state == "open" or synced_count < 10):
                 try:
                     head_check_runs = get_commit_check_runs(
                         inst_id, owner, repo_name, head_sha, user_token=user_access
@@ -643,25 +644,42 @@ def fast_sync_repository_prs(
                 existing_pr_scan.pr_author = author
                 existing_pr_scan.pr_html_url = html_url
 
-                if cr_failed or cr_findings:
+                from app.services.scan_runner import extract_findings_from_commits, _reconcile_pr_findings_in_db
+                pr_findings_to_save = list(cr_findings)
+                c_finds = extract_findings_from_commits(commits_list)
+                for cf in c_finds:
+                    if cf not in pr_findings_to_save:
+                        pr_findings_to_save.append(cf)
+
+                if pr_findings_to_save or cr_failed:
                     existing_pr_scan.scan_status = "completed"
                     existing_pr_scan.scan_result = "failed"
                     existing_pr_scan.score = 0
-                    if cr_findings:
-                        existing_pr_scan.total_findings = len(cr_findings)
-                        existing_pr_scan.critical_count = sum(1 for f in cr_findings if f.get("severity") == "CRITICAL")
-                        existing_pr_scan.high_count = sum(1 for f in cr_findings if f.get("severity") == "HIGH")
-                        from app.services.scan_runner import _reconcile_pr_findings_in_db
-                        _reconcile_pr_findings_in_db(db, repo.id, existing_pr_scan.id, pr_num, cr_findings)
+                    if pr_findings_to_save:
+                        existing_pr_scan.total_findings = len(pr_findings_to_save)
+                        existing_pr_scan.critical_count = sum(1 for f in pr_findings_to_save if f.get("severity") == "CRITICAL")
+                        existing_pr_scan.high_count = sum(1 for f in pr_findings_to_save if f.get("severity") == "HIGH")
+                        _reconcile_pr_findings_in_db(db, repo.id, existing_pr_scan.id, pr_num, pr_findings_to_save)
                 elif cr_in_progress and existing_pr_scan.scan_result != "failed":
                     existing_pr_scan.scan_status = "running"
                     existing_pr_scan.scan_result = "pending"
+                else:
+                    # Latest commit has no findings and check run passed: mark prior findings as resolved
+                    existing_pr_scan.scan_status = "completed"
+                    existing_pr_scan.scan_result = "passed"
+                    existing_pr_scan.score = 100
+                    existing_pr_scan.total_findings = 0
+                    existing_pr_scan.critical_count = 0
+                    existing_pr_scan.high_count = 0
+                    existing_pr_scan.medium_count = 0
+                    existing_pr_scan.low_count = 0
+                    _reconcile_pr_findings_in_db(db, repo.id, existing_pr_scan.id, pr_num, [])
 
                 if pr_state in ("merged", "closed"):
                     if existing_pr_scan.scan_status in ("running", "pending"):
                         existing_pr_scan.scan_status = "completed"
                     if existing_pr_scan.scan_result == "pending":
-                        existing_pr_scan.scan_result = "failed" if (cr_failed or cr_findings) else "passed"
+                        existing_pr_scan.scan_result = "failed" if (cr_failed or pr_findings_to_save) else "passed"
 
                 curr_stored = []
                 if existing_pr_scan.pr_commits_json:
@@ -682,29 +700,15 @@ def fast_sync_repository_prs(
                     existing_pr_scan.created_at = dt_created
 
                 _update_pr_scans_state(db, repo.id, pr_num, pr_state, dt_merged, dt_closed)
-
-                # Trigger scan if open PR hasn't been scanned or head commit changed
-                if pr_state == "open" and (existing_pr_scan.total_findings is None or has_sha_changed):
-                    scan_args = dict(
-                        repository_id=repo.id,
-                        pull_number=pr_num,
-                        commit_sha=head_sha,
-                        branch=branch,
-                        base_branch=base_branch,
-                        pr_title=title,
-                        pr_author=author,
-                        pr_html_url=html_url,
-                        installation_id=inst_id,
-                        pr_state=pr_state,
-                        pr_merged_at=dt_merged,
-                        pr_closed_at=dt_closed,
-                    )
-                    if background_tasks:
-                        background_tasks.add_task(execute_pr_scan, **scan_args)
-                    else:
-                        import threading
-                        threading.Thread(target=execute_pr_scan, kwargs=scan_args, daemon=True).start()
             else:
+                from app.services.scan_runner import extract_findings_from_commits, _reconcile_pr_findings_in_db
+                pr_findings_to_save = list(cr_findings)
+                c_finds = extract_findings_from_commits(commits_list)
+                for cf in c_finds:
+                    if cf not in pr_findings_to_save:
+                        pr_findings_to_save.append(cf)
+
+                has_violations = bool(cr_failed or pr_findings_to_save)
                 new_scan = Scan(
                     repository_id=repo.id,
                     commit_sha=target_sha,
@@ -718,40 +722,18 @@ def fast_sync_repository_prs(
                     pr_merged_at=dt_merged,
                     pr_closed_at=dt_closed,
                     pr_commits_json=commits_json,
-                    scan_status="completed" if (cr_failed or pr_state != "open") else ("running" if cr_in_progress else "completed"),
-                    scan_result="failed" if cr_failed else ("pending" if (pr_state == "open" and cr_in_progress) else "passed"),
-                    score=0 if cr_failed else 100,
-                    total_findings=len(cr_findings) if cr_findings else 0,
-                    critical_count=sum(1 for f in cr_findings if f.get("severity") == "CRITICAL") if cr_findings else 0,
-                    high_count=sum(1 for f in cr_findings if f.get("severity") == "HIGH") if cr_findings else 0,
+                    scan_status="completed" if (has_violations or pr_state != "open") else ("running" if cr_in_progress else "completed"),
+                    scan_result="failed" if has_violations else ("pending" if (pr_state == "open" and cr_in_progress) else "passed"),
+                    score=0 if has_violations else 100,
+                    total_findings=len(pr_findings_to_save) if pr_findings_to_save else 0,
+                    critical_count=sum(1 for f in pr_findings_to_save if f.get("severity") == "CRITICAL") if pr_findings_to_save else 0,
+                    high_count=sum(1 for f in pr_findings_to_save if f.get("severity") == "HIGH") if pr_findings_to_save else 0,
                     created_at=dt_created or datetime.datetime.now(datetime.timezone.utc),
                 )
                 db.add(new_scan)
                 db.flush()
-                if cr_findings:
-                    from app.services.scan_runner import _reconcile_pr_findings_in_db
-                    _reconcile_pr_findings_in_db(db, repo.id, new_scan.id, pr_num, cr_findings)
-
-                if pr_state == "open" and not cr_failed:
-                    scan_args = dict(
-                        repository_id=repo.id,
-                        pull_number=pr_num,
-                        commit_sha=head_sha,
-                        branch=branch,
-                        base_branch=base_branch,
-                        pr_title=title,
-                        pr_author=author,
-                        pr_html_url=html_url,
-                        installation_id=inst_id,
-                        pr_state=pr_state,
-                        pr_merged_at=dt_merged,
-                        pr_closed_at=dt_closed,
-                    )
-                    if background_tasks:
-                        background_tasks.add_task(execute_pr_scan, **scan_args)
-                    else:
-                        import threading
-                        threading.Thread(target=execute_pr_scan, kwargs=scan_args, daemon=True).start()
+                if pr_findings_to_save:
+                    _reconcile_pr_findings_in_db(db, repo.id, new_scan.id, pr_num, pr_findings_to_save)
             synced_count += 1
 
         db.commit()
@@ -768,7 +750,7 @@ def build_annotated_pr_data(
     repo_name: str,
     owner: str,
     all_scans_for_pr: List[Scan],
-    repo_scans_cache: Optional[Dict[Tuple[str, str], Scan]] = None,
+    repo_scans_cache: Optional[Dict[Tuple[str, int, str], Scan]] = None,
 ) -> Dict[str, Any]:
     pr_num = s.pull_number
     has_merged = any(sc.pr_state == "merged" or sc.pr_merged_at is not None for sc in all_scans_for_pr)
@@ -782,7 +764,45 @@ def build_annotated_pr_data(
 
     dt_merged_val = next((sc.pr_merged_at for sc in all_scans_for_pr if sc.pr_merged_at is not None), s.pr_merged_at)
     dt_closed_val = next((sc.pr_closed_at for sc in all_scans_for_pr if sc.pr_closed_at is not None), s.pr_closed_at)
-    serialized_findings = [serialize_pr_finding(f, commit_sha=s.commit_sha) for f in s.findings]
+    # Collect findings across all scans belonging to this PR
+    all_findings_map = {}
+    for sc in all_scans_for_pr:
+        for f in sc.findings:
+            f_key = f"{f.rule_id}:{f.file_path}:{f.line_number}"
+            if f_key not in all_findings_map or f.status == "open":
+                all_findings_map[f_key] = serialize_pr_finding(f, commit_sha=sc.commit_sha)
+
+    # Also extract any findings recorded in commits JSON
+    for sc in all_scans_for_pr:
+        if sc.pr_commits_json:
+            try:
+                c_list = json.loads(sc.pr_commits_json)
+                if isinstance(c_list, list):
+                    from app.services.scan_runner import extract_findings_from_commits
+                    extracted = extract_findings_from_commits(c_list)
+                    for ef in extracted:
+                        f_key = f"{ef.get('rule_id')}:{ef.get('file_path') or ef.get('file')}:{ef.get('line_number') or ef.get('line')}"
+                        if f_key not in all_findings_map:
+                            f_ser = {
+                                "id": ef.get("id") or f"commit-{f_key}",
+                                "rule_id": ef.get("rule_id") or "SECRET_DETECTED",
+                                "finding_type": ef.get("finding_type") or "Secret",
+                                "severity": ef.get("severity") or "HIGH",
+                                "file_path": ef.get("file_path") or ef.get("file") or "source_file",
+                                "line_number": ef.get("line_number") or ef.get("line") or 1,
+                                "status": ef.get("status") or "open",
+                                "risk": ef.get("risk"),
+                                "recommendation": ef.get("recommendation"),
+                                "commit_sha": ef.get("commit_sha") or sc.commit_sha,
+                                "is_resolved": ef.get("status") == "resolved",
+                                "detected_in_commit": ef.get("detected_in_commit") or (sc.commit_sha[:7] if sc.commit_sha else None),
+                                "resolved_in_commit": None,
+                            }
+                            all_findings_map[f_key] = f_ser
+            except Exception:
+                pass
+
+    serialized_findings = list(all_findings_map.values())
 
     # Collect cached commits for this PR across all scans
     raw_commits = []
@@ -830,12 +850,16 @@ def build_annotated_pr_data(
     check_status = "neutral"
     if pr_state == "open" and s.scan_status == "running":
         check_status = "in_progress"
-    elif tot_cnt > 0 or s.scan_result in ("failed", "error") or (matching_head_scan and (matching_head_scan.get("scan_result") == "failed" or matching_head_scan.get("total_findings", 0) > 0)):
+    elif pr_state == "open" and (
+        tot_cnt > 0
+        or s.scan_result in ("failed", "error")
+        or (matching_head_scan and (matching_head_scan.get("scan_result") == "failed" or matching_head_scan.get("total_findings", 0) > 0))
+    ):
         check_status = "failure"
     elif s.scan_result == "passed" or (s.scan_status == "completed" and tot_cnt == 0) or pr_state in ("merged", "closed"):
         check_status = "success"
 
-    # Also match repository scans matching any commit sha in raw_commits (e.g. pushed before PR was created)
+    # Also match repository scans matching any commit sha in raw_commits (scoped strictly to this PR)
     pr_commit_shas = {
         (c.get("sha") or c.get("full_sha") or "")[:7].lower()
         for c in raw_commits if c.get("sha") or c.get("full_sha")
@@ -845,7 +869,7 @@ def build_annotated_pr_data(
         matching_scans = []
         if repo_scans_cache is not None:
             for sha in missing_shas:
-                matched_sc = repo_scans_cache.get((s.repository_id, sha))
+                matched_sc = repo_scans_cache.get((s.repository_id, pr_num, sha))
                 if matched_sc and matched_sc not in matching_scans:
                     matching_scans.append(matched_sc)
         else:
@@ -853,6 +877,7 @@ def build_annotated_pr_data(
                 db.query(Scan)
                 .filter(
                     Scan.repository_id == s.repository_id,
+                    Scan.pull_number == pr_num,
                     or_(*[Scan.commit_sha.startswith(sha) for sha in missing_shas[:5]]),
                 )
                 .all()
@@ -966,11 +991,18 @@ def list_pull_requests(
             .first()
             is not None
         )
-        sync_interval = 3.0 if has_open_prs else 10.0
-        if existing_count == 0 or should_sync_repo(target_repo.id, min_interval_seconds=sync_interval):
+        sync_interval = 5.0 if has_open_prs else 15.0
+        if existing_count == 0:
             fast_sync_repository_prs(db, target_repo, user_token=user_access)
+        elif should_sync_repo(target_repo.id, min_interval_seconds=sync_interval):
+            import threading
+            threading.Thread(
+                target=_background_sync_repo_prs,
+                args=(target_repo.id, user_access),
+                daemon=True,
+            ).start()
     else:
-        # Check all repositories for current user; sync fast if open PRs exist or interval elapsed
+        # Check all repositories for current user; sync fast from DB, dispatching background syncs
         user_repos = (
             db.query(Repository)
             .filter(
@@ -1000,9 +1032,16 @@ def list_pull_requests(
                 )
                 .count()
             )
-            sync_interval = 3.0 if has_open_prs else 15.0
-            if existing_count == 0 or should_sync_repo(r.id, min_interval_seconds=sync_interval):
+            sync_interval = 5.0 if has_open_prs else 20.0
+            if existing_count == 0:
                 fast_sync_repository_prs(db, r, user_token=user_access)
+            elif should_sync_repo(r.id, min_interval_seconds=sync_interval):
+                import threading
+                threading.Thread(
+                    target=_background_sync_repo_prs,
+                    args=(r.id, user_access),
+                    daemon=True,
+                ).start()
 
     query = (
         db.query(Scan)
@@ -1034,13 +1073,13 @@ def list_pull_requests(
     scans = query.order_by(Scan.created_at.desc()).limit(500).all()
 
     # Pre-index all scans by sha prefix to eliminate per-PR N+1 database queries
-    repo_scans_cache: Dict[Tuple[str, str], Scan] = {}
+    repo_scans_cache: Dict[Tuple[str, int, str], Scan] = {}
     for sc in scans:
-        if sc.commit_sha:
+        if sc.commit_sha and sc.pull_number is not None:
             s_clean = sc.commit_sha.lower()
-            repo_scans_cache[(sc.repository_id, s_clean[:7])] = sc
+            repo_scans_cache[(sc.repository_id, sc.pull_number, s_clean[:7])] = sc
             if len(s_clean) >= 12:
-                repo_scans_cache[(sc.repository_id, s_clean[:12])] = sc
+                repo_scans_cache[(sc.repository_id, sc.pull_number, s_clean[:12])] = sc
 
     scans_by_pr = {}
     for s in scans:
@@ -1176,6 +1215,11 @@ def get_pr_commits(
 
     inst_id = repo.installation.github_installation_id if repo.installation else None
     user_access = _extract_user_github_token(current_user)
+    if not inst_id and getattr(repo, "installation_id", None):
+        from app.models.installation import GitHubInstallation
+        inst = db.query(GitHubInstallation).filter(GitHubInstallation.id == repo.installation_id).first()
+        if inst:
+            inst_id = inst.github_installation_id
     if not inst_id:
         from app.models.installation import GitHubInstallation
         gh_user = current_user.github_username.lower() if current_user.github_username else None
@@ -1183,10 +1227,16 @@ def get_pr_commits(
             or_(
                 GitHubInstallation.user_id == current_user.id,
                 (func.lower(GitHubInstallation.account_name) == gh_user) if gh_user else False,
+                (func.lower(GitHubInstallation.account_name) == owner.lower()) if owner else False,
             )
         ).first()
         if user_inst:
             inst_id = user_inst.github_installation_id
+
+    if not user_access and repo.user_id:
+        u = db.query(User).filter(User.id == repo.user_id).first()
+        if u:
+            user_access = _extract_user_github_token(u)
 
     # Fetch live commits from GitHub
     raw_commits = get_pull_request_commits(inst_id, owner, repo_name, pull_number, user_token=user_access) or []

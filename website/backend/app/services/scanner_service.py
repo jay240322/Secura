@@ -18,10 +18,48 @@ from secura.remediation import enrich_findings, REMEDIATION_GUIDANCE
 logger = logging.getLogger("secura.scanner_service")
 
 
-def compute_finding_fingerprint(repo_id: str, rule_id: str, file_path: str, line_number: int) -> str:
+def compute_finding_fingerprint(
+    repo_id: str,
+    rule_id: str,
+    file_path: str,
+    line_number: int = 1,
+    pull_number: Optional[int] = None,
+) -> str:
     """Compute a deterministic hash for deduplication and lifecycle tracking."""
-    raw = f"{repo_id}:{rule_id}:{file_path}:{line_number}"
+    clean_repo = str(repo_id or "").strip().lower()
+    clean_rule = str(rule_id or "").strip().upper()
+    clean_path = str(file_path or "").strip().lower()
+    if pull_number is not None:
+        raw = f"{clean_repo}:pr-{pull_number}:{clean_rule}:{clean_path}"
+    else:
+        raw = f"{clean_repo}:{clean_rule}:{clean_path}"
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:32]
+
+
+def prune_stale_findings(db, retention_days: int = 30) -> int:
+    """
+    Prune resolved findings older than retention_days (default: 30) to keep DB storage minimal.
+    """
+    import datetime
+    cutoff = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=retention_days)
+    try:
+        from app.models.finding import Finding
+        deleted_count = (
+            db.query(Finding)
+            .filter(
+                Finding.status.in_(["resolved", "solved"]),
+                Finding.last_detected < cutoff,
+            )
+            .delete(synchronize_session=False)
+        )
+        if deleted_count > 0:
+            db.commit()
+            logger.info("Storage optimization: pruned %s old resolved findings", deleted_count)
+        return deleted_count
+    except Exception as exc:
+        db.rollback()
+        logger.debug("Storage prune error (non-fatal): %s", exc)
+        return 0
 
 
 def map_type_to_rule_id(finding_type: str) -> str:

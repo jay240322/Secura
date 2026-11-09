@@ -140,7 +140,23 @@ function RepositoryDetailContent() {
           .then(([r, p, f]) => {
             if (mounted) {
               if (r) setRepo(r);
-              if (p.isLive && p.pullRequests && p.pullRequests.length > 0) setPullRequests(p.pullRequests);
+              if (p.isLive && p.pullRequests && p.pullRequests.length > 0) {
+                setPullRequests((prev) => {
+                  const prevMap = new Map(prev.map((item) => [item.id, item]));
+                  return p.pullRequests.map((incoming) => {
+                    const existing = prevMap.get(incoming.id);
+                    if (existing && existing.commits && existing.commits.length > (incoming.commits?.length || 0)) {
+                      return {
+                        ...incoming,
+                        commits: existing.commits,
+                        historicalFindings: existing.historicalFindings || incoming.historicalFindings,
+                        hasResolvedViolations: existing.hasResolvedViolations ?? incoming.hasResolvedViolations,
+                      };
+                    }
+                    return incoming;
+                  });
+                });
+              }
               if (f.findings) setFindings(f.findings);
             }
           })

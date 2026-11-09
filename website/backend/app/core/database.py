@@ -18,14 +18,17 @@ def get_engine():
     clean_db_url = db_url.replace("&channel_binding=require", "").replace("?channel_binding=require", "")
 
     if clean_db_url.startswith("postgresql"):
-        logger.info("Connecting to Neon PostgreSQL database...")
+        logger.info("Connecting to PostgreSQL database...")
+        connect_args = {"connect_timeout": 30}
+        if "sslmode=" not in clean_db_url and "localhost" not in clean_db_url and "127.0.0.1" not in clean_db_url:
+            connect_args["sslmode"] = "require"
         return create_engine(
             clean_db_url,
             pool_pre_ping=True,
             pool_recycle=300,
             pool_size=10,
             max_overflow=20,
-            connect_args={"connect_timeout": 30},
+            connect_args=connect_args,
         )
     else:
         logger.info("Using SQLite database: %s", clean_db_url)

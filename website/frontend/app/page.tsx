@@ -706,6 +706,7 @@ function LandingPageContent() {
               >
                 <button
                   type="button"
+                  suppressHydrationWarning
                   onClick={() => setOpenFaq(openFaq === idx ? null : idx)}
                   className="w-full flex items-center justify-between p-4 sm:p-5 text-left text-sm font-semibold text-slate-900 dark:text-white hover:text-[#00285B] dark:hover:text-zinc-200 transition-colors"
                 >
@@ -794,9 +795,10 @@ function LandingPageContent() {
                     <span>Thank you! You are subscribed to Secura security updates.</span>
                   </div>
                 ) : (
-                  <form onSubmit={handleNewsletterSubmit} className="flex flex-col sm:flex-row gap-2 max-w-md">
+                  <form onSubmit={handleNewsletterSubmit} suppressHydrationWarning className="flex flex-col sm:flex-row gap-2 max-w-md">
                     <input
                       type="email"
+                      suppressHydrationWarning
                       value={newsletterEmail}
                       onChange={(e) => setNewsletterEmail(e.target.value)}
                       placeholder="Enter your email"
@@ -805,6 +807,7 @@ function LandingPageContent() {
                     />
                     <button
                       type="submit"
+                      suppressHydrationWarning
                       className="h-9 px-4 rounded-lg bg-[#00285B] hover:bg-[#001f44] text-white text-xs font-semibold tracking-wide transition-all shadow-sm flex items-center justify-center shrink-0 cursor-pointer"
                     >
                       Subscribe

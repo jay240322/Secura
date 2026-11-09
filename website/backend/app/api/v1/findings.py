@@ -1,3 +1,4 @@
+import json
 from typing import Dict, List, Optional, Tuple
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, or_
@@ -76,12 +77,12 @@ def batch_reconcile_findings(
         elif scan.branch:
             latest_scan = latest_by_branch.get((f.repository_id, scan.branch))
 
-        if latest_scan and latest_scan.id != scan.id:
+        if latest_scan:
             if latest_scan.scan_result == "passed":
                 resolved_in = (latest_scan.commit_sha or "")[:7] or "HEAD"
                 if f.status != "ignored":
                     f.status = "resolved"
-            else:
+            elif latest_scan.id != scan.id:
                 has_in_latest = any(
                     lf.file_path == f.file_path and lf.rule_id == f.rule_id
                     for lf in (latest_scan.findings or [])
@@ -89,11 +90,11 @@ def batch_reconcile_findings(
                 if not has_in_latest and f.status != "ignored":
                     resolved_in = (latest_scan.commit_sha or "")[:7] or "HEAD"
                     f.status = "resolved"
-        elif f.status == "resolved":
+        if f.status == "resolved" and not resolved_in:
             resolved_in = (
                 (latest_scan.commit_sha or "")[:7]
                 if latest_scan and latest_scan.commit_sha
-                else detected_in
+                else (detected_in or "latest")
             )
 
         results.append((f, detected_in, resolved_in))
@@ -147,7 +148,7 @@ def to_finding_response(
     if not clean_status or clean_status == "unknown":
         clean_status = "open"
 
-    resolved_pull_number = (scan.pull_number if scan and scan.pull_number is not None else None) or pull_number
+    resolved_pull_number = scan.pull_number if (scan and scan.pull_number is not None) else None
 
     return FindingResponse(
         id=finding.id,
@@ -222,9 +223,30 @@ def list_findings(
             )
         )
     if pull_number is not None:
-        pr_scans_q = db.query(Scan).filter(Scan.pull_number == pull_number)
+        pr_scans_q = (
+            db.query(Scan)
+            .join(Repository, Scan.repository_id == Repository.id)
+            .filter(
+                Scan.pull_number == pull_number,
+                or_(
+                    Repository.user_id.in_(user_ids),
+                    (func.lower(Repository.owner) == gh_handle) if gh_handle else False,
+                ),
+            )
+        )
         if repository_id:
             pr_scans_q = pr_scans_q.filter(Scan.repository_id == repository_id)
+        elif repo_name and repo_name.lower().strip() not in ("repository", "all", ""):
+            clean_rn = repo_name.lower().strip()
+            short_rn = clean_rn.split("/")[-1] if "/" in clean_rn else clean_rn
+            pr_scans_q = pr_scans_q.filter(
+                or_(
+                    func.lower(Repository.name) == clean_rn,
+                    func.lower(Repository.name) == short_rn,
+                    func.lower(Repository.full_name) == clean_rn,
+                    func.lower(Repository.full_name).endswith(f"/{short_rn}"),
+                )
+            )
         pr_scans = pr_scans_q.all()
         pr_scan_ids = [s.id for s in pr_scans]
 
@@ -242,38 +264,10 @@ def list_findings(
                 except Exception:
                     pass
 
-        # Also collect all commit SHAs associated with this PR's scans to find related scans
-        pr_commit_shas = set()
-        for s in pr_scans:
-            if s.commit_sha:
-                pr_commit_shas.add(s.commit_sha.lower()[:7])
-                pr_commit_shas.add(s.commit_sha.lower())
-            if s.pr_commits_json:
-                try:
-                    c_list = json.loads(s.pr_commits_json)
-                    if isinstance(c_list, list):
-                        for c in c_list:
-                            sha = (c.get("sha") or c.get("full_sha") or "").lower()
-                            if sha:
-                                pr_commit_shas.add(sha[:7])
-                                pr_commit_shas.add(sha)
-                except Exception:
-                    pass
-
-        if pr_commit_shas:
-            matching_shas = list(pr_commit_shas)
-            extra_scans = db.query(Scan.id).filter(
-                Scan.repository_id.in_([s.repository_id for s in pr_scans]) if pr_scans else True,
-                or_(*[Scan.commit_sha.startswith(sha) for sha in matching_shas[:20]])
-            ).all()
-            for (es_id,) in extra_scans:
-                if es_id not in pr_scan_ids:
-                    pr_scan_ids.append(es_id)
-
         if pr_scan_ids:
             query = query.filter(Finding.scan_id.in_(pr_scan_ids))
         else:
-            query = query.join(Scan, Finding.scan_id == Scan.id).filter(Scan.pull_number == pull_number).distinct()
+            query = query.filter(False)
     if scan_id:
         query = query.filter(Finding.scan_id == scan_id)
     if severity:
@@ -459,4 +453,23 @@ def update_finding(
 def get_catalog():
     """Retrieve the complete structured rule-based remediation catalog."""
     return get_remediation_catalog()
+
+
+@router.post("/prune")
+def prune_findings(
+    retention_days: int = Query(30, ge=1, le=365),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    On-demand storage optimization: permanently purge resolved findings older than retention_days.
+    """
+    from app.services.scanner_service import prune_stale_findings
+    count = prune_stale_findings(db, retention_days=retention_days)
+    return {
+        "success": True,
+        "pruned_count": count,
+        "retention_days": retention_days,
+        "message": f"Successfully pruned {count} resolved findings older than {retention_days} days.",
+    }
 

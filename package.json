@@ -1,0 +1,11 @@
+{
+  "name": "secura",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "npm --prefix website/frontend run dev",
+    "start": "bash ./run-website.sh",
+    "build": "npm --prefix website/frontend run build"
+  }
+}
+

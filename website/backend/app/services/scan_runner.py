@@ -58,9 +58,16 @@ def persist_scan_findings(
     repository_id: str,
     findings_data: List[Dict[str, Any]],
     default_recommendation: Optional[str] = None,
+    pull_number: Optional[int] = None,
 ) -> None:
     """Save findings records to DB with fingerprint deduplication and status tracking."""
     now = datetime.datetime.now(datetime.timezone.utc)
+    p_num = pull_number
+    if p_num is None and scan_id:
+        sc = db.query(Scan.pull_number).filter(Scan.id == scan_id).first()
+        if sc and sc[0] is not None:
+            p_num = sc[0]
+
     for item in findings_data:
         f_type, rule_id = _extract_finding_type_and_rule(item)
         f_path = str(item.get("file") or item.get("file_path") or item.get("path") or "source_file").strip().strip("`")
@@ -71,12 +78,13 @@ def persist_scan_findings(
         if sev not in ("CRITICAL", "HIGH", "MEDIUM", "LOW"):
             sev = "MEDIUM"
 
-        fingerprint = compute_finding_fingerprint(repository_id, rule_id, f_path, line_no)
+        fingerprint = compute_finding_fingerprint(repository_id, rule_id, f_path, line_no, pull_number=p_num)
 
+        # Scoped strictly to this scan so findings are never stolen or reassigned between different PRs
         existing_finding = (
             db.query(Finding)
             .filter(
-                Finding.repository_id == repository_id,
+                Finding.scan_id == scan_id,
                 Finding.fingerprint == fingerprint,
             )
             .first()
@@ -85,7 +93,6 @@ def persist_scan_findings(
         rec = item.get("recommendation") or default_recommendation
         if existing_finding:
             existing_finding.status = "open"
-            existing_finding.scan_id = scan_id
             existing_finding.severity = sev
             existing_finding.line_number = line_no
             existing_finding.last_detected = now
@@ -425,7 +432,7 @@ def _reconcile_pr_findings_in_db(
         _, rid = _extract_finding_type_and_rule(item)
         fp = str(item.get("file") or item.get("file_path") or item.get("path") or "source_file").strip().strip("`") or "source_file"
         ln = int(item.get("line") or item.get("line_number") or 1)
-        detected_fps.add(compute_finding_fingerprint(repo_id, rid, fp, ln))
+        detected_fps.add(compute_finding_fingerprint(repo_id, rid, fp, ln, pull_number=pull_number))
         detected_file_rules.add((fp, rid))
 
     for ef in existing_pr_findings:
@@ -443,7 +450,7 @@ def _reconcile_pr_findings_in_db(
         _, rid = _extract_finding_type_and_rule(item)
         fp = str(item.get("file") or item.get("file_path") or item.get("path") or "source_file").strip().strip("`") or "source_file"
         ln = int(item.get("line") or item.get("line_number") or 1)
-        if compute_finding_fingerprint(repo_id, rid, fp, ln) not in existing_fps:
+        if compute_finding_fingerprint(repo_id, rid, fp, ln, pull_number=pull_number) not in existing_fps:
             brand_new.append(item)
     if brand_new:
         persist_scan_findings(
@@ -452,10 +459,19 @@ def _reconcile_pr_findings_in_db(
             repo_id,
             brand_new,
             default_recommendation="Remove credential or secret from pull request.",
+            pull_number=pull_number,
         )
-    elif not findings_data:
-        curr_scan = db.query(Scan).filter(Scan.id == scan_id).first()
-        if curr_scan:
+
+    curr_scan = db.query(Scan).filter(Scan.id == scan_id).first()
+    if curr_scan:
+        total_open = sum(1 for ef in existing_pr_findings if ef.status == "open") + len(brand_new)
+        if total_open > 0:
+            curr_scan.total_findings = total_open
+            curr_scan.critical_count = sum(1 for item in findings_data if str(item.get("severity", "")).upper() == "CRITICAL")
+            curr_scan.high_count = sum(1 for item in findings_data if str(item.get("severity", "")).upper() == "HIGH")
+            curr_scan.scan_result = "failed"
+            curr_scan.score = 0
+        elif not findings_data:
             curr_scan.total_findings = 0
             curr_scan.critical_count = 0
             curr_scan.high_count = 0
@@ -463,6 +479,7 @@ def _reconcile_pr_findings_in_db(
             curr_scan.low_count = 0
             curr_scan.scan_result = "passed"
             curr_scan.score = 100
+    db.commit()
 
 
 def extract_findings_from_commits(commits_list: list) -> list:

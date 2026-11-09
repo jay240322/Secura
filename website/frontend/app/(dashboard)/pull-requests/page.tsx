@@ -150,7 +150,21 @@ export default function PullRequestsPage() {
         .getPullRequests(repoId)
         .then((res) => {
           if (mounted && res.isLive && res.pullRequests) {
-            setPullRequests(res.pullRequests);
+            setPullRequests((prev) => {
+              const prevMap = new Map(prev.map((item) => [item.id, item]));
+              return res.pullRequests.map((incoming) => {
+                const existing = prevMap.get(incoming.id);
+                if (existing && existing.commits && existing.commits.length > (incoming.commits?.length || 0)) {
+                  return {
+                    ...incoming,
+                    commits: existing.commits,
+                    historicalFindings: existing.historicalFindings || incoming.historicalFindings,
+                    hasResolvedViolations: existing.hasResolvedViolations ?? incoming.hasResolvedViolations,
+                  };
+                }
+                return incoming;
+              });
+            });
           }
         })
         .catch(() => { });
