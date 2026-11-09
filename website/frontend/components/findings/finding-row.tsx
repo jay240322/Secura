@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Check } from "lucide-react";
 import { SeverityBadge } from "@/components/ui/severity-badge";
 import { StatusBadge } from "@/components/ui/status-badge";
+import { sanitizeFindingDisplay } from "@/lib/api-client";
 import type { Finding } from "@/types";
 
 export function FindingRow({
@@ -17,6 +18,9 @@ export function FindingRow({
   const detectedSha = finding.detectedInCommit || (finding.commitSha ? finding.commitSha.slice(0, 7) : null);
   const resolvedSha = finding.resolvedInCommit;
 
+  const { displayType, displayRule, displayPath, lineNo, displayStatus, displayRepo } =
+    sanitizeFindingDisplay(finding);
+
   return (
     <Link
       href={`/findings/${finding.id}`}
@@ -26,11 +30,11 @@ export function FindingRow({
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2 mb-1 flex-wrap">
           <span className="text-xs font-semibold text-slate-900 dark:text-zinc-100 tracking-tight group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
-            {finding.type}
+            {displayType}
           </span>
-          <StatusBadge status={isResolved ? "resolved" : finding.status} />
+          <StatusBadge status={isResolved ? "resolved" : displayStatus} />
           <span className="text-[10px] text-slate-600 dark:text-zinc-400 font-mono bg-slate-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded border border-slate-200 dark:border-zinc-700">
-            {finding.ruleId}
+            {displayRule}
           </span>
           {isResolved ? (
             <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 flex items-center gap-1">
@@ -49,9 +53,9 @@ export function FindingRow({
           )}
         </div>
         <p className="text-xs text-slate-500 dark:text-zinc-400 truncate">
-          {showRepo && finding.repository ? `${finding.repository} · ` : null}
+          {showRepo && displayRepo ? `${displayRepo} · ` : null}
           <span className="font-mono text-slate-700 dark:text-zinc-300">
-            {finding.filePath || (finding as any).file}:{finding.lineNumber || (finding as any).line}
+            {displayPath}:{lineNo}
           </span>
         </p>
         {isResolved ? (

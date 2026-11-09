@@ -460,12 +460,14 @@ def _make_check_run_finding(
     commit_sha: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Helper to build standardized finding dictionaries without code duplication."""
-    clean_rule = rule_id.strip() if rule_id else "SECRET"
-    clean_path = f_path.strip().strip("`") if f_path else "unknown"
+    clean_rule = rule_id.strip() if rule_id and rule_id.lower() != "unknown" else "SECRET_DETECTED"
+    clean_path = f_path.strip().strip("`") if f_path and f_path.lower() != "unknown" else "source_file"
     if "secura-pr-" in clean_path:
         _, _, remainder = clean_path.partition("secura-pr-")
         if "/" in remainder:
             clean_path = remainder.partition("/")[2]
+    if not clean_path or clean_path.lower() == "unknown":
+        clean_path = "source_file"
 
     upper_sev = (severity or "HIGH").upper()
     valid_sev = upper_sev if upper_sev in ("CRITICAL", "HIGH", "MEDIUM", "LOW") else "HIGH"
@@ -522,7 +524,9 @@ def get_commit_check_runs(
                             sev = "CRITICAL" if level == "failure" else "HIGH"
                             raw_msg = ann.get("message") or ""
                             ann_title = ann.get("title") or "SECRET_DETECTED"
-                            ann_path = ann.get("path") or "unknown"
+                            ann_path = ann.get("path") or "source_file"
+                            if ann_path.lower() == "unknown":
+                                ann_path = "source_file"
                             ann_line = ann.get("start_line") or 1
                             remed = (
                                 raw_msg.split("Remediation:")[-1].strip()

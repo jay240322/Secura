@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { SeverityBadge } from "@/components/ui/severity-badge";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { Loader } from "@/components/ui/loader";
-import { api } from "@/lib/api-client";
+import { api, sanitizeFindingDisplay } from "@/lib/api-client";
 import type { Finding } from "@/types";
 import {
   AlertTriangle,
@@ -95,6 +95,10 @@ function FindingDetailContent() {
     );
   }
 
+  const { displayType, displayRule, displayPath, lineNo, displayStatus, displayRepo: rawCleanRepo } =
+    sanitizeFindingDisplay(finding);
+  const displayRepo = rawCleanRepo || "Repository";
+
   return (
     <div className="max-w-4xl mx-auto space-y-5">
       {/* Back nav */}
@@ -112,9 +116,9 @@ function FindingDetailContent() {
           <div className="min-w-0">
             <div className="flex items-center gap-2.5 flex-wrap mb-2">
               <SeverityBadge severity={finding.severity} />
-              <StatusBadge status={finding.status} />
+              <StatusBadge status={displayStatus} />
               <span className="text-xs text-slate-600 dark:text-zinc-400 font-mono bg-slate-100 dark:bg-zinc-800 px-2 py-0.5 rounded border border-slate-200 dark:border-zinc-700">
-                {finding.ruleId}
+                {displayRule}
               </span>
               {(finding.status === "resolved" || finding.isResolved) && (
                 <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 flex items-center gap-1">
@@ -123,14 +127,14 @@ function FindingDetailContent() {
                 </span>
               )}
             </div>
-            <h1 className="text-xl font-bold text-slate-900 dark:text-zinc-100">{finding.type}</h1>
+            <h1 className="text-xl font-bold text-slate-900 dark:text-zinc-100">{displayType}</h1>
             <div className="mt-2 flex items-center gap-2 text-xs text-slate-500 dark:text-zinc-400">
               <MapPin className="h-3.5 w-3.5 shrink-0 text-slate-400 dark:text-zinc-500" />
               <span className="font-mono text-slate-700 dark:text-zinc-300 font-semibold">
-                {finding.filePath}:{finding.lineNumber}
+                {displayPath}:{lineNo}
               </span>
               <span>·</span>
-              <span className="text-slate-600 dark:text-zinc-400">{finding.repository}</span>
+              <span className="text-slate-600 dark:text-zinc-400">{displayRepo}</span>
             </div>
           </div>
         </div>
@@ -174,14 +178,14 @@ function FindingDetailContent() {
               <div className="rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-50/80 dark:bg-zinc-900/60 p-4 font-mono text-xs text-slate-700 dark:text-zinc-300 shadow-xs">
                 <div className="flex items-center gap-2 text-slate-500 dark:text-zinc-400 mb-2">
                   <FileText className="h-3.5 w-3.5" />
-                  <span>{finding.filePath}</span>
+                  <span>{displayPath}</span>
                 </div>
                 <div className="flex items-center gap-4 bg-rose-50 dark:bg-rose-950/40 -mx-4 px-4 py-1.5 border-l-2 border-rose-500 text-slate-900 dark:text-zinc-100">
                   <span className="text-slate-400 dark:text-zinc-500 select-none w-6 text-right">
-                    {finding.lineNumber}
+                    {lineNo}
                   </span>
                   <span className="text-rose-700 dark:text-rose-400 font-semibold">
-                    [REDACTED SECRET DETECTED ON LINE {finding.lineNumber}]
+                    [REDACTED SECRET DETECTED ON LINE {lineNo}]
                   </span>
                 </div>
               </div>
@@ -230,7 +234,7 @@ function FindingDetailContent() {
                     </span>
                   </div>
                   <pre className="text-xs font-mono p-4 text-slate-800 dark:text-zinc-200 overflow-x-auto">
-                    {getSafeExample(finding.type)}
+                    {getSafeExample(displayType)}
                   </pre>
                 </div>
               </CardContent>
@@ -314,7 +318,7 @@ function FindingDetailContent() {
                 </div>
                 <div>
                   <dt className="text-slate-500 dark:text-zinc-400 mb-0.5">Repository</dt>
-                  <dd className="text-slate-800 dark:text-zinc-200 font-medium">{finding.repository}</dd>
+                  <dd className="text-slate-800 dark:text-zinc-200 font-medium">{displayRepo}</dd>
                 </div>
                 <div>
                   <dt className="text-slate-500 dark:text-zinc-400 mb-0.5">Scan ID</dt>
@@ -322,7 +326,7 @@ function FindingDetailContent() {
                 </div>
                 <div>
                   <dt className="text-slate-500 dark:text-zinc-400 mb-0.5">Rule ID</dt>
-                  <dd className="text-slate-800 dark:text-zinc-200 font-mono font-medium">{finding.ruleId}</dd>
+                  <dd className="text-slate-800 dark:text-zinc-200 font-mono font-medium">{displayRule}</dd>
                 </div>
                 {(finding.detectedInCommit || finding.commitSha) && (
                   <div>

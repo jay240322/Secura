@@ -17,6 +17,8 @@ import {
   User,
 } from "@/types";
 
+declare const process: any;
+
 const rawApiBase =
   typeof window !== "undefined"
     ? "/api"
@@ -73,6 +75,13 @@ export function cleanRepoDisplay(nameOrId?: unknown, fallbackRepoId?: unknown): 
   const str = String(nameOrId || "").trim();
   const fId = String(fallbackRepoId || "").trim();
 
+  if (!str || str.toLowerCase() === "unknown" || str.toLowerCase() === "undefined") {
+    if (fId && repoCache.has(fId.toLowerCase())) {
+      return repoCache.get(fId.toLowerCase())!.name;
+    }
+    return "Repository";
+  }
+
   if (fId && repoCache.has(fId.toLowerCase())) {
     return repoCache.get(fId.toLowerCase())!.name;
   }
@@ -104,20 +113,90 @@ export function cleanRepoDisplay(nameOrId?: unknown, fallbackRepoId?: unknown): 
   return str || "Repository";
 }
 
+export interface SanitizedFindingDisplay {
+  displayType: string;
+  displayRule: string;
+  displayPath: string;
+  lineNo: number;
+  displayStatus: FindingStatus;
+  displayRepo: string;
+}
+
+export function sanitizeFindingDisplay(finding: {
+  type?: unknown;
+  ruleId?: unknown;
+  filePath?: unknown;
+  file?: unknown;
+  status?: unknown;
+  repository?: unknown;
+  lineNumber?: unknown;
+  line?: unknown;
+}): SanitizedFindingDisplay {
+  let displayType = String(finding.type || "").trim();
+  let displayRule = String(finding.ruleId || "").trim();
+  const rawPath = String(finding.filePath || finding.file || "").trim();
+  const rawStatus = String(finding.status || "").toLowerCase().trim();
+  const rawRepo = String(finding.repository || "").trim();
+
+  if (!displayType || displayType.toLowerCase() === "unknown") {
+    if (displayRule && displayRule.toLowerCase() !== "unknown") {
+      displayType = displayRule
+        .split("_")
+        .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+        .join(" ");
+    } else {
+      displayType = "Hardcoded Secret";
+    }
+  }
+
+  if (!displayRule || displayRule.toLowerCase() === "unknown") {
+    displayRule = displayType.toUpperCase().replace(/\s+/g, "_").replace(/-/g, "_");
+  }
+
+  const displayPath =
+    !rawPath || rawPath.toLowerCase() === "unknown" || rawPath === "`unknown`"
+      ? "source_file"
+      : rawPath;
+  const lineNo = Number(finding.lineNumber || finding.line || 1);
+  const displayStatus: FindingStatus =
+    rawStatus === "resolved" || rawStatus === "solved" || rawStatus === "ignored"
+      ? (rawStatus as FindingStatus)
+      : "open";
+  const displayRepo = !rawRepo || rawRepo.toLowerCase() === "unknown" ? "" : rawRepo;
+
+  return {
+    displayType,
+    displayRule,
+    displayPath,
+    lineNo,
+    displayStatus,
+    displayRepo,
+  };
+}
+
 function mapBackendFinding(f: Record<string, unknown>): Finding {
   const repId = String(f.repository_id || f.repositoryId || "");
   const repName = cleanRepoDisplay(f.repository_name || f.repository, repId);
 
+  const sanitized = sanitizeFindingDisplay({
+    type: f.finding_type || f.type,
+    ruleId: f.rule_id || f.ruleId,
+    filePath: f.file_path || f.filePath,
+    status: f.status,
+    repository: repName,
+    lineNumber: f.line_number || f.lineNumber,
+  });
+
   return {
     id: String(f.id ?? ""),
-    ruleId: String(f.rule_id || f.ruleId || ""),
-    type: String(f.finding_type || f.type || "Security Finding"),
+    ruleId: sanitized.displayRule,
+    type: sanitized.displayType,
     severity: (f.severity as Severity) || "MEDIUM",
-    status: (f.status as FindingStatus) || "open",
+    status: sanitized.displayStatus,
     repository: repName,
     repositoryId: repId,
-    filePath: String(f.file_path || f.filePath || "unknown"),
-    lineNumber: Number(f.line_number || f.lineNumber || 1),
+    filePath: sanitized.displayPath,
+    lineNumber: sanitized.lineNo,
     firstDetected: String(f.first_detected || f.firstDetected || new Date().toISOString()),
     lastDetected: String(f.last_detected || f.lastDetected || new Date().toISOString()),
     scanId: String(f.scan_id || f.scanId || ""),
@@ -127,7 +206,7 @@ function mapBackendFinding(f: Record<string, unknown>): Finding {
     commitSha: f.commit_sha ? String(f.commit_sha) : (f.commitSha ? String(f.commitSha) : undefined),
     detectedInCommit: f.detected_in_commit ? String(f.detected_in_commit) : (f.detectedInCommit ? String(f.detectedInCommit) : (f.commit_sha ? String(f.commit_sha) : undefined)),
     resolvedInCommit: f.resolved_in_commit ? String(f.resolved_in_commit) : (f.resolvedInCommit ? String(f.resolvedInCommit) : undefined),
-    isResolved: Boolean(f.is_resolved ?? f.isResolved ?? (f.status === "resolved" || f.status === "solved")),
+    isResolved: Boolean(f.is_resolved ?? f.isResolved ?? (sanitized.displayStatus === "resolved" || sanitized.displayStatus === "solved")),
     pullNumber: f.pull_number !== undefined && f.pull_number !== null ? Number(f.pull_number) : (f.pullNumber !== undefined && f.pullNumber !== null ? Number(f.pullNumber) : undefined),
     branch: f.branch ? String(f.branch) : undefined,
   };
