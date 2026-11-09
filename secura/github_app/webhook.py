@@ -386,12 +386,16 @@ async def github_webhook(
             len(changed_files),
         )
 
+        dashboard_base = os.environ.get("SECURA_DASHBOARD_URL", "https://secura.app").rstrip("/")
+        details_url = f"{dashboard_base}/findings?repo={quote(repository_name, safe='')}&pr={pull_number}"
+
         result, findings, check_run = _scan_and_publish_check_run(
             installation_token=installation_token,
             owner=owner,
             repo=repo,
             head_sha=head_sha,
             changed_files=changed_files,
+            details_url=details_url,
         )
         check_run_id = check_run.get("id")
 

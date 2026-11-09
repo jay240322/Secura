@@ -31,6 +31,7 @@ def create_app_jwt() -> str:
 
     app_id = os.environ.get("GITHUB_APP_ID")
     pem_location = os.environ.get("GITHUB_PRIVATE_KEY_PATH")
+    raw_key_env = os.environ.get("GITHUB_APP_PRIVATE_KEY") or os.environ.get("GITHUB_PRIVATE_KEY")
 
     if not app_id:
         try:
@@ -39,44 +40,48 @@ def create_app_jwt() -> str:
         except Exception:
             pass
 
-    if not pem_location:
-        try:
-            from app.core.config import settings
-            pem_location = getattr(settings, "GITHUB_PRIVATE_KEY_PATH", None)
-        except Exception:
-            pass
-
     if not app_id:
         raise RuntimeError("GITHUB_APP_ID is not configured")
 
-    if not pem_location:
-        raise RuntimeError("GITHUB_PRIVATE_KEY_PATH is not configured")
+    if raw_key_env:
+        # Support multiline PEM string directly from cloud environment variables
+        private_key = raw_key_env.replace("\\n", "\n").strip()
+    else:
+        if not pem_location:
+            try:
+                from app.core.config import settings
+                pem_location = getattr(settings, "GITHUB_PRIVATE_KEY_PATH", None)
+            except Exception:
+                pass
 
-    key_file_path = Path(pem_location)
-    if not key_file_path.is_file():
-        # Check relative to repository root (auth.py -> github_app -> secura -> root)
-        repo_root = Path(__file__).resolve().parent.parent.parent
-        candidates = [
-            repo_root / pem_location,
-            repo_root / ".secrets" / Path(pem_location).name,
-            Path.cwd() / pem_location,
-            Path.cwd() / ".secrets" / Path(pem_location).name,
-            Path("/home/jay/projects/Secura/.secrets/github-app-private-key.pem"),
-            Path(r"\\wsl.localhost\Ubuntu\home\jay\projects\Secura\.secrets\github-app-private-key.pem"),
-        ]
-        found = False
-        for candidate in candidates:
-            if candidate.is_file():
-                key_file_path = candidate
-                found = True
-                break
-        if not found:
-            raise FileNotFoundError(
-                f"GitHub App private key not found at {pem_location} or {candidates}"
-            )
+        if not pem_location:
+            raise RuntimeError("Neither GITHUB_APP_PRIVATE_KEY nor GITHUB_PRIVATE_KEY_PATH is configured")
 
-    with open(key_file_path, "r", encoding="utf-8") as key_file:
-        private_key = key_file.read()
+        key_file_path = Path(pem_location)
+        if not key_file_path.is_file():
+            # Check relative to repository root (auth.py -> github_app -> secura -> root)
+            repo_root = Path(__file__).resolve().parent.parent.parent
+            candidates = [
+                repo_root / pem_location,
+                repo_root / ".secrets" / Path(pem_location).name,
+                Path.cwd() / pem_location,
+                Path.cwd() / ".secrets" / Path(pem_location).name,
+                Path("/home/jay/projects/Secura/.secrets/github-app-private-key.pem"),
+                Path(r"\\wsl.localhost\Ubuntu\home\jay\projects\Secura\.secrets\github-app-private-key.pem"),
+            ]
+            found = False
+            for candidate in candidates:
+                if candidate.is_file():
+                    key_file_path = candidate
+                    found = True
+                    break
+            if not found:
+                raise FileNotFoundError(
+                    f"GitHub App private key not found at {pem_location} or {candidates}"
+                )
+
+        with open(key_file_path, "r", encoding="utf-8") as key_file:
+            private_key = key_file.read()
 
     now = int(time.time())
 
