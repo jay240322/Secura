@@ -63,32 +63,29 @@ export function CheckIcon({
 export function StateBadge({ state }: { state?: PullRequest["state"] }) {
   if (state === "merged") {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium bg-purple-50 text-purple-700 ring-1 ring-purple-200 dark:bg-purple-950/40 dark:text-purple-300 dark:ring-purple-800/40">
-        <GitMerge className="h-3 w-3 shrink-0" />
-        <span>Merged</span>
+      <span title="Merged">
+        <GitMerge className="h-4 w-4 text-purple-500 dark:text-purple-400 shrink-0" />
       </span>
     );
   }
   if (state === "closed") {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium bg-slate-100 text-slate-700 ring-1 ring-slate-200 dark:bg-zinc-800 dark:text-zinc-300 dark:ring-zinc-700">
-        <X className="h-3 w-3 shrink-0" />
-        <span>Closed</span>
+      <span title="Closed">
+        <XCircle className="h-4 w-4 text-slate-400 dark:text-zinc-500 shrink-0" />
       </span>
     );
   }
   return (
-    <span className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:ring-emerald-800/40">
-      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 shrink-0" />
-      <span>Open</span>
+    <span title="Open">
+      <span className="h-2 w-2 rounded-full bg-emerald-500 dark:bg-emerald-400 shrink-0 inline-block" />
     </span>
   );
 }
 
 export interface PullRequestRowProps {
   pr: PullRequest;
-  onScan: (pr: PullRequest) => Promise<void>;
-  isScanning: boolean;
+  onScan?: (pr: PullRequest) => Promise<void>;
+  isScanning?: boolean;
   onRefreshCommits?: (pr: PullRequest) => Promise<void>;
   isCommitsLoading?: boolean;
   showRepoName?: boolean;
@@ -97,18 +94,19 @@ export interface PullRequestRowProps {
 export function PullRequestRow({
   pr,
   onScan,
-  isScanning,
+  isScanning = false,
   onRefreshCommits,
   isCommitsLoading = false,
   showRepoName = false,
 }: PullRequestRowProps) {
   const [expanded, setExpanded] = useState(false);
-  const [activeTab, setActiveTab] = useState<"commits" | "scan-runs">("commits");
-
   const findings = pr.findings || [];
   const commits = pr.commits || [];
   const scanRuns = pr.scanRuns || [];
   const historicalFindings = pr.historicalFindings || [];
+  const activeFindingsCount = pr.totalFindings > 0 ? pr.totalFindings : findings.length;
+
+  const [activeTab, setActiveTab] = useState<"commits" | "scan-runs">("commits");
 
   // Check failed commits strictly based on actual findings or failure status
   const failedCommitsCount = commits.filter(
@@ -126,13 +124,11 @@ export function PullRequestRow({
   const handleToggleExpand = () => {
     const next = !expanded;
     setExpanded(next);
-    // Instant open; only fetch if commits are completely empty
-    if (next && onRefreshCommits && commits.length === 0) {
+    // Instant open; automatically fetch full commit list from GitHub if empty or only 1 fallback commit
+    if (next && onRefreshCommits && (commits.length <= 1 || !pr.commits)) {
       void onRefreshCommits(pr);
     }
   };
-
-  const activeFindingsCount = pr.totalFindings > 0 ? pr.totalFindings : findings.length;
 
   const cleanRepoName =
     pr.repository &&
@@ -170,13 +166,14 @@ export function PullRequestRow({
 
               {/* Resolved Violations Indicator */}
               {isResolvedInHead && (
-                <span className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:ring-emerald-800/40">
-                  <Sparkles className="h-3 w-3" />
-                  <span>
-                    {historicalFindings.length > 0
-                      ? `${historicalFindings.length} Secret${historicalFindings.length > 1 ? "s" : ""} Solved in Latest Commit`
-                      : "Previous Violation Resolved in Latest Commit"}
-                  </span>
+                <span
+                  title={
+                    historicalFindings.length > 0
+                      ? `${historicalFindings.length} secret${historicalFindings.length > 1 ? "s" : ""} solved in latest commit`
+                      : "Previous violation resolved in latest commit"
+                  }
+                >
+                  <Sparkles className="h-3.5 w-3.5 text-emerald-500 dark:text-emerald-400" />
                 </span>
               )}
             </div>
@@ -198,12 +195,25 @@ export function PullRequestRow({
               <span>·</span>
               <button
                 type="button"
-                onClick={handleToggleExpand}
-                className="inline-flex items-center gap-1 text-slate-700 dark:text-zinc-300 hover:text-blue-600 dark:hover:text-blue-400 transition-colors bg-slate-100 hover:bg-slate-200/80 dark:bg-zinc-800 dark:hover:bg-zinc-700 px-2 py-0.5 rounded border border-slate-200 dark:border-zinc-700 font-medium"
+                onClick={() => {
+                  if (!expanded) {
+                    handleToggleExpand();
+                  } else if (onRefreshCommits && (commits.length <= 1 || !pr.commits)) {
+                    void onRefreshCommits(pr);
+                  }
+                }}
+                className="inline-flex items-center gap-1 text-slate-700 dark:text-zinc-300 hover:text-blue-600 dark:hover:text-blue-400 transition-colors bg-slate-100 hover:bg-slate-200/80 dark:bg-zinc-800 dark:hover:bg-zinc-700 px-2 py-0.5 rounded border border-slate-200 dark:border-zinc-700 font-medium cursor-pointer"
                 title="View commits & scans in this pull request"
               >
                 <GitCommit className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
-                <span>{commits.length} commit{commits.length === 1 ? "" : "s"}</span>
+                {isCommitsLoading ? (
+                  <span className="flex items-center gap-1 text-blue-600 dark:text-blue-400">
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    <span>Loading...</span>
+                  </span>
+                ) : (
+                  <span>{commits.length} commit{commits.length === 1 ? "" : "s"}</span>
+                )}
                 {scanRuns.length > 1 && (
                   <span className="text-[10px] bg-white dark:bg-zinc-900 px-1 rounded ml-1 text-slate-600 dark:text-zinc-400 font-mono">
                     {scanRuns.length} scans
@@ -229,18 +239,7 @@ export function PullRequestRow({
         {/* Right Side Status & Controls */}
         <div className="flex items-center gap-3 shrink-0 self-end sm:self-center">
           <div className="text-right">
-            {pr.criticalFindings > 0 && (
-              <p className="text-xs font-semibold text-rose-600 dark:text-rose-400 flex items-center gap-1 justify-end">
-                <ShieldAlert className="h-3.5 w-3.5 shrink-0" />
-                <span>{pr.criticalFindings} critical secret{pr.criticalFindings > 1 ? "s" : ""}</span>
-              </p>
-            )}
-            {pr.highFindings > 0 && (
-              <p className="text-xs font-semibold text-amber-600 dark:text-amber-400">
-                {pr.highFindings} high
-              </p>
-            )}
-            {pr.totalFindings === 0 && pr.checkRunStatus === "success" && (
+            {activeFindingsCount === 0 && pr.checkRunStatus !== "failure" && pr.checkRunStatus !== "in_progress" && (
               <div className="flex flex-col items-end">
                 {isResolvedInHead ? (
                   <>
@@ -254,7 +253,7 @@ export function PullRequestRow({
                   </>
                 ) : (
                   <>
-                    <p className="text-xs font-medium text-emerald-600 dark:text-emerald-400 flex items-center gap-1 justify-end">
+                    <p className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1 justify-end">
                       <ShieldCheck className="h-3.5 w-3.5 shrink-0" />
                       <span>Clean</span>
                     </p>
@@ -271,7 +270,7 @@ export function PullRequestRow({
                 <span>Scanning PR…</span>
               </p>
             )}
-            {pr.checkRunStatus === "failure" && (
+            {pr.state === "open" && pr.checkRunStatus === "failure" && (
               <p className="text-xs text-rose-600 dark:text-rose-400 flex items-center gap-1 justify-end font-semibold">
                 <ShieldAlert className="h-3.5 w-3.5 shrink-0" />
                 <span>Merge Blocked</span>
@@ -280,63 +279,37 @@ export function PullRequestRow({
           </div>
 
           <div className="flex items-center gap-1.5">
-            {/* View Findings Direct Link */}
-            {(activeFindingsCount > 0 || historicalFindings.length > 0) && (
+            {/* Direct Link to Findings Page for this PR */}
+            {activeFindingsCount > 0 ? (
               <Link
                 href={findingsHref}
-                className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold rounded-xl border border-rose-200 dark:border-rose-900/60 bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 hover:bg-rose-100 dark:hover:bg-rose-900/60 shadow-xs transition-colors shrink-0"
-                title={`View all findings for PR #${pr.number} on the Findings page`}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-xl border border-rose-200/80 dark:border-rose-900/60 bg-transparent text-rose-600 dark:text-rose-400 hover:bg-rose-50/50 dark:hover:bg-rose-950/30 shadow-xs transition-colors shrink-0"
+                title={`View ${activeFindingsCount} findings for PR #${pr.number} on the Findings page`}
               >
                 <KeyRound className="h-3.5 w-3.5 text-rose-600 dark:text-rose-400 shrink-0" />
-                <span className="hidden sm:inline">View Findings</span>
-                <span className="sm:hidden">Findings</span>
+                <span>{activeFindingsCount} Finding{activeFindingsCount > 1 ? "s" : ""}</span>
                 <ExternalLink className="h-3 w-3 opacity-60 shrink-0" />
               </Link>
-            )}
-
-            {/* Scan PR Button (only for open PRs) */}
-            {pr.state === "open" && (
-              <button
-                type="button"
-                onClick={() => void onScan(pr)}
-                disabled={isScanning || pr.checkRunStatus === "in_progress"}
-                title="Trigger on-demand security scan for this pull request"
-                className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-slate-700 dark:text-zinc-300 hover:bg-slate-50 dark:hover:bg-zinc-800 hover:text-slate-900 dark:hover:text-white shadow-xs transition-all disabled:opacity-50"
+            ) : isResolvedInHead || historicalFindings.length > 0 ? (
+              <Link
+                href={findingsHref}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-xl border border-emerald-200/80 dark:border-emerald-900/60 bg-transparent text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50/50 dark:hover:bg-emerald-900/40 shadow-xs transition-colors shrink-0"
+                title={`View resolved secrets for PR #${pr.number} on the Findings page`}
               >
-                {isScanning ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin text-blue-600 dark:text-blue-400" />
-                ) : (
-                  <Play className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
-                )}
-                <span className="hidden sm:inline">Scan</span>
-              </button>
-            )}
+                <ShieldCheck className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                <span>{historicalFindings.length > 0 ? `${historicalFindings.length} Solved` : "Solved"}</span>
+                <ExternalLink className="h-3 w-3 opacity-60 shrink-0" />
+              </Link>
+            ) : null}
 
-            {/* Details / Findings Toggle Button */}
+            {/* Toggle Commits & Scan History Drawer */}
             <button
               type="button"
               onClick={handleToggleExpand}
-              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-xl border transition-colors shadow-xs ${
-                activeFindingsCount > 0
-                  ? "border-rose-200 dark:border-rose-900/60 bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 hover:bg-rose-100"
-                  : isResolvedInHead
-                  ? "border-emerald-200 dark:border-emerald-900/60 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100"
-                  : "border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-slate-700 dark:text-zinc-300 hover:bg-slate-50 dark:hover:bg-zinc-800"
-              }`}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-slate-700 dark:text-zinc-300 hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors shadow-xs"
+              title="Toggle PR commits and scan history"
             >
-              {activeFindingsCount > 0 ? (
-                <>
-                  <KeyRound className="h-3.5 w-3.5 shrink-0" />
-                  <span>{activeFindingsCount} Finding{activeFindingsCount > 1 ? "s" : ""}</span>
-                </>
-              ) : isResolvedInHead ? (
-                <>
-                  <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
-                  <span>{historicalFindings.length} Solved</span>
-                </>
-              ) : (
-                <span>Details</span>
-              )}
+              <span>Details</span>
               {expanded ? <ChevronUp className="h-3.5 w-3.5 ml-0.5" /> : <ChevronDown className="h-3.5 w-3.5 ml-0.5" />}
             </button>
           </div>
@@ -346,9 +319,51 @@ export function PullRequestRow({
       {/* Expandable Commits & Scan Runs Drawer */}
       {expanded && (
         <div className="mt-4 pt-4 border-t border-slate-200 dark:border-zinc-800 bg-slate-50/60 dark:bg-zinc-900/40 rounded-xl border border-slate-200 dark:border-zinc-800 p-4 sm:p-5 space-y-4">
+          {/* PR Findings Summary Card (Deep-links to Findings Page) */}
+          {(activeFindingsCount > 0 || historicalFindings.length > 0) && (
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-3.5 rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-2xs">
+              <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                <div
+                  className={`p-2 rounded-lg shrink-0 ${
+                    activeFindingsCount > 0
+                      ? "bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300"
+                      : "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
+                  }`}
+                >
+                  {activeFindingsCount > 0 ? (
+                    <KeyRound className="h-4 w-4" />
+                  ) : (
+                    <ShieldCheck className="h-4 w-4" />
+                  )}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-semibold text-slate-900 dark:text-zinc-100">
+                    {activeFindingsCount > 0
+                      ? `${activeFindingsCount} Security Finding${activeFindingsCount > 1 ? "s" : ""} Detected by GitHub App`
+                      : `${historicalFindings.length} Secret${historicalFindings.length > 1 ? "s" : ""} Solved in Latest Commit`}
+                  </p>
+                  <p className="text-[11px] text-slate-500 dark:text-zinc-400">
+                    {activeFindingsCount > 0
+                      ? "Secrets found in changed files. View line numbers, rule details and remediation guidance on the Findings page."
+                      : "Previous secrets on this branch have been removed in subsequent commits and verified clean."}
+                  </p>
+                </div>
+              </div>
+
+              <Link
+                href={findingsHref}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800 shrink-0 transition-colors shadow-2xs"
+              >
+                <KeyRound className="h-3.5 w-3.5" />
+                <span>View Findings Page</span>
+                <ExternalLink className="h-3 w-3 opacity-60" />
+              </Link>
+            </div>
+          )}
+
           {/* Sub Navigation Tabs */}
           <div className="flex items-center justify-between border-b border-slate-200 dark:border-zinc-800 pb-2.5 flex-wrap gap-2">
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1.5 flex-wrap">
               <button
                 type="button"
                 onClick={() => setActiveTab("commits")}
@@ -384,17 +399,6 @@ export function PullRequestRow({
             </div>
 
             <div className="flex items-center gap-2.5">
-              {(activeFindingsCount > 0 || historicalFindings.length > 0) && (
-                <Link
-                  href={findingsHref}
-                  className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-lg text-rose-700 dark:text-rose-300 hover:bg-rose-100/60 dark:hover:bg-rose-950/60 transition-colors"
-                >
-                  <KeyRound className="h-3.5 w-3.5" />
-                  <span>View Findings Page</span>
-                  <ExternalLink className="h-3 w-3 opacity-60" />
-                </Link>
-              )}
-
               {onRefreshCommits && (
                 <button
                   type="button"
@@ -417,10 +421,10 @@ export function PullRequestRow({
           {/* TAB 1: COMMITS LIST */}
           {activeTab === "commits" && (
             <div className="space-y-3">
-              {isCommitsLoading && commits.length === 0 ? (
+              {isCommitsLoading && commits.length <= 1 ? (
                 <div className="py-8 text-center text-slate-500 dark:text-zinc-400 text-xs flex flex-col items-center justify-center gap-2">
                   <Loader2 className="h-5 w-5 animate-spin text-blue-600 dark:text-blue-400" />
-                  <span className="text-xs text-slate-500 dark:text-zinc-400">Loading pull request commits...</span>
+                  <span className="text-xs text-slate-500 dark:text-zinc-400">Loading commit history from GitHub...</span>
                 </div>
               ) : commits.length === 0 ? (
                 <div className="p-4 text-center rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-xs text-slate-500 dark:text-zinc-400 flex items-center justify-center gap-2">
@@ -510,7 +514,7 @@ export function PullRequestRow({
                                 <span>Clean (Prior secrets resolved)</span>
                               </span>
                             ) : (
-                              <span className="text-xs text-slate-400 dark:text-zinc-500">
+                              <span className="text-xs font-medium text-emerald-600 dark:text-emerald-400">
                                 Clean
                               </span>
                             )}
@@ -592,7 +596,7 @@ export function PullRequestRow({
                         {run.findings.length > 0 && (
                           <Link
                             href={`/findings?repo=${encodeURIComponent(pr.repository)}&pr=${pr.number}`}
-                            className="inline-flex items-center gap-1 text-xs font-semibold text-rose-700 dark:text-rose-300 hover:underline bg-rose-50 dark:bg-rose-950/40 px-2.5 py-1 rounded-lg border border-rose-200 dark:border-rose-900/50 shrink-0"
+                            className="inline-flex items-center gap-1 text-xs font-semibold text-rose-600 dark:text-rose-400 hover:underline bg-transparent px-2.5 py-1 rounded-lg border border-rose-200 dark:border-rose-900/50 shrink-0"
                             title={`View all ${run.findings.length} findings for PR #${pr.number} on the Findings page`}
                           >
                             <KeyRound className="h-3.5 w-3.5 text-rose-600 dark:text-rose-400 shrink-0" />

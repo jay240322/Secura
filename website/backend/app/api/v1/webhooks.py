@@ -483,14 +483,20 @@ async def github_webhook(
                         scan.scan_result = "failed" if is_fail else ("passed" if is_succ else scan.scan_result)
                         if is_fail:
                             scan.score = 0
-                        elif is_succ and scan.scan_result != "failed":
+                        elif is_succ:
                             scan.score = 100
+                            scan.total_findings = 0
+                            scan.critical_count = 0
+                            scan.high_count = 0
                     if parsed_findings:
                         scan.total_findings = len(parsed_findings)
                         scan.critical_count = sum(1 for f in parsed_findings if f.get("severity") == "CRITICAL")
                         scan.high_count = sum(1 for f in parsed_findings if f.get("severity") == "HIGH")
                         from app.services.scan_runner import _reconcile_pr_findings_in_db
                         _reconcile_pr_findings_in_db(db, repo.id, scan.id, pr_num or scan.pull_number or 1, parsed_findings)
+                    elif is_succ:
+                        from app.services.scan_runner import _reconcile_pr_findings_in_db
+                        _reconcile_pr_findings_in_db(db, repo.id, scan.id, pr_num or scan.pull_number or 1, [])
                     db.commit()
 
                 return {"status": "recorded", "event": x_github_event, "commit": head_sha}

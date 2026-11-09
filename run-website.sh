@@ -42,7 +42,7 @@ if [[ ! -d "node_modules/firebase" ]]; then
     echo "📦 Ensuring frontend dependencies (including firebase) are installed..."
     npm install firebase --ignore-scripts --no-audit --no-fund || true
 fi
-npm run dev &
+npm run dev:frontend-only &
 FRONTEND_PID=$!
 
 echo ""

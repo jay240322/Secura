@@ -3,7 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev -H 0.0.0.0 -p 3000",
+    "dev": "node scripts/start-dev.js",
+    "dev:frontend-only": "next dev -H 0.0.0.0 -p 3000",
     "dev:https": "next dev --experimental-https -H 0.0.0.0 -p 3000",
     "dev:http": "next dev -H 0.0.0.0 -p 3000",
     "build": "next build",

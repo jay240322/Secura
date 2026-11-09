@@ -503,6 +503,7 @@ export function ContextGraphSection() {
                       <button
                         key={step.id}
                         type="button"
+                        suppressHydrationWarning
                         onClick={() => handleSelectStep(idx)}
                         className={`text-left text-base sm:text-lg transition-colors duration-200 cursor-pointer block font-medium group w-full ${
                           isActive
