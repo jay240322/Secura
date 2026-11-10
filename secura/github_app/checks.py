@@ -139,8 +139,8 @@ def build_check_output(
 
 
 def _prepare_completed_check_output(
-    findings: list[Finding] | None,
-    result: ScanResult | None,
+    findings: list[dict] | None,
+    result: dict | None,
     conclusion: str | None,
     title: str | None,
     summary: str | None,
