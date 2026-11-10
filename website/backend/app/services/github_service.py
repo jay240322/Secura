@@ -52,29 +52,34 @@ def create_app_jwt() -> str:
     if not app_id:
         raise RuntimeError("GITHUB_APP_ID is not configured")
 
-    pem_location = os.environ.get("GITHUB_PRIVATE_KEY_PATH")
-    if not pem_location:
-        try:
-            pem_location = getattr(settings, "GITHUB_PRIVATE_KEY_PATH", None)
-        except Exception:
-            pass
+    raw_key_env = os.environ.get("GITHUB_APP_PRIVATE_KEY") or os.environ.get("GITHUB_PRIVATE_KEY")
+    if raw_key_env:
+        private_key = raw_key_env.replace("\\n", "\n").strip()
+        key_file_path = "env:GITHUB_APP_PRIVATE_KEY"
+    else:
+        pem_location = os.environ.get("GITHUB_PRIVATE_KEY_PATH")
+        if not pem_location:
+            try:
+                pem_location = getattr(settings, "GITHUB_PRIVATE_KEY_PATH", None)
+            except Exception:
+                pass
 
-    key_file_path = Path(pem_location) if pem_location else Path(".secrets/github-app-private-key.pem")
-    if not key_file_path.is_file():
-        candidates = [
-            ROOT_DIR / ".secrets" / "github-app-private-key.pem",
-            Path(__file__).resolve().parent.parent.parent / ".secrets" / "github-app-private-key.pem",
-            Path.cwd() / ".secrets" / "github-app-private-key.pem",
-            Path("/home/jay/projects/Secura/.secrets/github-app-private-key.pem"),
-            Path(r"\\wsl.localhost\Ubuntu\home\jay\projects\Secura\.secrets\github-app-private-key.pem"),
-        ]
-        for c in candidates:
-            if c.is_file():
-                key_file_path = c
-                break
+        key_file_path = Path(pem_location) if pem_location else Path(".secrets/github-app-private-key.pem")
+        if not key_file_path.is_file():
+            candidates = [
+                ROOT_DIR / ".secrets" / "github-app-private-key.pem",
+                Path(__file__).resolve().parent.parent.parent / ".secrets" / "github-app-private-key.pem",
+                Path.cwd() / ".secrets" / "github-app-private-key.pem",
+                Path("/home/jay/projects/Secura/.secrets/github-app-private-key.pem"),
+                Path(r"\\wsl.localhost\Ubuntu\home\jay\projects\Secura\.secrets\github-app-private-key.pem"),
+            ]
+            for c in candidates:
+                if c.is_file():
+                    key_file_path = c
+                    break
 
-    with open(key_file_path, "r", encoding="utf-8") as f:
-        private_key = f.read()
+        with open(key_file_path, "r", encoding="utf-8") as f:
+            private_key = f.read()
 
     now = int(time.time())
     # PyJWT strictly requires 'iss' (Issuer) to be a string.
@@ -206,7 +211,8 @@ def trigger_check_run(
     try:
         token = create_installation_token(installation_id)
         if not details_url:
-            details_url = f"https://secura.app/findings?repo={owner}/{repo}&sha={head_sha}"
+            dashboard_base = os.environ.get("SECURA_DASHBOARD_URL", "https://secura-frontend.vercel.app").rstrip("/")
+            details_url = f"{dashboard_base}/findings?repo={owner}/{repo}&sha={head_sha}"
         return create_check_run(
             installation_token=token,
             owner=owner,
