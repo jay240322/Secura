@@ -6,10 +6,15 @@ const nextConfig: NextConfig = {
     ignoreBuildErrors: true,
   },
   async rewrites() {
+    const backendBase = (
+      process.env.BACKEND_INTERNAL_URL ||
+      process.env.NEXT_PUBLIC_API_URL?.replace(/\/api\/?$/, "") ||
+      "http://127.0.0.1:8000"
+    ).replace(/\/$/, "");
     return [
       {
         source: "/api/:path*",
-        destination: `${process.env.BACKEND_INTERNAL_URL || "http://127.0.0.1:8000"}/api/:path*`,
+        destination: `${backendBase}/api/:path*`,
       },
     ];
   },
