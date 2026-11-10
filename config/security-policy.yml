@@ -4,4 +4,4 @@ policy:
   max_medium: 5
   max_low: 10
 
-  minimum_score: 60
+  minimum_score: 80
