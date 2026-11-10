@@ -36,7 +36,6 @@ def _load_app():
                     "error": "Backend failed to initialize",
                     "type": err_type,
                     "detail": err_detail,
-                    "trace": tb.splitlines()[-5:],
                 },
             )
 
