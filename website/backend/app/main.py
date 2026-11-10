@@ -25,8 +25,8 @@ logger = logging.getLogger("secura.backend")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: Ensure database schema is created
-    if not os.environ.get("TESTING"):
+    # Startup: Ensure database schema is created (skip heavy full-table sweeps on serverless)
+    if not os.environ.get("TESTING") and not os.environ.get("VERCEL"):
         logger.info("Initializing Secura database tables...")
         try:
             Base.metadata.create_all(bind=engine)
