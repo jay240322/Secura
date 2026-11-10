@@ -14,7 +14,9 @@ Base = declarative_base()
 def get_engine():
     db_url = settings.DATABASE_URL
     if db_url.startswith("postgres://"):
-        db_url = db_url.replace("postgres://", "postgresql://", 1)
+        db_url = db_url.replace("postgres://", "postgresql+psycopg2://", 1)
+    elif db_url.startswith("postgresql://"):
+        db_url = db_url.replace("postgresql://", "postgresql+psycopg2://", 1)
 
     clean_db_url = db_url.replace("&channel_binding=require", "").replace("?channel_binding=require", "")
     is_serverless = bool(os.getenv("VERCEL") or os.getenv("AWS_LAMBDA_FUNCTION_NAME"))
