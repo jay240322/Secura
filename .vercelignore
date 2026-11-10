@@ -1,0 +1,13 @@
+.venv
+.git
+.secrets
+tests
+*.db
+*.db-shm
+*.db-wal
+*.log
+website/frontend/node_modules
+website/frontend/.next
+__pycache__
+*.pyc
+

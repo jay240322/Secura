@@ -2,6 +2,7 @@ import logging
 import os
 from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import declarative_base, sessionmaker
+from sqlalchemy.pool import NullPool
 
 from app.core.config import settings, BASE_DIR
 
@@ -16,12 +17,19 @@ def get_engine():
         db_url = db_url.replace("postgres://", "postgresql://", 1)
 
     clean_db_url = db_url.replace("&channel_binding=require", "").replace("?channel_binding=require", "")
+    is_serverless = bool(os.getenv("VERCEL") or os.getenv("AWS_LAMBDA_FUNCTION_NAME"))
 
     if clean_db_url.startswith("postgresql"):
         logger.info("Connecting to PostgreSQL database...")
-        connect_args = {"connect_timeout": 30}
+        connect_args = {"connect_timeout": 15}
         if "sslmode=" not in clean_db_url and "localhost" not in clean_db_url and "127.0.0.1" not in clean_db_url:
             connect_args["sslmode"] = "require"
+        if is_serverless:
+            return create_engine(
+                clean_db_url,
+                poolclass=NullPool,
+                connect_args=connect_args,
+            )
         return create_engine(
             clean_db_url,
             pool_pre_ping=True,
@@ -31,6 +39,8 @@ def get_engine():
             connect_args=connect_args,
         )
     else:
+        if is_serverless and clean_db_url.startswith("sqlite:///") and not clean_db_url.startswith("sqlite:////tmp"):
+            clean_db_url = "sqlite:////tmp/secura.db"
         logger.info("Using SQLite database: %s", clean_db_url)
         eng = create_engine(
             clean_db_url,
