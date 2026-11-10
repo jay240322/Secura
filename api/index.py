@@ -20,6 +20,8 @@ def _load_app():
         from fastapi import FastAPI
         from fastapi.responses import JSONResponse
 
+        err_type = type(exc).__name__
+        err_detail = str(exc)
         tb = traceback.format_exc()
         logging.error("Failed to import app.main: %s\n%s", exc, tb)
         print(f"STARTUP_IMPORT_ERROR: {exc}\n{tb}", file=sys.stderr, flush=True)
@@ -32,8 +34,9 @@ def _load_app():
                 status_code=500,
                 content={
                     "error": "Backend failed to initialize",
-                    "type": type(exc).__name__,
-                    "detail": str(exc),
+                    "type": err_type,
+                    "detail": err_detail,
+                    "trace": tb.splitlines()[-5:],
                 },
             )
 
