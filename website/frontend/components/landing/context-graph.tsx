@@ -328,7 +328,7 @@ export function ContextGraphSection() {
       const height = canvas.height;
       const cx = 0; // Flush with the left orange divider line
       const cy = 210;
-      const domeRadius = 178;
+      const domeRadius = 190;
 
       ctx.clearRect(0, 0, width, height);
 
@@ -578,46 +578,46 @@ export function ContextGraphSection() {
                         <path d="M 0 1 L 8 5 L 0 9 z" fill="#FF5500" />
                       </marker>
 
-                      {/* Progressive reveal masks for the two green dotted borders */}
+                      {/* Progressive reveal masks for upper & bottom green dotted segments along r=195 */}
                       <mask id="mask-upper-green-arc" maskUnits="userSpaceOnUse" x="-15" y="0" width="230" height="420">
                         <path
-                          d="M 0 14 A 196 196 0 0 1 0 406"
+                          d="M 0 15 A 195 195 0 0 1 138 72"
                           fill="none"
                           stroke="#ffffff"
-                          strokeWidth="10"
-                          strokeDasharray="620"
-                          strokeDashoffset={activeStepIdx >= 1 ? 0 : 620}
+                          strokeWidth="12"
+                          strokeDasharray="165"
+                          strokeDashoffset={activeStepIdx >= 1 ? 0 : 165}
                           style={{
-                            transition: "stroke-dashoffset 0.7s cubic-bezier(0.22, 1, 0.36, 1)",
+                            transition: "stroke-dashoffset 0.65s cubic-bezier(0.22, 1, 0.36, 1)",
                           }}
                         />
                       </mask>
 
                       <mask id="mask-bottom-green-arc" maskUnits="userSpaceOnUse" x="-15" y="0" width="230" height="420">
                         <path
-                          d="M 0 30 A 180 180 0 0 1 0 390"
+                          d="M 0 405 A 195 195 0 0 0 138 348"
                           fill="none"
                           stroke="#ffffff"
-                          strokeWidth="10"
-                          strokeDasharray="570"
-                          strokeDashoffset={activeStepIdx >= 2 ? 0 : 570}
+                          strokeWidth="12"
+                          strokeDasharray="165"
+                          strokeDashoffset={activeStepIdx >= 2 ? 0 : 165}
                           style={{
-                            transition: "stroke-dashoffset 0.7s cubic-bezier(0.22, 1, 0.36, 1)",
+                            transition: "stroke-dashoffset 0.65s cubic-bezier(0.22, 1, 0.36, 1)",
                           }}
                         />
                       </mask>
                     </defs>
 
-                    {/* Semicircle / Half-Cut Round Shape (Flush against x=0, no default border) */}
+                    {/* Semicircle / Half-Cut Round Shape (Flush against x=0, no default border on step 1) */}
                     <path
-                      d="M 0 32 A 178 178 0 0 1 0 388 Z"
+                      d="M 0 20 A 190 190 0 0 1 0 400 Z"
                       className="fill-slate-100/10 dark:fill-white/[0.03]"
                       stroke="none"
                     />
 
-                    {/* Step 2+ (Shannon Entropy): Upper / Outer Green Dotted Line (r=196) */}
+                    {/* Step 2+ (Shannon Entropy): Upper Green Dotted Arc appearing from the top side (r=195) */}
                     <path
-                      d="M 0 14 A 196 196 0 0 1 0 406"
+                      d="M 0 15 A 195 195 0 0 1 138 72"
                       fill="none"
                       stroke="#10B981"
                       strokeWidth="2.2"
@@ -627,47 +627,48 @@ export function ContextGraphSection() {
                       mask="url(#mask-upper-green-arc)"
                       style={{
                         opacity: activeStepIdx >= 1 ? 0.92 : 0,
-                        transition: "opacity 0.35s ease",
+                        transition: "opacity 0.3s ease",
                       }}
                     />
 
-                    {/* Step 4 (Automated Merge Gate): Middle Solid Orange Line between the two green dotted lines (r=188) */}
+                    {/* Step 3+ (System Guidelines): Bottom Green Dotted Arc on the same r=195 line appearing from the bottom side */}
                     <path
-                      d="M 0 22 A 188 188 0 0 1 0 398"
-                      fill="none"
-                      stroke="#FF5500"
-                      strokeWidth="3"
-                      strokeLinecap="round"
-                      filter="url(#orange-glow)"
-                      strokeDasharray="592"
-                      strokeDashoffset={activeStepIdx >= 3 ? 0 : 592}
-                      style={{
-                        opacity: activeStepIdx >= 3 ? 1 : 0,
-                        transition:
-                          "stroke-dashoffset 0.75s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.35s ease",
-                      }}
-                    />
-
-                    {/* Step 3+ (System Guidelines): Bottom / Inner Green Dotted Line (r=180) */}
-                    <path
-                      d="M 0 30 A 180 180 0 0 1 0 390"
+                      d="M 0 405 A 195 195 0 0 0 138 348"
                       fill="none"
                       stroke="#10B981"
                       strokeWidth="2.2"
                       strokeLinecap="round"
                       strokeDasharray="2 7"
-                      strokeDashoffset={scrollProgress * 240}
+                      strokeDashoffset={-scrollProgress * 240}
                       mask="url(#mask-bottom-green-arc)"
                       style={{
                         opacity: activeStepIdx >= 2 ? 0.92 : 0,
-                        transition: "opacity 0.35s ease",
+                        transition: "opacity 0.3s ease",
+                      }}
+                    />
+
+                    {/* Step 4 (Automated Merge Gate): Middle Solid Glowing Orange Arc between the two green dotted arcs (r=195) */}
+                    <path
+                      d="M 138 72 A 195 195 0 0 1 138 348"
+                      fill="none"
+                      stroke="#FF5500"
+                      strokeWidth="3.2"
+                      strokeLinecap="round"
+                      filter="url(#orange-glow)"
+                      className="drop-shadow-sm"
+                      strokeDasharray="315"
+                      strokeDashoffset={activeStepIdx >= 3 ? 0 : 315}
+                      style={{
+                        opacity: activeStepIdx >= 3 ? 1 : 0,
+                        transition:
+                          "stroke-dashoffset 0.7s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.3s ease",
                       }}
                     />
 
                     {/* Orange Laser Pointer Beam (Animated firing when stage activates) */}
                     <line
                       key={`laser-${animKey}`}
-                      x1="196"
+                      x1="195"
                       y1="210"
                       x2="480"
                       y2="210"
