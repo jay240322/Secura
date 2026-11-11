@@ -37,10 +37,19 @@ export default function InsightsPage() {
 
   useEffect(() => {
     let mounted = true;
+    const cached = api.getCachedInsights();
+    if (cached && cached.isLive) {
+      setSecurityScore(cached.securityScore);
+      setFindingsOverTime(cached.findingsOverTime);
+      setFindingsBySeverity(cached.findingsBySeverity);
+      setFindingsByRepository(cached.findingsByRepo);
+      setTopFindingTypes(cached.topFindingTypes);
+    }
+
     async function load() {
       try {
         const res = await api.getInsights();
-        if (mounted) {
+        if (mounted && res.isLive) {
           setSecurityScore(res.securityScore);
           setFindingsOverTime(res.findingsOverTime);
           setFindingsBySeverity(res.findingsBySeverity);

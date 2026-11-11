@@ -23,8 +23,6 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useState, useMemo, useEffect, Suspense } from "react";
 
-export const dynamic = "force-dynamic";
-
 const SEVERITY_OPTIONS: Severity[] = ["CRITICAL", "HIGH", "MEDIUM", "LOW"];
 const STATUS_OPTIONS: FindingStatus[] = ["open", "resolved", "ignored"];
 
@@ -62,21 +60,31 @@ function FindingsContent() {
 
   useEffect(() => {
     let mounted = true;
+    const cleanApiRepo =
+      repoFilter &&
+      repoFilter.toLowerCase() !== "all" &&
+      repoFilter.toLowerCase() !== "repository" &&
+      repoFilter.toLowerCase() !== "unknown"
+        ? cleanRepoDisplay(repoFilter)
+        : undefined;
+
+    const queryParams = {
+      repoName: cleanApiRepo,
+      pullNumber: prFilter !== null ? prFilter : undefined,
+      status: statusFilter || undefined,
+    };
+
+    // Hydrate immediately from SWR cache for instant navigation
+    const cached = api.getCachedFindings(queryParams);
+    if (cached && cached.isLive) {
+      setFindings(cached.findings);
+      setIsLive(true);
+      setLoading(false);
+    }
+
     async function fetchFindings() {
       try {
-        const cleanApiRepo =
-          repoFilter &&
-          repoFilter.toLowerCase() !== "all" &&
-          repoFilter.toLowerCase() !== "repository" &&
-          repoFilter.toLowerCase() !== "unknown"
-            ? cleanRepoDisplay(repoFilter)
-            : undefined;
-
-        const res = await api.getFindings({
-          repoName: cleanApiRepo,
-          pullNumber: prFilter !== null ? prFilter : undefined,
-          status: statusFilter || undefined,
-        });
+        const res = await api.getFindings(queryParams);
         if (mounted) {
           setFindings(res.findings);
           setIsLive(res.isLive);
@@ -89,10 +97,12 @@ function FindingsContent() {
     }
     void fetchFindings();
 
-    // Live polling every 6 seconds for new findings detected on pull requests
+    // Background refresh every 25s (only while tab is visible)
     const interval = setInterval(() => {
-      void fetchFindings();
-    }, 6000);
+      if (typeof document === "undefined" || !document.hidden) {
+        void fetchFindings();
+      }
+    }, 25000);
 
     return () => {
       mounted = false;

@@ -2,7 +2,6 @@ import logging
 import os
 from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import declarative_base, sessionmaker
-from sqlalchemy.pool import NullPool
 
 from app.core.config import settings, BASE_DIR
 
@@ -29,7 +28,10 @@ def get_engine():
         if is_serverless:
             return create_engine(
                 clean_db_url,
-                poolclass=NullPool,
+                pool_pre_ping=True,
+                pool_recycle=60,
+                pool_size=3,
+                max_overflow=5,
                 connect_args=connect_args,
             )
         return create_engine(
@@ -140,7 +142,8 @@ def ensure_db_schema(target_engine):
 
 
 engine = get_engine()
-ensure_db_schema(engine)
+if not (os.getenv("VERCEL") or os.getenv("AWS_LAMBDA_FUNCTION_NAME") or os.getenv("TESTING")):
+    ensure_db_schema(engine)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 

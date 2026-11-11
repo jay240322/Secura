@@ -116,6 +116,7 @@ export function TopNav() {
     if (stored) {
       setCurrentUser(stored);
     }
+    // getMe() deduplicates and caches for 2 minutes so route switches don't spam /auth/me
     void api
       .getMe()
       .then((user) => {
@@ -126,7 +127,7 @@ export function TopNav() {
         }
       })
       .catch(() => {});
-  }, [pathname]);
+  }, []);
 
   // Helper to extract authentic display name (only username, never email or noreply addresses)
   function getCleanDisplayName(user: UserType | null): string {

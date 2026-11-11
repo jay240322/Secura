@@ -103,7 +103,7 @@ function RepoCard({
         <div className="mb-3">
           <Link
             href={`/repositories/${repo.id}`}
-            onMouseEnter={() => void api.getRepositoryOverview(repo.id)}
+            onMouseEnter={() => void api.prefetchRepositoryOverview(repo.id)}
             className="text-base font-bold text-slate-900 dark:text-zinc-100 group-hover:text-[#281C59] dark:group-hover:text-blue-400 transition-colors truncate block mt-0.5 tracking-tight"
             title={repo.fullName}
           >
@@ -131,7 +131,7 @@ function RepoCard({
       <div className="pt-3 border-t border-slate-100 dark:border-zinc-800/80">
         <Link
           href={`/repositories/${repo.id}`}
-          onMouseEnter={() => void api.getRepositoryOverview(repo.id)}
+          onMouseEnter={() => void api.prefetchRepositoryOverview(repo.id)}
           className="w-full flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 py-2 text-xs font-semibold text-slate-800 dark:text-zinc-200 hover:bg-slate-50 dark:hover:bg-zinc-800 hover:text-slate-950 dark:hover:text-zinc-50 transition-all shadow-xs"
           title="Open repository details, pull requests, and findings"
         >
@@ -258,6 +258,7 @@ function RepositoriesContent() {
 
   useEffect(() => {
     let mounted = true;
+    let lastLoadedAt = 0;
     const isInstalled = searchParams.get("installed") === "true";
     const instId = searchParams.get("installation_id");
     const setupAction = searchParams.get("setup_action");
@@ -266,19 +267,27 @@ function RepositoriesContent() {
       setInstalledBanner(true);
     }
 
-    async function loadRepos(isInitial = false) {
+    // Hydrate immediately from cache for instant rendering on navigation
+    const cachedRepos = api.getCachedRepositories();
+    if (cachedRepos && cachedRepos.isLive) {
+      setRepos(cachedRepos.repositories);
+      setIsLive(true);
+      setLoading(false);
+    }
+
+    async function loadRepos() {
       try {
         const user = api.getStoredUser();
         if (user) setCurrentUser(user);
 
-        // Fetch DB repositories immediately (ultra fast from Neon)
         const res = await api.getRepositories();
         if (mounted && res.repositories) {
           setRepos(res.repositories);
           setIsLive(res.isLive);
+          lastLoadedAt = Date.now();
         }
 
-        // If user just installed or requested sync, trigger background sync
+        // If user just installed GitHub App, trigger background sync
         if (isInstalled || instId || setupAction) {
           void api.syncRepositories().then((syncRes) => {
             if (mounted && syncRes.success && syncRes.repositories.length > 0) {
@@ -294,16 +303,20 @@ function RepositoriesContent() {
         if (mounted) setLoading(false);
       }
     }
-    void loadRepos(true);
+    void loadRepos();
 
-    // Auto-poll every 5 seconds to keep repository status updated
+    // Background refresh every 30s (only while tab is visible)
     const interval = setInterval(() => {
-      void loadRepos(false);
-    }, 5000);
+      if (typeof document === "undefined" || !document.hidden) {
+        void loadRepos();
+      }
+    }, 30000);
 
-    // When returning to this browser tab (e.g. after adding repos on GitHub), auto-sync instantly!
+    // Refresh on tab focus if stale (>15s)
     const onWindowFocus = () => {
-      void loadRepos(true);
+      if (Date.now() - lastLoadedAt > 15000) {
+        void loadRepos();
+      }
     };
     window.addEventListener("focus", onWindowFocus);
 

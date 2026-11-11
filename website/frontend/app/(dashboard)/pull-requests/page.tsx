@@ -67,7 +67,13 @@ export default function PullRequestsPage() {
 
   const handleRepoChange = (newRepoId: string) => {
     setSelectedRepoId(newRepoId);
-    setLoading(true);
+    const cached = api.getCachedPullRequests(newRepoId === "all" ? undefined : newRepoId);
+    if (cached && cached.isLive) {
+      setPullRequests(cached.pullRequests);
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
     if (typeof window !== "undefined") {
       const url = new URL(window.location.href);
       if (newRepoId === "all") {
@@ -77,7 +83,6 @@ export default function PullRequestsPage() {
       }
       window.history.replaceState({}, "", url.toString());
     }
-    void loadData(newRepoId);
   };
 
   const loadData = async (repoId?: string) => {
@@ -126,25 +131,27 @@ export default function PullRequestsPage() {
     }
   }, [repos, selectedRepoId]);
 
-  // 3. React to selectedRepoId change: load data, trigger sync, and setup live auto-poll
+  // 3. React to selectedRepoId change: hydrate cache immediately, load DB data, and setup smart auto-poll
   useEffect(() => {
     let mounted = true;
+    const activeRepoId = selectedRepoId === "all" ? undefined : selectedRepoId;
+
+    // Instant SWR hydration so navigating to Pull Requests never blocks on a spinner if cached
+    const cachedPrs = api.getCachedPullRequests(activeRepoId);
+    const cachedRepos = api.getCachedRepositories();
+    if (cachedPrs && cachedPrs.isLive) {
+      setPullRequests(cachedPrs.pullRequests);
+      if (cachedRepos?.repositories) {
+        setRepos(cachedRepos.repositories);
+      }
+      setLoading(false);
+    }
 
     void loadData(selectedRepoId);
 
-    // Automatically sync pull requests from GitHub on selection
-    const syncTargetRepo = selectedRepoId === "all" ? undefined : selectedRepoId;
-    void api
-      .syncPullRequests(syncTargetRepo)
-      .then((res) => {
-        if (mounted && res.success && res.pullRequests.length > 0) {
-          setPullRequests(res.pullRequests);
-        }
-      })
-      .catch(() => { });
-
-    // Live auto-polling every 3 seconds for fast status updates (open, merged, closed)
+    // Background refresh every 20s (pauses when tab is hidden)
     const interval = setInterval(() => {
+      if (typeof document !== "undefined" && document.hidden) return;
       const repoId = selectedRepoId === "all" ? undefined : selectedRepoId;
       void api
         .getPullRequests(repoId)
@@ -168,7 +175,7 @@ export default function PullRequestsPage() {
           }
         })
         .catch(() => { });
-    }, 3000);
+    }, 20000);
 
     return () => {
       mounted = false;

@@ -1,9 +1,9 @@
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, defer, joinedload, selectinload
 from sqlalchemy import func, or_
 
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, get_user_scope_ids
 from app.core.database import get_db
 from app.models.repository import Repository
 from app.models.scan import Scan
@@ -45,15 +45,11 @@ def list_scans(
     current_user: User = Depends(get_current_user),
 ):
     """List historical scans with pagination."""
-    gh_handle = current_user.github_username.lower() if current_user.github_username else None
-    user_ids = [current_user.id]
-    if gh_handle:
-        for (uid,) in db.query(User.id).filter(func.lower(User.github_username) == gh_handle).all():
-            if uid not in user_ids:
-                user_ids.append(uid)
+    user_ids, gh_handle = get_user_scope_ids(db, current_user)
 
     query = (
         db.query(Scan)
+        .options(joinedload(Scan.repository), defer(Scan.pr_commits_json))
         .join(Repository)
         .filter(
             or_(
@@ -77,10 +73,18 @@ def get_scan(
     current_user: User = Depends(get_current_user),
 ):
     """Retrieve details and findings of a specific scan."""
+    user_ids, gh_handle = get_user_scope_ids(db, current_user)
     scan = (
         db.query(Scan)
+        .options(joinedload(Scan.repository), selectinload(Scan.findings), defer(Scan.pr_commits_json))
         .join(Repository)
-        .filter(Scan.id == scan_id, Repository.user_id == current_user.id)
+        .filter(
+            Scan.id == scan_id,
+            or_(
+                Repository.user_id.in_(user_ids),
+                (func.lower(Repository.owner) == gh_handle) if gh_handle else False,
+            ),
+        )
         .first()
     )
     if not scan:
