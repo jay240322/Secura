@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 import jwt
 import requests
+from requests.adapters import HTTPAdapter
 from sqlalchemy import func
 
 ROOT_DIR = Path(__file__).resolve().parent.parent.parent.parent.parent
@@ -28,8 +29,18 @@ from app.core.config import settings
 logger = logging.getLogger("secura.github_service")
 GITHUB_API_URL = "https://api.github.com"
 
+# Shared HTTP session with connection pooling to avoid repeated TLS handshakes to api.github.com
+_GH_SESSION = requests.Session()
+_GH_ADAPTER = HTTPAdapter(pool_connections=20, pool_maxsize=20)
+_GH_SESSION.mount("https://", _GH_ADAPTER)
+_GH_SESSION.mount("http://", _GH_ADAPTER)
+
+_APP_JWT_CACHE: Optional[Tuple[str, float]] = None
+
 
 def log_debug(msg: str):
+    if os.environ.get("VERCEL") or os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
+        return
     try:
         debug_file = Path("/home/jay/projects/Secura/sync_debug.log")
         if not debug_file.parent.exists():
@@ -42,7 +53,12 @@ def log_debug(msg: str):
 
 
 def create_app_jwt() -> str:
-    """Create a short-lived RS256 JWT for authenticating as the GitHub App."""
+    """Create a short-lived RS256 JWT for authenticating as the GitHub App (cached ~5 min)."""
+    global _APP_JWT_CACHE
+    now = int(time.time())
+    if _APP_JWT_CACHE and now < _APP_JWT_CACHE[1]:
+        return _APP_JWT_CACHE[0]
+
     app_id = os.environ.get("GITHUB_APP_ID")
     if not app_id:
         try:
@@ -81,7 +97,6 @@ def create_app_jwt() -> str:
         with open(key_file_path, "r", encoding="utf-8") as f:
             private_key = f.read()
 
-    now = int(time.time())
     # PyJWT strictly requires 'iss' (Issuer) to be a string.
     iss_val = str(app_id).strip()
 
@@ -94,6 +109,7 @@ def create_app_jwt() -> str:
 
     log_debug(f"Creating App JWT: iss={iss_val}, key_file={key_file_path}")
     encoded_jwt = jwt.encode(payload, private_key, algorithm="RS256")
+    _APP_JWT_CACHE = (encoded_jwt, now + 300)
     return encoded_jwt
 
 
@@ -113,7 +129,7 @@ def create_installation_token(installation_id: int) -> str:
     url = f"{GITHUB_API_URL}/app/installations/{installation_id}/access_tokens"
 
     log_debug(f"POST {url} to exchange App JWT for installation access token...")
-    response = requests.post(
+    response = _GH_SESSION.post(
         url,
         headers={
             "Authorization": f"Bearer {app_jwt}",
@@ -165,7 +181,7 @@ def get_installation_repositories(installation_id: int) -> List[Dict[str, Any]]:
         log_debug(f"Fetching repos for installation_id={installation_id}...")
         token = create_installation_token(installation_id)
         url = f"{GITHUB_API_URL}/installation/repositories"
-        response = requests.get(
+        response = _GH_SESSION.get(
             url,
             headers={
                 "Authorization": f"Bearer {token}",
@@ -291,7 +307,7 @@ def _get_github_auth_headers(
     if not token and cache_k not in _DISCOVERED_INST_CACHE:
         try:
             app_jwt = create_app_jwt()
-            inst_resp = requests.get(
+            inst_resp = _GH_SESSION.get(
                 f"{GITHUB_API_URL}/repos/{owner}/{repo}/installation",
                 headers={
                     "Authorization": f"Bearer {app_jwt}",
@@ -338,7 +354,7 @@ def get_repository_pull_requests(
 
     url = f"{GITHUB_API_URL}/repos/{owner}/{repo}/pulls"
     try:
-        response = requests.get(
+        response = _GH_SESSION.get(
             url,
             headers=headers,
             params={"state": state, "per_page": min(per_page, 100), "sort": "updated", "direction": "desc"},
@@ -353,7 +369,7 @@ def get_repository_pull_requests(
                 "X-GitHub-Api-Version": "2022-11-28",
                 "User-Agent": "Secura-Security-Scanner",
             }
-            fallback_resp = requests.get(
+            fallback_resp = _GH_SESSION.get(
                 url,
                 headers=fallback_headers,
                 params={"state": state, "per_page": min(per_page, 100), "sort": "updated", "direction": "desc"},
@@ -397,7 +413,7 @@ def get_single_pull_request(
     headers = _get_github_auth_headers(installation_id, owner, repo, user_token=user_token)
     url = f"{GITHUB_API_URL}/repos/{owner}/{repo}/pulls/{pull_number}"
     try:
-        response = requests.get(url, headers=headers, timeout=5)
+        response = _GH_SESSION.get(url, headers=headers, timeout=5)
         if response.ok:
             return response.json()
         if response.status_code in (401, 403) and "Authorization" in headers:
@@ -406,7 +422,7 @@ def get_single_pull_request(
                 "X-GitHub-Api-Version": "2022-11-28",
                 "User-Agent": "Secura-Security-Scanner",
             }
-            fallback_resp = requests.get(url, headers=fallback_headers, timeout=5)
+            fallback_resp = _GH_SESSION.get(url, headers=fallback_headers, timeout=5)
             if fallback_resp.ok:
                 return fallback_resp.json()
         return None
@@ -429,7 +445,7 @@ def get_pull_request_commits(
     headers = _get_github_auth_headers(installation_id, owner, repo, user_token=user_token)
     url = f"{GITHUB_API_URL}/repos/{owner}/{repo}/pulls/{pull_number}/commits"
     try:
-        response = requests.get(
+        response = _GH_SESSION.get(
             url,
             headers=headers,
             params={"per_page": 100},
@@ -444,7 +460,7 @@ def get_pull_request_commits(
                 "X-GitHub-Api-Version": "2022-11-28",
                 "User-Agent": "Secura-Security-Scanner",
             }
-            fallback_resp = requests.get(
+            fallback_resp = _GH_SESSION.get(
                 url,
                 headers=fallback_headers,
                 params={"per_page": 100},
@@ -540,7 +556,7 @@ def get_commit_check_runs(
     headers = _get_github_auth_headers(installation_id, owner, repo, user_token=user_token)
     url = f"{GITHUB_API_URL}/repos/{owner}/{repo}/commits/{commit_sha}/check-runs"
     try:
-        response = requests.get(url, headers=headers, params={"per_page": 50}, timeout=6)
+        response = _GH_SESSION.get(url, headers=headers, params={"per_page": 50}, timeout=6)
         if not response.ok:
             return []
         data = response.json()
@@ -554,7 +570,7 @@ def get_commit_check_runs(
             if run_id and (ann_count > 0 or cr.get("conclusion") == "failure"):
                 ann_url = f"{GITHUB_API_URL}/repos/{owner}/{repo}/check-runs/{run_id}/annotations"
                 try:
-                    ann_resp = requests.get(ann_url, headers=headers, params={"per_page": 100}, timeout=10)
+                    ann_resp = _GH_SESSION.get(ann_url, headers=headers, params={"per_page": 100}, timeout=10)
                     if ann_resp.ok:
                         for ann in ann_resp.json():
                             level = (ann.get("annotation_level") or "failure").lower()
@@ -684,7 +700,7 @@ def get_commit_check_runs(
 
 
 def _app_jwt_get(url: str, app_jwt: str, timeout: int = 10) -> Optional[requests.Response]:
-    return requests.get(
+    return _GH_SESSION.get(
         url,
         headers={
             "Authorization": f"Bearer {app_jwt}",
@@ -730,7 +746,7 @@ def fetch_github_repository_details(owner: str, repo: str, installation_id: Opti
 
     url = f"{GITHUB_API_URL}/repos/{owner}/{repo}"
     try:
-        response = requests.get(url, headers=headers, timeout=12)
+        response = _GH_SESSION.get(url, headers=headers, timeout=12)
         if response.ok:
             return response.json()
         return None
@@ -785,7 +801,7 @@ def add_repository_to_github_app_installation(
     if user_access_token:
         try:
             log_debug(f"PUT {url} with user OAuth token...")
-            response = requests.put(
+            response = _GH_SESSION.put(
                 url,
                 headers={
                     "Authorization": f"Bearer {user_access_token}",
@@ -811,7 +827,7 @@ def add_repository_to_github_app_installation(
         inst_token = create_installation_access_token(installation_id)
         if inst_token:
             log_debug(f"PUT {url} with installation token...")
-            response = requests.put(
+            response = _GH_SESSION.put(
                 url,
                 headers={
                     "Authorization": f"Bearer {inst_token}",
@@ -841,7 +857,7 @@ def get_app_installations() -> List[Dict[str, Any]]:
         app_jwt = create_app_jwt()
         url = f"{GITHUB_API_URL}/app/installations"
         log_debug(f"GET {url} with App JWT...")
-        response = requests.get(
+        response = _GH_SESSION.get(
             url,
             headers={
                 "Authorization": f"Bearer {app_jwt}",
@@ -931,7 +947,7 @@ def sync_github_app_repositories(db, user, force: bool = False) -> List[Any]:
     user_tok = getattr(user, "github_access_token", None)
     if user_tok:
         try:
-            resp = requests.get(
+            resp = _GH_SESSION.get(
                 f"{GITHUB_API_URL}/user/installations",
                 headers={
                     "Authorization": f"Bearer {user_tok}",
@@ -1180,7 +1196,7 @@ def get_user_available_github_repositories(user, db) -> List[Dict[str, Any]]:
     all_gh_repos = []
     if user_gh_auth:
         try:
-            resp = requests.get(
+            resp = _GH_SESSION.get(
                 f"{GITHUB_API_URL}/user/repos",
                 headers={
                     "Authorization": f"Bearer {user_gh_auth}",
@@ -1197,7 +1213,7 @@ def get_user_available_github_repositories(user, db) -> List[Dict[str, Any]]:
 
     if not all_gh_repos and target_username:
         try:
-            resp = requests.get(
+            resp = _GH_SESSION.get(
                 f"{GITHUB_API_URL}/users/{target_username}/repos",
                 headers={
                     "Accept": "application/vnd.github+json",

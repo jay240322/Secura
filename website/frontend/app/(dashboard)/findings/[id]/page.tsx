@@ -22,8 +22,6 @@ import {
 import Link from "next/link";
 import { useParams } from "next/navigation";
 
-export const dynamic = "force-dynamic";
-
 export default function FindingDetailPage() {
   return (
     <Suspense fallback={<div className="py-24 flex justify-center"><Loader size="md" /></div>}>
@@ -41,10 +39,16 @@ function FindingDetailContent() {
     let mounted = true;
     if (!params?.id) return;
 
+    const cached = api.getCachedFindingById(params.id);
+    if (cached) {
+      setFinding(cached);
+      setIsLoading(false);
+    }
+
     async function loadFinding() {
       try {
         const res = await api.getFindingById(params.id);
-        if (mounted) {
+        if (mounted && res.finding) {
           setFinding(res.finding);
         }
       } catch (e) {

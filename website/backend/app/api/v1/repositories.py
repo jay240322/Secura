@@ -3,9 +3,9 @@ import logging
 from typing import List, Optional
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy import func, or_
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, defer
 
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, get_user_scope_ids
 from app.core.database import get_db
 from app.models.finding import Finding
 from app.models.installation import GitHubInstallation
@@ -88,11 +88,7 @@ def _format_repo_response(
 
 def _get_user_repo_or_404(db: Session, current_user: User, repository_id: str) -> Repository:
     """Consistently lookup a user's repository by id/name/slug or raise 404."""
-    gh_user = current_user.github_username.lower() if current_user.github_username else None
-    user_ids = [current_user.id]
-    if gh_user:
-        same_users = db.query(User.id).filter(func.lower(User.github_username) == gh_user).all()
-        user_ids = list(set([u[0] for u in same_users] + [current_user.id]))
+    user_ids, gh_user = get_user_scope_ids(db, current_user)
 
     clean_id = repository_id.strip()
     repo = (
@@ -116,52 +112,8 @@ def _get_user_repo_or_404(db: Session, current_user: User, repository_id: str) -
 
 
 def enrich_repository_response(repo: Repository, db: Session) -> RepositoryResponse:
-    latest_scan = (
-        db.query(Scan)
-        .filter(Scan.repository_id == repo.id)
-        .order_by(Scan.created_at.desc())
-        .first()
-    )
-
-    open_findings = (
-        db.query(Finding)
-        .filter(Finding.repository_id == repo.id, Finding.status == "open")
-        .all()
-    )
-
-    critical_count = sum(1 for f in open_findings if f.severity == "CRITICAL")
-    high_count = sum(1 for f in open_findings if f.severity == "HIGH")
-    med_count = sum(1 for f in open_findings if f.severity == "MEDIUM")
-    low_count = sum(1 for f in open_findings if f.severity == "LOW")
-
-    fn = repo.full_name or repo.name or "repository"
-    owner = repo.owner or (fn.split("/")[0] if "/" in fn else "owner")
-
-    inst_id = None
-    if repo.installation and repo.installation.github_installation_id:
-        inst_id = repo.installation.github_installation_id
-    else:
-        inst = (
-            db.query(GitHubInstallation)
-            .filter(
-                (GitHubInstallation.user_id == repo.user_id)
-                | (func.lower(GitHubInstallation.account_name) == owner.lower())
-            )
-            .first()
-        )
-        if inst:
-            inst_id = inst.github_installation_id
-
-    return _format_repo_response(
-        repo=repo,
-        critical_count=critical_count,
-        high_count=high_count,
-        med_count=med_count,
-        low_count=low_count,
-        total_open=len(open_findings),
-        inst_id=inst_id,
-        latest_scan=latest_scan,
-    )
+    """Enrich a single repository using SQL aggregate counts."""
+    return enrich_repositories_batch([repo], db)[0]
 
 
 def enrich_repositories_batch(repos: List[Repository], db: Session) -> List[RepositoryResponse]:
@@ -170,16 +122,18 @@ def enrich_repositories_batch(repos: List[Repository], db: Session) -> List[Repo
         return []
 
     repo_ids = [r.id for r in repos]
+    inst_ids = list(set([r.installation_id for r in repos if r.installation_id]))
     user_ids = list(set([r.user_id for r in repos if r.user_id]))
     owners = list(set([r.owner.lower() for r in repos if r.owner]))
 
-    # 1. Fetch latest scan per repository
+    # 1. Fetch latest scan per repository (deferring heavy pr_commits_json)
     latest_scans_by_repo = {}
     is_pg = db.bind.dialect.name == "postgresql" if db.bind else True
     if is_pg:
         try:
             latest_scans = (
                 db.query(Scan)
+                .options(defer(Scan.pr_commits_json))
                 .distinct(Scan.repository_id)
                 .filter(Scan.repository_id.in_(repo_ids))
                 .order_by(Scan.repository_id, Scan.created_at.desc())
@@ -188,12 +142,24 @@ def enrich_repositories_batch(repos: List[Repository], db: Session) -> List[Repo
             for sc in latest_scans:
                 latest_scans_by_repo[sc.repository_id] = sc
         except Exception:
-            scans = db.query(Scan).filter(Scan.repository_id.in_(repo_ids)).order_by(Scan.created_at.desc()).all()
+            scans = (
+                db.query(Scan)
+                .options(defer(Scan.pr_commits_json))
+                .filter(Scan.repository_id.in_(repo_ids))
+                .order_by(Scan.created_at.desc())
+                .all()
+            )
             for sc in scans:
                 if sc.repository_id not in latest_scans_by_repo:
                     latest_scans_by_repo[sc.repository_id] = sc
     else:
-        scans = db.query(Scan).filter(Scan.repository_id.in_(repo_ids)).order_by(Scan.created_at.desc()).all()
+        scans = (
+            db.query(Scan)
+            .options(defer(Scan.pr_commits_json))
+            .filter(Scan.repository_id.in_(repo_ids))
+            .order_by(Scan.created_at.desc())
+            .all()
+        )
         for sc in scans:
             if sc.repository_id not in latest_scans_by_repo:
                 latest_scans_by_repo[sc.repository_id] = sc
@@ -216,17 +182,19 @@ def enrich_repositories_batch(repos: List[Repository], db: Session) -> List[Repo
         counts_by_repo[rid][sev] = cnt
         counts_by_repo[rid]["total"] += cnt
 
-    # 3. Fetch installations in ONE query
+    # 3. Fetch installations in ONE query (avoid lazy-loading repo.installation)
     insts = (
         db.query(GitHubInstallation)
         .filter(
             or_(
+                GitHubInstallation.id.in_(inst_ids) if inst_ids else False,
                 GitHubInstallation.user_id.in_(user_ids) if user_ids else False,
                 func.lower(GitHubInstallation.account_name).in_(owners) if owners else False,
             )
         )
         .all()
     )
+    inst_by_id = {i.id: i for i in insts if i.id}
     inst_by_user = {i.user_id: i for i in insts if i.user_id}
     inst_by_owner = {i.account_name.lower(): i for i in insts if i.account_name}
 
@@ -241,12 +209,13 @@ def enrich_repositories_batch(repos: List[Repository], db: Session) -> List[Repo
         total_open = counts["total"]
 
         inst_id = None
-        if repo.installation and repo.installation.github_installation_id:
-            inst_id = repo.installation.github_installation_id
+        repo_owner = (repo.owner or "").lower()
+        if repo.installation_id and repo.installation_id in inst_by_id:
+            inst_id = inst_by_id[repo.installation_id].github_installation_id
         elif repo.user_id in inst_by_user:
             inst_id = inst_by_user[repo.user_id].github_installation_id
-        elif owner.lower() in inst_by_owner:
-            inst_id = inst_by_owner[owner.lower()].github_installation_id
+        elif repo_owner and repo_owner in inst_by_owner:
+            inst_id = inst_by_owner[repo_owner].github_installation_id
 
         results.append(
             _format_repo_response(
@@ -265,11 +234,7 @@ def enrich_repositories_batch(repos: List[Repository], db: Session) -> List[Repo
 
 def get_user_repositories_safe(db: Session, current_user: User) -> List[Repository]:
     """Retrieve all monitored repositories for current user strictly isolated by user_id or ownership."""
-    gh_user = current_user.github_username.lower() if current_user.github_username else None
-    user_ids = [current_user.id]
-    if gh_user:
-        same_users = db.query(User.id).filter(func.lower(User.github_username) == gh_user).all()
-        user_ids = list(set([u[0] for u in same_users] + [current_user.id]))
+    user_ids, gh_user = get_user_scope_ids(db, current_user)
 
     return (
         db.query(Repository)

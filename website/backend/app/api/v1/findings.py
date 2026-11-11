@@ -2,9 +2,9 @@ import json
 from typing import Dict, List, Optional, Tuple
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, or_
-from sqlalchemy.orm import Session, joinedload, selectinload
+from sqlalchemy.orm import Session, defer, joinedload, selectinload
 
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, get_user_scope_ids
 from app.core.database import get_db
 from app.models.finding import Finding
 from app.models.repository import Repository
@@ -38,13 +38,13 @@ def batch_reconcile_findings(
             for f in findings
         ]
 
-    # Preload recent scans and their findings in a single batched query
+    # Preload recent scans and their findings in a single batched query (skip heavy pr_commits_json)
     recent_scans = (
         db.query(Scan)
-        .options(selectinload(Scan.findings))
+        .options(defer(Scan.pr_commits_json), selectinload(Scan.findings))
         .filter(Scan.repository_id.in_(repo_ids))
         .order_by(Scan.created_at.desc())
-        .limit(200)
+        .limit(120)
         .all()
     )
 
@@ -191,15 +191,14 @@ def list_findings(
     current_user: User = Depends(get_current_user),
 ):
     """List findings with rich filtering, search, commit tracking, and status reconciliation."""
-    gh_handle = current_user.github_username.lower() if current_user.github_username else None
-    user_ids = [current_user.id]
-    if gh_handle:
-        same_users = db.query(User.id).filter(func.lower(User.github_username) == gh_handle).all()
-        user_ids = list(set([u[0] for u in same_users] + [current_user.id]))
+    user_ids, gh_handle = get_user_scope_ids(db, current_user)
 
     query = (
         db.query(Finding)
-        .options(joinedload(Finding.repository), joinedload(Finding.scan))
+        .options(
+            joinedload(Finding.repository),
+            joinedload(Finding.scan).defer(Scan.pr_commits_json),
+        )
         .join(Repository)
         .filter(
             or_(
@@ -250,19 +249,27 @@ def list_findings(
         pr_scans = pr_scans_q.all()
         pr_scan_ids = [s.id for s in pr_scans]
 
-        # Auto-ingest any findings stored in pr_commits_json that aren't yet in findings table!
-        for s in pr_scans:
-            if s.pr_commits_json:
-                try:
-                    c_list = json.loads(s.pr_commits_json)
-                    if isinstance(c_list, list):
-                        from app.services.scan_runner import _reconcile_pr_findings_in_db, extract_findings_from_commits
-                        c_finds = extract_findings_from_commits(c_list)
-                        if c_finds:
-                            _reconcile_pr_findings_in_db(db, s.repository_id, s.id, pull_number, c_finds)
-                            db.commit()
-                except Exception:
-                    pass
+        # Only auto-ingest from pr_commits_json if scan recorded findings that aren't in Finding table yet
+        if pr_scan_ids:
+            existing_f_count = (
+                db.query(func.count(Finding.id))
+                .filter(Finding.scan_id.in_(pr_scan_ids))
+                .scalar()
+                or 0
+            )
+            if existing_f_count == 0 and any((s.total_findings or 0) > 0 for s in pr_scans):
+                for s in pr_scans:
+                    if s.pr_commits_json:
+                        try:
+                            c_list = json.loads(s.pr_commits_json)
+                            if isinstance(c_list, list):
+                                from app.services.scan_runner import _reconcile_pr_findings_in_db, extract_findings_from_commits
+                                c_finds = extract_findings_from_commits(c_list)
+                                if c_finds:
+                                    _reconcile_pr_findings_in_db(db, s.repository_id, s.id, pull_number, c_finds)
+                                    db.commit()
+                        except Exception:
+                            pass
 
         if pr_scan_ids:
             query = query.filter(Finding.scan_id.in_(pr_scan_ids))
@@ -351,15 +358,14 @@ def get_finding(
     current_user: User = Depends(get_current_user),
 ):
     """Retrieve full detail for a finding, including redacted preview and remediation guidance."""
-    gh_handle = current_user.github_username.lower() if current_user.github_username else None
-    user_ids = [current_user.id]
-    if gh_handle:
-        same_users = db.query(User.id).filter(func.lower(User.github_username) == gh_handle).all()
-        user_ids = list(set([u[0] for u in same_users] + [current_user.id]))
+    user_ids, gh_handle = get_user_scope_ids(db, current_user)
 
     finding = (
         db.query(Finding)
-        .options(joinedload(Finding.repository), joinedload(Finding.scan))
+        .options(
+            joinedload(Finding.repository),
+            joinedload(Finding.scan).defer(Scan.pr_commits_json),
+        )
         .join(Repository)
         .filter(
             Finding.id == finding_id,

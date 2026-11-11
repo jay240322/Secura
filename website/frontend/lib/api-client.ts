@@ -455,7 +455,90 @@ function mapBackendPullRequest(p: Record<string, unknown>): PullRequest {
 
 // ─── API Client Class ────────────────────────────────────────────────────────
 
+const SWR_STORAGE_PREFIX = "secura_swr_v1:";
+
 class ApiClient {
+  private dataCache = new Map<string, { value: unknown; updatedAt: number }>();
+  private inflight = new Map<string, Promise<unknown>>();
+  private lastMeFetchedAt = 0;
+
+  private getScopeTag(): string {
+    const tok = this.getToken();
+    return tok ? tok.slice(-12) : "anon";
+  }
+
+  private getCache<T>(key: string, maxAgeMs = 10 * 60 * 1000): T | null {
+    const scopedKey = `${this.getScopeTag()}:${key}`;
+    const mem = this.dataCache.get(scopedKey);
+    if (mem && Date.now() - mem.updatedAt <= maxAgeMs) {
+      return mem.value as T;
+    }
+    if (typeof window !== "undefined") {
+      try {
+        const raw = sessionStorage.getItem(`${SWR_STORAGE_PREFIX}${scopedKey}`);
+        if (raw) {
+          const parsed = JSON.parse(raw) as { value: T; updatedAt: number };
+          if (parsed && Date.now() - parsed.updatedAt <= maxAgeMs) {
+            this.dataCache.set(scopedKey, parsed);
+            return parsed.value;
+          }
+        }
+      } catch {}
+    }
+    return null;
+  }
+
+  private isCacheFresh(key: string, freshMs: number): boolean {
+    const scopedKey = `${this.getScopeTag()}:${key}`;
+    const mem = this.dataCache.get(scopedKey);
+    return Boolean(mem && Date.now() - mem.updatedAt <= freshMs);
+  }
+
+  private setCache<T>(key: string, value: T): void {
+    const scopedKey = `${this.getScopeTag()}:${key}`;
+    const entry = { value, updatedAt: Date.now() };
+    this.dataCache.set(scopedKey, entry);
+    if (typeof window !== "undefined") {
+      try {
+        sessionStorage.setItem(`${SWR_STORAGE_PREFIX}${scopedKey}`, JSON.stringify(entry));
+      } catch {}
+    }
+  }
+
+  private invalidateCache(prefixes?: string[]): void {
+    const scope = `${this.getScopeTag()}:`;
+    for (const k of Array.from(this.dataCache.keys())) {
+      if (!prefixes || prefixes.some((p) => k.startsWith(`${scope}${p}`))) {
+        this.dataCache.delete(k);
+      }
+    }
+    if (typeof window !== "undefined") {
+      try {
+        for (let i = sessionStorage.length - 1; i >= 0; i--) {
+          const sk = sessionStorage.key(i);
+          if (!sk || !sk.startsWith(SWR_STORAGE_PREFIX)) continue;
+          const inner = sk.slice(SWR_STORAGE_PREFIX.length);
+          if (!prefixes || prefixes.some((p) => inner.startsWith(`${scope}${p}`))) {
+            sessionStorage.removeItem(sk);
+          }
+        }
+      } catch {}
+    }
+  }
+
+  private dedupe<T>(key: string, fetcher: () => Promise<T>): Promise<T> {
+    const scopedKey = `${this.getScopeTag()}:${key}`;
+    const existing = this.inflight.get(scopedKey);
+    if (existing) {
+      return existing as Promise<T>;
+    }
+    const promise = fetcher().finally(() => {
+      this.inflight.delete(scopedKey);
+    });
+    this.inflight.set(scopedKey, promise);
+    return promise;
+  }
+
   private async fetchWithTimeout(url: string, options: RequestInit = {}, timeoutMs = 20000): Promise<Response> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
@@ -474,7 +557,104 @@ class ApiClient {
     }
   }
 
+  private mapInsightsPayload(data: any): {
+    summary: DashboardSummary;
+    findingsOverTime: FindingOverTime[];
+    findingsBySeverity: FindingBySeverity[];
+    findingsByRepo: FindingByRepository[];
+    topFindingTypes: { type: string; count: number }[];
+    securityScore: number;
+    isLive: boolean;
+  } {
+    const summaryData = data?.summary || {};
+    const secScore = typeof summaryData.security_score === "number"
+      ? summaryData.security_score
+      : (typeof data?.security_score === "number" ? data.security_score : 100);
+
+    return {
+      summary: {
+        connectedRepositories: Number(summaryData.connected_repositories ?? summaryData.connectedRepositories ?? 0),
+        totalOpenFindings: Number(summaryData.total_open_findings ?? summaryData.totalOpenFindings ?? 0),
+        criticalFindings: Number(summaryData.critical_findings ?? summaryData.criticalFindings ?? 0),
+        highFindings: Number(summaryData.high_findings ?? summaryData.highFindings ?? 0),
+        resolvedFindings: Number(summaryData.resolved_findings ?? summaryData.resolvedFindings ?? 0),
+        securityScore: secScore,
+      },
+      findingsOverTime: data?.findings_over_time || [],
+      findingsBySeverity: data?.findings_by_severity || [],
+      findingsByRepo: data?.findings_by_repository || [],
+      topFindingTypes: data?.top_finding_types || [],
+      securityScore: secScore,
+      isLive: true,
+    };
+  }
+
   // ─── Insights & Overview ──────────────────────────────────────────────────
+  getCachedInsights() {
+    return this.getCache<{
+      summary: DashboardSummary;
+      findingsOverTime: FindingOverTime[];
+      findingsBySeverity: FindingBySeverity[];
+      findingsByRepo: FindingByRepository[];
+      topFindingTypes: { type: string; count: number }[];
+      securityScore: number;
+      isLive: boolean;
+    }>("insights");
+  }
+
+  getCachedDashboard() {
+    return this.getCache<{
+      insights: ReturnType<ApiClient["mapInsightsPayload"]>;
+      repositories: Repository[];
+      recentFindings: Finding[];
+      recentScans: Scan[];
+      isLive: boolean;
+    }>("dashboard");
+  }
+
+  async getDashboardOverview(): Promise<{
+    insights: ReturnType<ApiClient["mapInsightsPayload"]>;
+    repositories: Repository[];
+    recentFindings: Finding[];
+    recentScans: Scan[];
+    isLive: boolean;
+  }> {
+    return this.dedupe("dashboard", async () => {
+      try {
+        const res = await this.fetchWithTimeout(`${API_BASE}/insights/dashboard`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        const insights = this.mapInsightsPayload(data?.insights || {});
+        const repositories = Array.isArray(data?.repositories) ? data.repositories.map(mapBackendRepository) : [];
+        const recentFindings = Array.isArray(data?.recent_findings) ? data.recent_findings.map(mapBackendFinding) : [];
+        const recentScans = Array.isArray(data?.recent_scans) ? data.recent_scans.map(mapBackendScan) : [];
+        const payload = { insights, repositories, recentFindings, recentScans, isLive: true };
+        this.setCache("dashboard", payload);
+        this.setCache("insights", insights);
+        this.setCache("repositories", { repositories, isLive: true });
+        return payload;
+      } catch {
+        const cached = this.getCachedDashboard();
+        if (cached) return cached;
+        return {
+          insights: {
+            summary: DEFAULT_SUMMARY,
+            findingsOverTime: [],
+            findingsBySeverity: [],
+            findingsByRepo: [],
+            topFindingTypes: [],
+            securityScore: 100,
+            isLive: false,
+          },
+          repositories: [],
+          recentFindings: [],
+          recentScans: [],
+          isLive: false,
+        };
+      }
+    });
+  }
+
   async getInsights(): Promise<{
     summary: DashboardSummary;
     findingsOverTime: FindingOverTime[];
@@ -484,56 +664,50 @@ class ApiClient {
     securityScore: number;
     isLive: boolean;
   }> {
-    try {
-      const res = await this.fetchWithTimeout(`${API_BASE}/insights`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      const summaryData = data?.summary || {};
-      const secScore = typeof summaryData.security_score === "number"
-        ? summaryData.security_score
-        : (typeof data?.security_score === "number" ? data.security_score : 100);
+    return this.dedupe("insights", async () => {
+      try {
+        const res = await this.fetchWithTimeout(`${API_BASE}/insights`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        const mapped = this.mapInsightsPayload(data);
+        this.setCache("insights", mapped);
+        return mapped;
+      } catch {
+        const cached = this.getCachedInsights();
+        if (cached) return cached;
+        return {
+          summary: DEFAULT_SUMMARY,
+          findingsOverTime: [],
+          findingsBySeverity: [],
+          findingsByRepo: [],
+          topFindingTypes: [],
+          securityScore: 100,
+          isLive: false,
+        };
+      }
+    });
+  }
 
-      return {
-        summary: {
-          connectedRepositories: Number(summaryData.connected_repositories ?? summaryData.connectedRepositories ?? 0),
-          totalOpenFindings: Number(summaryData.total_open_findings ?? summaryData.totalOpenFindings ?? 0),
-          criticalFindings: Number(summaryData.critical_findings ?? summaryData.criticalFindings ?? 0),
-          highFindings: Number(summaryData.high_findings ?? summaryData.highFindings ?? 0),
-          resolvedFindings: Number(summaryData.resolved_findings ?? summaryData.resolvedFindings ?? 0),
-          securityScore: secScore,
-        },
-        findingsOverTime: data.findings_over_time || [],
-        findingsBySeverity: data.findings_by_severity || [],
-        findingsByRepo: data.findings_by_repository || [],
-        topFindingTypes: data.top_finding_types || [],
-        securityScore: secScore,
-        isLive: true,
-      };
-    } catch {
-      return {
-        summary: DEFAULT_SUMMARY,
-        findingsOverTime: [],
-        findingsBySeverity: [],
-        findingsByRepo: [],
-        topFindingTypes: [],
-        securityScore: 100,
-        isLive: false,
-      };
-    }
+  getCachedRepositories(): { repositories: Repository[]; isLive: boolean } | null {
+    return this.getCache<{ repositories: Repository[]; isLive: boolean }>("repositories");
   }
 
   async getRepositories(): Promise<{ repositories: Repository[]; isLive: boolean }> {
-    try {
-      const res = await this.fetchWithTimeout(`${API_BASE}/repositories`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      if (Array.isArray(data)) {
-        return { repositories: data.map(mapBackendRepository), isLive: true };
+    return this.dedupe("repositories", async () => {
+      try {
+        const res = await this.fetchWithTimeout(`${API_BASE}/repositories`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          const result = { repositories: data.map(mapBackendRepository), isLive: true };
+          this.setCache("repositories", result);
+          return result;
+        }
+        return { repositories: [], isLive: false };
+      } catch {
+        return this.getCachedRepositories() || { repositories: [], isLive: false };
       }
-      return { repositories: [], isLive: false };
-    } catch {
-      return { repositories: [], isLive: false };
-    }
+    });
   }
 
   async syncRepositories(): Promise<{ success: boolean; repositories: Repository[]; error?: string }> {
@@ -546,9 +720,12 @@ class ApiClient {
         return { success: false, repositories: [], error: err.detail || `HTTP ${res.status}` };
       }
       const data = await res.json();
+      const repositories = Array.isArray(data) ? data.map(mapBackendRepository) : [];
+      this.invalidateCache(["dashboard", "insights", "repositories", "pull-requests"]);
+      this.setCache("repositories", { repositories, isLive: true });
       return {
         success: true,
-        repositories: Array.isArray(data) ? data.map(mapBackendRepository) : [],
+        repositories,
       };
     } catch {
       return { success: false, repositories: [], error: "Network error syncing repositories." };
@@ -560,41 +737,68 @@ class ApiClient {
     return repoCache.get(idOrName.toLowerCase()) || null;
   }
 
+  getCachedRepositoryOverview(repositoryId: string): {
+    repository: Repository | null;
+    pullRequests: PullRequest[];
+    findings: Finding[];
+  } | null {
+    if (!repositoryId) return null;
+    return this.getCache(`repo-overview:${repositoryId}`);
+  }
+
+  async prefetchRepositoryOverview(repositoryId: string): Promise<void> {
+    if (!repositoryId || this.isCacheFresh(`repo-overview:${repositoryId}`, 15000)) return;
+    await this.getRepositoryOverview(repositoryId);
+  }
+
   async getRepositoryOverview(repositoryId: string): Promise<{
     repository: Repository | null;
     pullRequests: PullRequest[];
     findings: Finding[];
   } | null> {
     if (!repositoryId) return null;
-    try {
-      const res = await this.fetchWithTimeout(`${API_BASE}/repositories/${encodeURIComponent(repositoryId)}/overview`, {}, 25000);
-      if (!res.ok) return null;
-      const data = await res.json();
-      const repo = data.repository ? mapBackendRepository(data.repository) : null;
-      if (repo) registerRepoInCache(repo);
-      return {
-        repository: repo,
-        pullRequests: Array.isArray(data.pull_requests) ? data.pull_requests.map(mapBackendPullRequest) : [],
-        findings: Array.isArray(data.findings) ? data.findings.map(mapBackendFinding) : [],
-      };
-    } catch {
-      return null;
-    }
+    return this.dedupe(`repo-overview:${repositoryId}`, async () => {
+      try {
+        const res = await this.fetchWithTimeout(`${API_BASE}/repositories/${encodeURIComponent(repositoryId)}/overview`, {}, 25000);
+        if (!res.ok) return null;
+        const data = await res.json();
+        const repo = data.repository ? mapBackendRepository(data.repository) : null;
+        if (repo) registerRepoInCache(repo);
+        const result = {
+          repository: repo,
+          pullRequests: Array.isArray(data.pull_requests) ? data.pull_requests.map(mapBackendPullRequest) : [],
+          findings: Array.isArray(data.findings) ? data.findings.map(mapBackendFinding) : [],
+        };
+        this.setCache(`repo-overview:${repositoryId}`, result);
+        if (repo?.id && repo.id !== repositoryId) {
+          this.setCache(`repo-overview:${repo.id}`, result);
+        }
+        return result;
+      } catch {
+        return this.getCachedRepositoryOverview(repositoryId);
+      }
+    });
   }
 
   async getRepositoryById(repositoryId: string): Promise<Repository | null> {
     if (!repositoryId) return null;
     const cached = this.getCachedRepository(repositoryId);
-    try {
-      const res = await this.fetchWithTimeout(`${API_BASE}/repositories/${repositoryId}`);
-      if (!res.ok) return cached;
-      const data = await res.json();
-      const mapped = mapBackendRepository(data);
-      registerRepoInCache(mapped);
-      return mapped;
-    } catch {
+    if (cached && this.isCacheFresh(`repo:${repositoryId}`, 20000)) {
       return cached;
     }
+    return this.dedupe(`repo:${repositoryId}`, async () => {
+      try {
+        const res = await this.fetchWithTimeout(`${API_BASE}/repositories/${repositoryId}`);
+        if (!res.ok) return cached;
+        const data = await res.json();
+        const mapped = mapBackendRepository(data);
+        registerRepoInCache(mapped);
+        this.setCache(`repo:${repositoryId}`, mapped);
+        return mapped;
+      } catch {
+        return cached;
+      }
+    });
   }
 
   async getAvailableRepositories(): Promise<AvailableRepository[]> {
@@ -651,6 +855,7 @@ class ApiClient {
         return { success: false, error: err.detail || `HTTP ${res.status}` };
       }
       const data = await res.json();
+      this.invalidateCache(["dashboard", "insights", "repositories"]);
       return {
         success: true,
         repositories: Array.isArray(data) ? data.map(mapBackendRepository) : [],
@@ -667,6 +872,7 @@ class ApiClient {
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
+      this.invalidateCache(["dashboard", "scans", `repo-overview:${repositoryId}`]);
       return mapBackendScan(data);
     } catch (e) {
       console.error("Trigger scan failed:", e);
@@ -681,6 +887,9 @@ class ApiClient {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ is_monitored: isMonitored }),
       });
+      if (res.ok) {
+        this.invalidateCache(["dashboard", "repositories", `repo-overview:${repositoryId}`, `repo:${repositoryId}`]);
+      }
       return res.ok;
     } catch {
       return false;
@@ -715,6 +924,7 @@ class ApiClient {
         return { repository: null, success: false, error: err.detail || "Failed to add repository" };
       }
       const data = await res.json();
+      this.invalidateCache(["dashboard", "insights", "repositories"]);
       return { repository: mapBackendRepository(data), success: true };
     } catch {
       return { repository: null, success: false, error: "Network error adding repository." };
@@ -726,10 +936,45 @@ class ApiClient {
       const res = await this.fetchWithTimeout(`${API_BASE}/repositories/${repositoryId}`, {
         method: "DELETE",
       });
+      if (res.ok) {
+        this.invalidateCache();
+      }
       return res.ok;
     } catch {
       return false;
     }
+  }
+
+  private buildFindingsKey(params?: {
+    repositoryId?: string;
+    repoName?: string;
+    pullNumber?: number;
+    severity?: string;
+    status?: string;
+    search?: string;
+  }): string {
+    const query = new URLSearchParams();
+    if (params?.repositoryId) query.set("repository_id", params.repositoryId);
+    if (params?.repoName) query.set("repo_name", params.repoName);
+    if (params?.pullNumber !== undefined && params?.pullNumber !== null) {
+      query.set("pull_number", String(params.pullNumber));
+    }
+    if (params?.severity && params.severity !== "ALL") query.set("severity", params.severity);
+    if (params?.status && params.status !== "ALL") query.set("status", params.status);
+    if (params?.search) query.set("search", params.search);
+    query.set("limit", "200");
+    return query.toString();
+  }
+
+  getCachedFindings(params?: {
+    repositoryId?: string;
+    repoName?: string;
+    pullNumber?: number;
+    severity?: string;
+    status?: string;
+    search?: string;
+  }): { findings: Finding[]; isLive: boolean } | null {
+    return this.getCache<{ findings: Finding[]; isLive: boolean }>(`findings:${this.buildFindingsKey(params)}`);
   }
 
   // ─── Findings ─────────────────────────────────────────────────────────────
@@ -741,39 +986,56 @@ class ApiClient {
     status?: string;
     search?: string;
   }): Promise<{ findings: Finding[]; isLive: boolean }> {
-    try {
-      const query = new URLSearchParams();
-      if (params?.repositoryId) query.set("repository_id", params.repositoryId);
-      if (params?.repoName) query.set("repo_name", params.repoName);
-      if (params?.pullNumber !== undefined && params?.pullNumber !== null) {
-        query.set("pull_number", String(params.pullNumber));
+    const qs = this.buildFindingsKey(params);
+    const cacheKey = `findings:${qs}`;
+    return this.dedupe(cacheKey, async () => {
+      try {
+        const res = await this.fetchWithTimeout(`${API_BASE}/findings?${qs}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          const result = { findings: data.map(mapBackendFinding), isLive: true };
+          this.setCache(cacheKey, result);
+          return result;
+        }
+        return { findings: [], isLive: false };
+      } catch {
+        return this.getCachedFindings(params) || { findings: [], isLive: false };
       }
-      if (params?.severity && params.severity !== "ALL") query.set("severity", params.severity);
-      if (params?.status && params.status !== "ALL") query.set("status", params.status);
-      if (params?.search) query.set("search", params.search);
-      query.set("limit", "200");
+    });
+  }
 
-      const res = await this.fetchWithTimeout(`${API_BASE}/findings?${query.toString()}`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      if (Array.isArray(data)) {
-        return { findings: data.map(mapBackendFinding), isLive: true };
+  getCachedFindingById(id: string): Finding | null {
+    if (!id) return null;
+    const direct = this.getCache<{ finding: Finding | null; isLive: boolean }>(`finding:${id}`);
+    if (direct?.finding) return direct.finding;
+    const dash = this.getCachedDashboard();
+    const fromDash = dash?.recentFindings?.find((f) => f.id === id);
+    if (fromDash) return fromDash;
+    const scope = `${this.getScopeTag()}:findings:`;
+    for (const [k, entry] of this.dataCache.entries()) {
+      if (k.startsWith(scope)) {
+        const val = entry.value as { findings?: Finding[] } | null;
+        const match = val?.findings?.find((f) => f.id === id);
+        if (match) return match;
       }
-      return { findings: [], isLive: false };
-    } catch {
-      return { findings: [], isLive: false };
     }
+    return null;
   }
 
   async getFindingById(id: string): Promise<{ finding: Finding | null; isLive: boolean }> {
-    try {
-      const res = await this.fetchWithTimeout(`${API_BASE}/findings/${id}`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      return { finding: mapBackendFinding(data), isLive: true };
-    } catch {
-      return { finding: null, isLive: false };
-    }
+    return this.dedupe(`finding:${id}`, async () => {
+      try {
+        const res = await this.fetchWithTimeout(`${API_BASE}/findings/${id}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        const result = { finding: mapBackendFinding(data), isLive: true };
+        this.setCache(`finding:${id}`, result);
+        return result;
+      } catch {
+        return this.getCache<{ finding: Finding | null; isLive: boolean }>(`finding:${id}`) || { finding: null, isLive: false };
+      }
+    });
   }
 
   async updateFindingStatus(
@@ -787,6 +1049,9 @@ class ApiClient {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status, ignore_reason: ignoreReason }),
       });
+      if (res.ok) {
+        this.invalidateCache(["findings", "finding:", "dashboard", "insights", "repo-overview"]);
+      }
       return res.ok;
     } catch {
       return false;
@@ -795,56 +1060,82 @@ class ApiClient {
 
   // ─── Scans ────────────────────────────────────────────────────────────────
   async getScans(): Promise<{ scans: Scan[]; isLive: boolean }> {
-    try {
-      const res = await this.fetchWithTimeout(`${API_BASE}/scans`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      if (Array.isArray(data)) {
-        return { scans: data.map(mapBackendScan), isLive: true };
+    return this.dedupe("scans", async () => {
+      try {
+        const res = await this.fetchWithTimeout(`${API_BASE}/scans`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          const result = { scans: data.map(mapBackendScan), isLive: true };
+          this.setCache("scans", result);
+          return result;
+        }
+        return { scans: [], isLive: false };
+      } catch {
+        return this.getCache<{ scans: Scan[]; isLive: boolean }>("scans") || { scans: [], isLive: false };
       }
-      return { scans: [], isLive: false };
-    } catch {
-      return { scans: [], isLive: false };
-    }
+    });
+  }
+
+  private buildPrCacheKey(repositoryId?: string, state?: string): string {
+    const params = new URLSearchParams();
+    if (repositoryId) params.set("repository_id", repositoryId);
+    if (state && state !== "all") params.set("state", state);
+    return `pull-requests:${params.toString()}`;
+  }
+
+  getCachedPullRequests(repositoryId?: string, state?: string): { pullRequests: PullRequest[]; isLive: boolean } | null {
+    return this.getCache<{ pullRequests: PullRequest[]; isLive: boolean }>(this.buildPrCacheKey(repositoryId, state));
   }
 
   // ─── Pull Requests ────────────────────────────────────────────────────────
   async getPullRequests(repositoryId?: string, state?: string): Promise<{ pullRequests: PullRequest[]; isLive: boolean }> {
-    try {
-      const params = new URLSearchParams();
-      if (repositoryId) params.set("repository_id", repositoryId);
-      if (state && state !== "all") params.set("state", state);
-      const qs = params.toString();
-      const url = `${API_BASE}/pull-requests${qs ? `?${qs}` : ""}`;
-      const res = await this.fetchWithTimeout(url, {}, 25000);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      if (Array.isArray(data)) {
-        return { pullRequests: data.map(mapBackendPullRequest), isLive: true };
+    const params = new URLSearchParams();
+    if (repositoryId) params.set("repository_id", repositoryId);
+    if (state && state !== "all") params.set("state", state);
+    const qs = params.toString();
+    const cacheKey = this.buildPrCacheKey(repositoryId, state);
+    return this.dedupe(cacheKey, async () => {
+      try {
+        const url = `${API_BASE}/pull-requests${qs ? `?${qs}` : ""}`;
+        const res = await this.fetchWithTimeout(url, {}, 25000);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          const result = { pullRequests: data.map(mapBackendPullRequest), isLive: true };
+          this.setCache(cacheKey, result);
+          return result;
+        }
+        return { pullRequests: [], isLive: false };
+      } catch (err) {
+        console.warn("getPullRequests fetch error:", err);
+        return this.getCachedPullRequests(repositoryId, state) || { pullRequests: [], isLive: false };
       }
-      return { pullRequests: [], isLive: false };
-    } catch (err) {
-      console.warn("getPullRequests fetch error:", err);
-      return { pullRequests: [], isLive: false };
-    }
+    });
   }
 
   async syncPullRequests(repositoryId?: string): Promise<{ pullRequests: PullRequest[]; success: boolean }> {
-    try {
-      const url = repositoryId
-        ? `${API_BASE}/pull-requests/sync?repository_id=${encodeURIComponent(repositoryId)}`
-        : `${API_BASE}/pull-requests/sync`;
-      const res = await this.fetchWithTimeout(url, { method: "POST" }, 30000);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      return {
-        pullRequests: Array.isArray(data) ? data.map(mapBackendPullRequest) : [],
-        success: true,
-      };
-    } catch (err) {
-      console.warn("syncPullRequests error:", err);
-      return { pullRequests: [], success: false };
-    }
+    const syncKey = `sync-prs:${repositoryId || "all"}`;
+    return this.dedupe(syncKey, async () => {
+      try {
+        const url = repositoryId
+          ? `${API_BASE}/pull-requests/sync?repository_id=${encodeURIComponent(repositoryId)}`
+          : `${API_BASE}/pull-requests/sync`;
+        const res = await this.fetchWithTimeout(url, { method: "POST" }, 30000);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        const pullRequests = Array.isArray(data) ? data.map(mapBackendPullRequest) : [];
+        this.invalidateCache(["pull-requests", "repo-overview", "findings", "dashboard", "insights"]);
+        this.setCache(this.buildPrCacheKey(repositoryId), { pullRequests, isLive: true });
+        return {
+          pullRequests,
+          success: true,
+        };
+      } catch (err) {
+        console.warn("syncPullRequests error:", err);
+        return { pullRequests: [], success: false };
+      }
+    });
   }
 
   async getPullRequestCommits(repositoryId: string, pullNumber: number): Promise<PRCommit[]> {
@@ -966,6 +1257,19 @@ class ApiClient {
     if (typeof window === "undefined") return;
     localStorage.removeItem("secura_auth_token");
     localStorage.removeItem("secura_auth_user");
+    localStorage.removeItem("secura_cached_repos");
+    repoCache.clear();
+    this.dataCache.clear();
+    this.inflight.clear();
+    this.lastMeFetchedAt = 0;
+    try {
+      for (let i = sessionStorage.length - 1; i >= 0; i--) {
+        const sk = sessionStorage.key(i);
+        if (sk && sk.startsWith(SWR_STORAGE_PREFIX)) {
+          sessionStorage.removeItem(sk);
+        }
+      }
+    } catch {}
   }
 
   async getGitHubOAuthUrl(redirectUri?: string): Promise<string | null> {
@@ -1100,23 +1404,30 @@ class ApiClient {
     }
   }
 
-  async getMe(): Promise<User | null> {
-    try {
-      const res = await this.fetchWithTimeout(`${API_BASE}/auth/me`);
-      if (!res.ok) {
-        if (res.status === 401) {
-          this.clearAuth();
-          return null;
-        }
-        return this.getStoredUser();
-      }
-      const rawUser = await res.json();
-      const mapped = mapBackendUser(rawUser);
-      this.setStoredUser(mapped);
-      return mapped;
-    } catch {
-      return this.getStoredUser();
+  async getMe(forceRefresh = false): Promise<User | null> {
+    const stored = this.getStoredUser();
+    if (!forceRefresh && stored && Date.now() - this.lastMeFetchedAt < 120000) {
+      return stored;
     }
+    return this.dedupe("auth-me", async () => {
+      try {
+        const res = await this.fetchWithTimeout(`${API_BASE}/auth/me`);
+        if (!res.ok) {
+          if (res.status === 401) {
+            this.clearAuth();
+            return null;
+          }
+          return stored;
+        }
+        const rawUser = await res.json();
+        const mapped = mapBackendUser(rawUser);
+        this.setStoredUser(mapped);
+        this.lastMeFetchedAt = Date.now();
+        return mapped;
+      } catch {
+        return stored;
+      }
+    });
   }
 }
 

@@ -41,8 +41,6 @@ import {
   Check,
 } from "lucide-react";
 
-export const dynamic = "force-dynamic";
-
 export default function RepositoryDetailPage() {
   return (
     <Suspense fallback={<div className="py-24 flex justify-center"><Loader size="md" /></div>}>
@@ -107,62 +105,51 @@ function RepositoryDetailContent() {
   useEffect(() => {
     let mounted = true;
 
-    // Check cached repository on client mount without premature loading dismiss
+    // Hydrate immediately from SWR cache (including hover prefetch!) for instant page opens
     if (params?.id) {
-      const cached = api.getCachedRepository(params.id);
-      if (cached && mounted) {
-        setRepo(cached);
+      const cachedOverview = api.getCachedRepositoryOverview(params.id);
+      if (cachedOverview && cachedOverview.repository && mounted) {
+        setRepo(cachedOverview.repository);
+        setPullRequests(cachedOverview.pullRequests);
+        setFindings(cachedOverview.findings);
+        setLoading(false);
+      } else {
+        const cached = api.getCachedRepository(params.id);
+        if (cached && mounted) {
+          setRepo(cached);
+        }
       }
     }
 
     void loadData();
 
-    // Automatically sync pull requests from GitHub on repository load
-    if (params?.id) {
-      void api
-        .syncPullRequests(params.id)
-        .then((res) => {
-          if (mounted && res.success && res.pullRequests.length > 0) {
-            setPullRequests(res.pullRequests);
-          }
-        })
-        .catch(() => {});
-    }
-
-    // Auto-poll every 5 seconds to keep PRs and findings live for this repository
+    // Consolidated background refresh every 20s (pauses when tab is hidden)
     const interval = setInterval(() => {
-      if (params?.id) {
-        void Promise.all([
-          api.getRepositoryById(params.id),
-          api.getPullRequests(params.id),
-          api.getFindings({ repositoryId: params.id }),
-        ])
-          .then(([r, p, f]) => {
-            if (mounted) {
-              if (r) setRepo(r);
-              if (p.isLive && p.pullRequests && p.pullRequests.length > 0) {
-                setPullRequests((prev) => {
-                  const prevMap = new Map(prev.map((item) => [item.id, item]));
-                  return p.pullRequests.map((incoming) => {
-                    const existing = prevMap.get(incoming.id);
-                    if (existing && existing.commits && existing.commits.length > (incoming.commits?.length || 0)) {
-                      return {
-                        ...incoming,
-                        commits: existing.commits,
-                        historicalFindings: existing.historicalFindings || incoming.historicalFindings,
-                        hasResolvedViolations: existing.hasResolvedViolations ?? incoming.hasResolvedViolations,
-                      };
-                    }
-                    return incoming;
-                  });
-                });
-              }
-              if (f.findings) setFindings(f.findings);
-            }
-          })
-          .catch(() => { });
+      if (params?.id && (typeof document === "undefined" || !document.hidden)) {
+        void api.getRepositoryOverview(params.id).then((overview) => {
+          if (!mounted || !overview) return;
+          if (overview.repository) setRepo(overview.repository);
+          if (overview.pullRequests) {
+            setPullRequests((prev) => {
+              const prevMap = new Map(prev.map((item) => [item.id, item]));
+              return overview.pullRequests.map((incoming) => {
+                const existing = prevMap.get(incoming.id);
+                if (existing && existing.commits && existing.commits.length > (incoming.commits?.length || 0)) {
+                  return {
+                    ...incoming,
+                    commits: existing.commits,
+                    historicalFindings: existing.historicalFindings || incoming.historicalFindings,
+                    hasResolvedViolations: existing.hasResolvedViolations ?? incoming.hasResolvedViolations,
+                  };
+                }
+                return incoming;
+              });
+            });
+          }
+          if (overview.findings) setFindings(overview.findings);
+        }).catch(() => {});
       }
-    }, 5000);
+    }, 20000);
 
     return () => {
       mounted = false;

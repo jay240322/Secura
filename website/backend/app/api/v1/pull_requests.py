@@ -1,3 +1,4 @@
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, List, Optional, Tuple, Set
 import datetime
 import json
@@ -6,7 +7,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, s
 from sqlalchemy.orm import Session, joinedload, selectinload
 from sqlalchemy import func, or_, and_
 
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, get_user_scope_ids
 from app.core.database import get_db
 from app.models.finding import Finding
 from app.models.repository import Repository
@@ -520,14 +521,91 @@ def fast_sync_repository_prs(
         if not all_prs:
             return 0
 
-        synced_count = 0
-        now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        # Batch-load all existing PR scans for this repository in ONE query (eliminates N+1 queries)
+        all_existing_scans = (
+            db.query(Scan)
+            .filter(
+                Scan.repository_id == repo.id,
+                Scan.pull_number.isnot(None),
+            )
+            .order_by(Scan.created_at.desc())
+            .all()
+        )
+        scans_by_pr_num: Dict[int, List[Scan]] = {}
+        for sc in all_existing_scans:
+            if sc.pull_number is not None:
+                scans_by_pr_num.setdefault(sc.pull_number, []).append(sc)
 
-        for pr in all_prs:
+        # Determine which PRs need live GitHub commits / check-runs, and fetch them in parallel
+        pr_metadata: List[Dict[str, Any]] = []
+        fetch_tasks: Dict[int, Tuple[bool, Optional[str]]] = {}
+        for idx, pr in enumerate(all_prs):
             pr_num = pr.get("number")
             if not pr_num:
                 continue
+            head_data = pr.get("head") or {}
+            head_sha = head_data.get("sha") or "HEAD"
+            merged_at_str = pr.get("merged_at")
+            is_merged = merged_at_str is not None
+            pr_state = "merged" if is_merged else (pr.get("state") or "open")
+            pr_scans_existing = scans_by_pr_num.get(pr_num, [])
+            existing_pr_scan = pr_scans_existing[0] if pr_scans_existing else None
+            target_sha = head_sha[:12] if len(head_sha) >= 12 else head_sha
+            old_sha = existing_pr_scan.commit_sha if existing_pr_scan else None
+            has_sha_changed = bool(old_sha and old_sha != target_sha)
 
+            needs_commits = (
+                has_sha_changed
+                or not existing_pr_scan
+                or not existing_pr_scan.pr_commits_json
+                or existing_pr_scan.pr_commits_json == "[]"
+            )
+            if not needs_commits and existing_pr_scan and existing_pr_scan.pr_commits_json:
+                try:
+                    p_cm = json.loads(existing_pr_scan.pr_commits_json)
+                    if len(p_cm) <= 1:
+                        needs_commits = True
+                except Exception:
+                    needs_commits = True
+
+            is_priority = (pr_state == "open") or (idx < 5)
+            want_commits = bool(needs_commits and is_priority)
+            want_check_runs = (
+                head_sha if (head_sha and head_sha != "HEAD" and is_priority and (has_sha_changed or not existing_pr_scan or pr_state == "open")) else None
+            )
+            if want_commits or want_check_runs:
+                fetch_tasks[pr_num] = (want_commits, want_check_runs)
+            pr_metadata.append((pr, existing_pr_scan, pr_scans_existing))
+
+        fetched_commits: Dict[int, List[Dict[str, Any]]] = {}
+        fetched_check_runs: Dict[int, List[Dict[str, Any]]] = {}
+        if fetch_tasks:
+            def _fetch_pr_gh(item: Tuple[int, Tuple[bool, Optional[str]]]):
+                p_num, (w_commits, w_sha) = item
+                c_res = None
+                cr_res = None
+                if w_commits:
+                    c_res = get_pull_request_commits(inst_id, owner, repo_name, p_num, user_token=user_access)
+                if w_sha:
+                    try:
+                        cr_res = get_commit_check_runs(inst_id, owner, repo_name, w_sha, user_token=user_access)
+                    except Exception as cr_err:
+                        logger.debug("Could not fetch check runs for PR #%s: %s", p_num, cr_err)
+                return p_num, c_res, cr_res
+
+            with ThreadPoolExecutor(max_workers=min(6, len(fetch_tasks))) as pool:
+                for p_num, c_res, cr_res in pool.map(_fetch_pr_gh, fetch_tasks.items()):
+                    if c_res:
+                        fetched_commits[p_num] = c_res
+                    if cr_res:
+                        fetched_check_runs[p_num] = cr_res
+
+        synced_count = 0
+        now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        from app.services.scan_runner import extract_findings_from_commits, _reconcile_pr_findings_in_db
+
+        for pr, existing_pr_scan, pr_scans_existing in pr_metadata:
+            pr_num = pr.get("number")
             head_data = pr.get("head") or {}
             head_sha = head_data.get("sha") or "HEAD"
             branch = head_data.get("ref") or f"pr-{pr_num}"
@@ -549,19 +627,6 @@ def fast_sync_repository_prs(
             dt_created = _parse_github_iso_datetime(created_at_str)
 
             target_sha = head_sha[:12] if len(head_sha) >= 12 else head_sha
-            existing_pr_scan = (
-                db.query(Scan)
-                .filter(
-                    Scan.repository_id == repo.id,
-                    Scan.pull_number == pr_num,
-                )
-                .order_by(Scan.created_at.desc())
-                .first()
-            )
-
-            old_sha = existing_pr_scan.commit_sha if existing_pr_scan else None
-            has_sha_changed = bool(old_sha and old_sha != target_sha)
-
             short_sha = head_sha[:7] if len(head_sha) >= 7 else head_sha
             fast_commits = [
                 {
@@ -575,50 +640,21 @@ def fast_sync_repository_prs(
                 }
             ]
 
-            # Fetch live commits from GitHub if missing or only placeholder commit recorded
-            real_commits = None
-            needs_commits = (
-                has_sha_changed
-                or not existing_pr_scan 
-                or not existing_pr_scan.pr_commits_json 
-                or existing_pr_scan.pr_commits_json == "[]"
-            )
-            if not needs_commits and existing_pr_scan and existing_pr_scan.pr_commits_json:
-                try:
-                    p_cm = json.loads(existing_pr_scan.pr_commits_json)
-                    if len(p_cm) <= 1:
-                        needs_commits = True
-                except Exception:
-                    needs_commits = True
-
-            # Open PRs always fetch if needed; for merged/closed PRs, fetch up to 10 recent PRs to keep sync rapid
-            if needs_commits and (pr_state == "open" or synced_count < 10):
-                real_commits = get_pull_request_commits(
-                    inst_id, owner, repo_name, pr_num, user_token=user_access
-                )
+            real_commits = fetched_commits.get(pr_num)
             commits_list = real_commits if real_commits else fast_commits
 
-            # Query GitHub Check Runs for PR's head commit to detect findings live (both open and recent PRs)
             cr_findings = []
             cr_failed = False
             cr_in_progress = False
-
-            if head_sha and head_sha != "HEAD" and (pr_state == "open" or synced_count < 10):
-                try:
-                    head_check_runs = get_commit_check_runs(
-                        inst_id, owner, repo_name, head_sha, user_token=user_access
-                    )
-                    for cr in head_check_runs:
-                        c_concl = (cr.get("conclusion") or "").lower()
-                        c_stat = (cr.get("status") or "").lower()
-                        if c_concl in ("failure", "action_required", "timed_out", "cancelled"):
-                            cr_failed = True
-                        elif c_stat in ("in_progress", "queued"):
-                            cr_in_progress = True
-                        if cr.get("findings"):
-                            cr_findings.extend(cr["findings"])
-                except Exception as cr_err:
-                    logger.debug("Could not fetch check runs for PR #%s: %s", pr_num, cr_err)
+            for cr in fetched_check_runs.get(pr_num, []):
+                c_concl = (cr.get("conclusion") or "").lower()
+                c_stat = (cr.get("status") or "").lower()
+                if c_concl in ("failure", "action_required", "timed_out", "cancelled"):
+                    cr_failed = True
+                elif c_stat in ("in_progress", "queued"):
+                    cr_in_progress = True
+                if cr.get("findings"):
+                    cr_findings.extend(cr["findings"])
 
             if cr_failed or cr_findings:
                 for c in commits_list:
@@ -636,6 +672,10 @@ def fast_sync_repository_prs(
             commits_json = json.dumps(commits_list)
 
             if existing_pr_scan:
+                had_prior_findings = bool(
+                    (existing_pr_scan.total_findings or 0) > 0
+                    or existing_pr_scan.scan_result == "failed"
+                )
                 existing_pr_scan.commit_sha = target_sha
                 existing_pr_scan.pr_state = pr_state
                 existing_pr_scan.branch = branch
@@ -644,7 +684,6 @@ def fast_sync_repository_prs(
                 existing_pr_scan.pr_author = author
                 existing_pr_scan.pr_html_url = html_url
 
-                from app.services.scan_runner import extract_findings_from_commits, _reconcile_pr_findings_in_db
                 pr_findings_to_save = list(cr_findings)
                 c_finds = extract_findings_from_commits(commits_list)
                 for cf in c_finds:
@@ -664,7 +703,6 @@ def fast_sync_repository_prs(
                     existing_pr_scan.scan_status = "running"
                     existing_pr_scan.scan_result = "pending"
                 else:
-                    # Latest commit has no findings and check run passed: mark prior findings as resolved
                     existing_pr_scan.scan_status = "completed"
                     existing_pr_scan.scan_result = "passed"
                     existing_pr_scan.score = 100
@@ -673,7 +711,8 @@ def fast_sync_repository_prs(
                     existing_pr_scan.high_count = 0
                     existing_pr_scan.medium_count = 0
                     existing_pr_scan.low_count = 0
-                    _reconcile_pr_findings_in_db(db, repo.id, existing_pr_scan.id, pr_num, [])
+                    if had_prior_findings:
+                        _reconcile_pr_findings_in_db(db, repo.id, existing_pr_scan.id, pr_num, [])
 
                 if pr_state in ("merged", "closed"):
                     if existing_pr_scan.scan_status in ("running", "pending"):
@@ -699,9 +738,19 @@ def fast_sync_repository_prs(
                 if dt_created and not existing_pr_scan.created_at:
                     existing_pr_scan.created_at = dt_created
 
-                _update_pr_scans_state(db, repo.id, pr_num, pr_state, dt_merged, dt_closed)
+                # Update sibling scans for this PR in memory without extra DB queries
+                for sibling in pr_scans_existing:
+                    sibling.pr_state = pr_state
+                    if dt_merged:
+                        sibling.pr_merged_at = dt_merged
+                    if dt_closed:
+                        sibling.pr_closed_at = dt_closed
+                    if pr_state in ("merged", "closed"):
+                        if sibling.scan_status in ("running", "pending"):
+                            sibling.scan_status = "completed"
+                        if sibling.scan_result == "pending":
+                            sibling.scan_result = "passed"
             else:
-                from app.services.scan_runner import extract_findings_from_commits, _reconcile_pr_findings_in_db
                 pr_findings_to_save = list(cr_findings)
                 c_finds = extract_findings_from_commits(commits_list)
                 for cf in c_finds:
@@ -959,89 +1008,11 @@ def list_pull_requests(
 ):
     """
     List pull request security scans and Check Run statuses.
-    Aggregates all genuine PR scan records associated with user's monitored repositories.
-    Fast non-blocking response from DB, scheduling GitHub synchronization in the background.
+    Strictly non-blocking DB query for instant responses (GitHub sync is handled via /sync and webhooks).
     """
-    gh_handle = current_user.github_username.lower() if current_user.github_username else None
-    user_ids = [current_user.id]
-    if gh_handle:
-        for (uid,) in db.query(User.id).filter(func.lower(User.github_username) == gh_handle).all():
-            if uid not in user_ids:
-                user_ids.append(uid)
-
-    user_access = _extract_user_github_token(current_user)
+    user_ids, gh_handle = get_user_scope_ids(db, current_user)
 
     target_repo = _resolve_target_repository(db, repository_id, user_ids=user_ids, gh_handle=gh_handle)
-    if target_repo:
-        existing_count = (
-            db.query(Scan.id)
-            .filter(
-                Scan.repository_id == target_repo.id,
-                Scan.pull_number.isnot(None),
-            )
-            .count()
-        )
-        has_open_prs = (
-            db.query(Scan.id)
-            .filter(
-                Scan.repository_id == target_repo.id,
-                Scan.pull_number.isnot(None),
-                or_(Scan.pr_state == "open", Scan.pr_state.is_(None)),
-            )
-            .first()
-            is not None
-        )
-        sync_interval = 5.0 if has_open_prs else 15.0
-        if existing_count == 0:
-            fast_sync_repository_prs(db, target_repo, user_token=user_access)
-        elif should_sync_repo(target_repo.id, min_interval_seconds=sync_interval):
-            import threading
-            threading.Thread(
-                target=_background_sync_repo_prs,
-                args=(target_repo.id, user_access),
-                daemon=True,
-            ).start()
-    else:
-        # Check all repositories for current user; sync fast from DB, dispatching background syncs
-        user_repos = (
-            db.query(Repository)
-            .filter(
-                or_(
-                    Repository.user_id.in_(user_ids),
-                    (func.lower(Repository.owner) == gh_handle) if gh_handle else False,
-                ),
-            )
-            .all()
-        )
-        for r in user_repos:
-            has_open_prs = (
-                db.query(Scan.id)
-                .filter(
-                    Scan.repository_id == r.id,
-                    Scan.pull_number.isnot(None),
-                    or_(Scan.pr_state == "open", Scan.pr_state.is_(None)),
-                )
-                .first()
-                is not None
-            )
-            existing_count = (
-                db.query(Scan.id)
-                .filter(
-                    Scan.repository_id == r.id,
-                    Scan.pull_number.isnot(None),
-                )
-                .count()
-            )
-            sync_interval = 5.0 if has_open_prs else 20.0
-            if existing_count == 0:
-                fast_sync_repository_prs(db, r, user_token=user_access)
-            elif should_sync_repo(r.id, min_interval_seconds=sync_interval):
-                import threading
-                threading.Thread(
-                    target=_background_sync_repo_prs,
-                    args=(r.id, user_access),
-                    daemon=True,
-                ).start()
 
     query = (
         db.query(Scan)
@@ -1070,7 +1041,7 @@ def list_pull_requests(
         elif target_state == "open":
             query = query.filter(and_(or_(func.lower(Scan.pr_state) == "open", Scan.pr_state.is_(None)), Scan.pr_merged_at.is_(None), Scan.pr_closed_at.is_(None)))
 
-    scans = query.order_by(Scan.created_at.desc()).limit(500).all()
+    scans = query.order_by(Scan.created_at.desc()).limit(300).all()
 
     # Pre-index all scans by sha prefix to eliminate per-PR N+1 database queries
     repo_scans_cache: Dict[Tuple[str, int, str], Scan] = {}
@@ -1126,12 +1097,7 @@ def sync_pull_requests(
     Rapidly synchronize Pull Requests (open, merged, and closed) across monitored
     repositories, enqueuing security scans in the background.
     """
-    gh_handle = current_user.github_username.lower() if current_user.github_username else None
-    user_ids = [current_user.id]
-    if gh_handle:
-        for (uid,) in db.query(User.id).filter(func.lower(User.github_username) == gh_handle).all():
-            if uid not in user_ids:
-                user_ids.append(uid)
+    user_ids, gh_handle = get_user_scope_ids(db, current_user)
 
     target_repo = _resolve_target_repository(db, repository_id, user_ids=user_ids, gh_handle=gh_handle)
     if target_repo:
@@ -1250,23 +1216,28 @@ def get_pr_commits(
         scan = _create_persistent_pr_scan(db, repo, pull_number)
         all_scans_for_pr = [scan]
 
-    # Query live GitHub Check Runs on commits to capture findings live
+    # Query live GitHub Check Runs on commits in parallel to capture findings live
     live_findings_to_persist = []
-    if inst_id or user_access:
-        for c in raw_commits:
-            c_sha = c.get("full_sha") or c.get("sha")
-            if c_sha and c_sha != "HEAD":
-                try:
-                    c_crs = get_commit_check_runs(inst_id, owner, repo_name, c_sha, user_token=user_access)
-                    for cr in c_crs:
-                        cr_finds = cr.get("findings") or []
-                        for cr_f in cr_finds:
-                            f_item = dict(cr_f)
-                            f_item["commit_sha"] = c_sha
-                            f_item["detected_in_commit"] = c_sha[:7]
-                            live_findings_to_persist.append(f_item)
-                except Exception:
-                    pass
+    commit_shas = [
+        c.get("full_sha") or c.get("sha")
+        for c in raw_commits
+        if (c.get("full_sha") or c.get("sha")) and (c.get("full_sha") or c.get("sha")) != "HEAD"
+    ]
+    if (inst_id or user_access) and commit_shas:
+        def _fetch_commit_crs(c_sha: str):
+            try:
+                return c_sha, get_commit_check_runs(inst_id, owner, repo_name, c_sha, user_token=user_access)
+            except Exception:
+                return c_sha, []
+
+        with ThreadPoolExecutor(max_workers=min(6, len(commit_shas))) as pool:
+            for c_sha, c_crs in pool.map(_fetch_commit_crs, commit_shas):
+                for cr in c_crs:
+                    for cr_f in (cr.get("findings") or []):
+                        f_item = dict(cr_f)
+                        f_item["commit_sha"] = c_sha
+                        f_item["detected_in_commit"] = c_sha[:7]
+                        live_findings_to_persist.append(f_item)
 
     # Merge with cached commits across all scans for this PR
     seen_shas = {

@@ -121,6 +121,19 @@ function DashboardContent() {
     const instId = searchParams.get("installation_id");
     const setupAction = searchParams.get("setup_action");
 
+    // Hydrate immediately from SWR cache to avoid blocking spinner on navigation
+    const cached = api.getCachedDashboard();
+    if (cached && cached.isLive) {
+      setIsLive(true);
+      setSummary(cached.insights.summary);
+      setFindingsOverTime(cached.insights.findingsOverTime);
+      setFindingsBySeverity(cached.insights.findingsBySeverity);
+      setRepos(cached.repositories);
+      setRecentFindings(cached.recentFindings);
+      setRecentScans(cached.recentScans);
+      setLoading(false);
+    }
+
     if (isInstalled || instId || setupAction) {
       setInstalledBanner(true);
       void api.syncRepositories().then(() => {
@@ -133,46 +146,32 @@ function DashboardContent() {
       if (inFlight) return;
       inFlight = true;
       try {
-        const [insightsRes, reposRes, findingsRes, scansRes] = await Promise.allSettled([
-          api.getInsights(),
-          api.getRepositories(),
-          api.getFindings({ status: "open" }),
-          api.getScans(),
-        ]);
-
+        const dash = await api.getDashboardOverview();
         if (!mounted) return;
-
-        if (insightsRes.status === "fulfilled") {
-          setIsLive(insightsRes.value.isLive);
-          setSummary(insightsRes.value.summary);
-          setFindingsOverTime(insightsRes.value.findingsOverTime);
-          setFindingsBySeverity(insightsRes.value.findingsBySeverity);
-        }
-
-        if (reposRes.status === "fulfilled") {
-          setRepos(reposRes.value.repositories);
-        }
-
-        if (findingsRes.status === "fulfilled") {
-          setRecentFindings(findingsRes.value.findings.slice(0, 5));
-        }
-
-        if (scansRes.status === "fulfilled") {
-          setRecentScans(scansRes.value.scans.slice(0, 4));
+        if (dash.isLive) {
+          setIsLive(true);
+          setSummary(dash.insights.summary);
+          setFindingsOverTime(dash.insights.findingsOverTime);
+          setFindingsBySeverity(dash.insights.findingsBySeverity);
+          setRepos(dash.repositories);
+          setRecentFindings(dash.recentFindings);
+          setRecentScans(dash.recentScans);
         }
       } catch (e) {
         console.error("Dashboard data load error:", e);
       } finally {
         inFlight = false;
-        setLoading(false);
+        if (mounted) setLoading(false);
       }
     }
     void loadData();
 
-    // Auto-poll every 10 seconds to keep live metrics and recent PR scans updated smoothly
+    // Background refresh every 30s (only while tab is visible)
     const interval = setInterval(() => {
-      void loadData();
-    }, 10000);
+      if (typeof document === "undefined" || !document.hidden) {
+        void loadData();
+      }
+    }, 30000);
 
     return () => {
       mounted = false;

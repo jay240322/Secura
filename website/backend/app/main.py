@@ -3,6 +3,7 @@ import os
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 
 from app.api.v1.auth import router as auth_router
 from app.api.v1.findings import router as findings_router
@@ -76,6 +77,9 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Compress JSON payloads >= 500 bytes to speed up transfer
+app.add_middleware(GZipMiddleware, minimum_size=500)
+
 # CORS configuration for frontend
 app.add_middleware(
     CORSMiddleware,
@@ -83,6 +87,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    max_age=86400,
 )
 
 

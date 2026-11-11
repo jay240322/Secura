@@ -2,8 +2,6 @@ import { Sidebar } from "@/components/layout/sidebar";
 import { TopNav } from "@/components/layout/top-nav";
 import { ReactNode, Suspense } from "react";
 
-export const dynamic = "force-dynamic";
-
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   return (
     <div className="flex h-screen overflow-hidden bg-slate-50 dark:bg-[#111113] text-slate-900 dark:text-zinc-100 transition-colors duration-200">
