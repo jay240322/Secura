@@ -266,18 +266,22 @@ const LINKS_3D = createSphereLinks(NODES_3D, SPHERE_RADIUS * 0.58);
 export function ContextGraphSection() {
   const trackRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const upperArcRef = useRef<SVGPathElement>(null);
+  const bottomArcRef = useRef<SVGPathElement>(null);
   const [activeStepIdx, setActiveStepIdx] = useState(0);
-  const [scrollProgress, setScrollProgress] = useState(0);
   const [animKey, setAnimKey] = useState(0);
-  const rotYRef = useRef(0);
-  const targetRotYRef = useRef(0);
+  const scrollRotRef = useRef(0);
+  const targetScrollRotRef = useRef(0);
+  const idleTimeRef = useRef(0);
+  const activeStepIdxRef = useRef(0);
 
   // Trigger animation key whenever step index changes
   useEffect(() => {
+    activeStepIdxRef.current = activeStepIdx;
     setAnimKey((prev) => prev + 1);
   }, [activeStepIdx]);
 
-  // Scroll tracking to drive the 4 stages and the 3D sphere rotation
+  // Scroll tracking to drive the 4 stages and target rotation (no per-pixel React re-renders)
   useEffect(() => {
     const handleScroll = () => {
       if (!trackRef.current) return;
@@ -288,14 +292,13 @@ export function ContextGraphSection() {
 
       const scrolled = -rect.top;
       const progress = Math.min(Math.max(scrolled / totalScrollable, 0), 1);
-      setScrollProgress(progress);
 
       // Determine active step from scroll progress (0..0.25 => 0, 0.25..0.50 => 1, etc.)
       const step = Math.min(Math.floor(progress * STEPS_DATA.length), STEPS_DATA.length - 1);
-      setActiveStepIdx(step);
+      setActiveStepIdx((prev) => (prev === step ? prev : step));
 
-      // Drive rotation from scroll
-      targetRotYRef.current = progress * Math.PI * 3.5;
+      // Gentle total scroll rotation across the entire section (~0.8 full turn)
+      targetScrollRotRef.current = progress * Math.PI * 1.6;
     };
 
     window.addEventListener("scroll", handleScroll, { passive: true });
@@ -303,7 +306,7 @@ export function ContextGraphSection() {
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
-  // 60FPS Continuous 3D Constellation Sphere Engine across all 4 stages
+  // 60FPS Continuous 3D Constellation Sphere Engine with velocity-capped smooth scroll glide
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -311,13 +314,40 @@ export function ContextGraphSection() {
     if (!ctx) return;
 
     let animId: number;
-    let time = 0;
+    let lastNow = performance.now();
 
-    const render = () => {
-      time += 0.015;
-      rotYRef.current += (targetRotYRef.current + time * 0.3 - rotYRef.current) * 0.08;
-      const rotY = rotYRef.current;
-      const rotX = 0.24 + Math.sin(time * 0.45) * 0.08;
+    // Max scroll catch-up angular velocity (rad/s) so fast scrolling never spins the graph rapidly
+    const MAX_SCROLL_ANGULAR_SPEED = 1.15;
+
+    const render = (now: number) => {
+      const dt = Math.min((now - lastNow) / 1000, 0.05);
+      lastNow = now;
+      idleTimeRef.current += dt;
+      const idleTime = idleTimeRef.current;
+      const currentStep = activeStepIdxRef.current;
+
+      // Smooth damped catch-up clamped to MAX_SCROLL_ANGULAR_SPEED
+      const diff = targetScrollRotRef.current - scrollRotRef.current;
+      const desiredStep = diff * Math.min(1, dt * 3.2);
+      const maxStep = MAX_SCROLL_ANGULAR_SPEED * dt;
+      const clampedStep =
+        Math.abs(desiredStep) > maxStep
+          ? Math.sign(desiredStep) * maxStep
+          : desiredStep;
+      scrollRotRef.current += clampedStep;
+
+      // Combine slow velocity-capped scroll rotation + calm continuous idle rotation
+      const rotY = scrollRotRef.current + idleTime * 0.18;
+      const rotX = 0.22 + Math.sin(idleTime * 0.35) * 0.05;
+
+      // Keep outer green dotted arcs gliding in smooth sync with the capped rotation
+      const dashOffset = (-rotY * 26).toFixed(2);
+      if (upperArcRef.current) {
+        upperArcRef.current.setAttribute("stroke-dashoffset", dashOffset);
+      }
+      if (bottomArcRef.current) {
+        bottomArcRef.current.setAttribute("stroke-dashoffset", dashOffset);
+      }
 
       const cosY = Math.cos(rotY);
       const sinY = Math.sin(rotY);
@@ -386,11 +416,11 @@ export function ContextGraphSection() {
         if (linkAlpha <= 0.02) continue;
 
         let strokeColor = `rgba(56, 189, 248, ${linkAlpha * 0.45})`;
-        if (activeStepIdx === 1) {
+        if (currentStep === 1) {
           strokeColor = `rgba(168, 85, 247, ${linkAlpha * 0.5})`;
-        } else if (activeStepIdx === 2) {
+        } else if (currentStep === 2) {
           strokeColor = `rgba(16, 185, 129, ${linkAlpha * 0.48})`;
-        } else if (activeStepIdx === 3) {
+        } else if (currentStep === 3) {
           strokeColor = `rgba(244, 63, 94, ${linkAlpha * 0.52})`;
         }
 
@@ -412,16 +442,16 @@ export function ContextGraphSection() {
         ctx.arc(node.px, node.py, r, 0, Math.PI * 2);
 
         if (isSpecialFinding && node.isFront) {
-          const pulse = Math.sin(time * 3 + node.nIdx) * 0.3 + 0.7;
-          if (activeStepIdx === 0) {
+          const pulse = Math.sin(idleTime * 2.4 + node.nIdx) * 0.3 + 0.7;
+          if (currentStep === 0) {
             ctx.fillStyle = `rgba(255, 170, 0, ${node.alpha * pulse})`;
             ctx.shadowBlur = 8;
             ctx.shadowColor = "#FF5500";
-          } else if (activeStepIdx === 1) {
+          } else if (currentStep === 1) {
             ctx.fillStyle = `rgba(192, 132, 252, ${node.alpha * pulse})`;
             ctx.shadowBlur = 8;
             ctx.shadowColor = "#A855F7";
-          } else if (activeStepIdx === 2) {
+          } else if (currentStep === 2) {
             ctx.fillStyle = `rgba(52, 211, 153, ${node.alpha * pulse})`;
             ctx.shadowBlur = 8;
             ctx.shadowColor = "#10B981";
@@ -448,7 +478,7 @@ export function ContextGraphSection() {
 
     animId = requestAnimationFrame(render);
     return () => cancelAnimationFrame(animId);
-  }, [activeStepIdx]);
+  }, []);
 
   const activeStep = STEPS_DATA[activeStepIdx] || STEPS_DATA[0];
 
@@ -474,7 +504,7 @@ export function ContextGraphSection() {
     <section
       id="context"
       ref={trackRef}
-      className="relative h-[340vh] bg-[#141417ed] text-zinc-100"
+      className="relative h-[440vh] bg-[#141417ed] text-zinc-100"
       style={{ backgroundColor: "#141417ed" }}
     >
       {/* ─── PINNED STICKY VIEWPORT CONTAINER ─── */}
@@ -617,13 +647,14 @@ export function ContextGraphSection() {
 
                     {/* Step 2+ (Shannon Entropy): Upper Green Dotted Arc appearing from the top side (r=195) */}
                     <path
+                      ref={upperArcRef}
                       d="M 0 15 A 195 195 0 0 1 138 72"
                       fill="none"
                       stroke="#10B981"
                       strokeWidth="2.2"
                       strokeLinecap="round"
                       strokeDasharray="2 7"
-                      strokeDashoffset={-scrollProgress * 240}
+                      strokeDashoffset={0}
                       mask="url(#mask-upper-green-arc)"
                       style={{
                         opacity: activeStepIdx >= 1 ? 0.92 : 0,
@@ -633,13 +664,14 @@ export function ContextGraphSection() {
 
                     {/* Step 3+ (System Guidelines): Bottom Green Dotted Arc on the same r=195 line appearing from the bottom side */}
                     <path
+                      ref={bottomArcRef}
                       d="M 0 405 A 195 195 0 0 0 138 348"
                       fill="none"
                       stroke="#10B981"
                       strokeWidth="2.2"
                       strokeLinecap="round"
                       strokeDasharray="2 7"
-                      strokeDashoffset={-scrollProgress * 240}
+                      strokeDashoffset={0}
                       mask="url(#mask-bottom-green-arc)"
                       style={{
                         opacity: activeStepIdx >= 2 ? 0.92 : 0,
