@@ -68,9 +68,24 @@ export default function ScrollReveal({
 
     // If string has punctuation question marks or exclamation marks, split into natural lyrical lines
     if (text.includes("?") || text.includes("!")) {
-      const matched = text.match(/[^?!]+[?!]+|\S[^?!]*$/g);
-      if (matched && matched.length > 1) {
-        return matched.map((m) => m.trim()).filter(Boolean);
+      const sentences: string[] = [];
+      let current = "";
+      for (let i = 0; i < text.length; i++) {
+        current += text[i];
+        if (text[i] === "?" || text[i] === "!") {
+          while (i + 1 < text.length && (text[i + 1] === "?" || text[i + 1] === "!")) {
+            i++;
+            current += text[i];
+          }
+          sentences.push(current.trim());
+          current = "";
+        }
+      }
+      if (current.trim().length > 0) {
+        sentences.push(current.trim());
+      }
+      if (sentences.length > 1) {
+        return sentences;
       }
     }
 
@@ -159,3 +174,4 @@ export default function ScrollReveal({
 }
 
 export { ScrollReveal };
+
