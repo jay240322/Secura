@@ -144,13 +144,13 @@ const STEPS_DATA: StepConfig[] = [
       { name: "AST Policy Checker", isGreen: false },
     ],
     diff: {
-      fileName: "src/database/pool.ts",
+      fileName: "src/storage/pool.ts",
       startLine: 42,
       badge: "+2 -1 | 42–46",
       lines: [
         { num: 42, text: "export async function initDb() {" },
         { num: 43, text: "- const dbUri = 'postgres://" + "admin:P@ssw0rd2024!@db:5432';", isRemoved: true },
-        { num: 44, text: "+ const dbUri = await vault.get('DATABASE_URL');", isAdded: true },
+        { num: 44, text: "+ const dbUri = await vault.get('DB_CONNECTION_URL');", isAdded: true },
         { num: 45, text: "  return new Pool({ connectionString: dbUri });" },
         { num: 46, text: "}" },
       ],

@@ -2,7 +2,7 @@ import datetime
 import os
 from typing import Optional
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -13,13 +13,14 @@ from app.core.database import get_db
 from app.core.security import create_access_token, hash_password, verify_password
 from app.models.user import User
 from app.schemas.user import OAuthLogin, TokenResponse, UserLogin, UserProfileUpdate, UserRegister, UserResponse
+from app.services.email_service import dispatch_login_email, dispatch_welcome_email
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 DEFAULT_AUTH_SCHEME = os.getenv("AUTH_SCHEME", "bearer")
 
 
 @router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
-def register(payload: UserRegister, db: Session = Depends(get_db)):
+def register(payload: UserRegister, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     """Register a new user with email and password."""
     email_clean = payload.email.strip().lower()
     if not email_clean or "@" not in email_clean:
@@ -51,6 +52,8 @@ def register(payload: UserRegister, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(user)
 
+    dispatch_welcome_email(user.email, user.name, background_tasks=background_tasks)
+
     access_jwt = create_access_token(
         subject=user.id,
         extra_claims={"email": user.email, "name": user.name or ""},
@@ -64,7 +67,7 @@ def register(payload: UserRegister, db: Session = Depends(get_db)):
 
 
 @router.post("/login", response_model=TokenResponse)
-def login(payload: UserLogin, db: Session = Depends(get_db)):
+def login(payload: UserLogin, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     """Authenticate existing user with email and password."""
     email_clean = payload.email.strip().lower()
     user = db.query(User).filter(User.email == email_clean).first()
@@ -80,6 +83,8 @@ def login(payload: UserLogin, db: Session = Depends(get_db)):
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Account is inactive.",
         )
+
+    dispatch_login_email(user.email, user.name, provider="Email/Password", background_tasks=background_tasks)
 
     access_jwt = create_access_token(
         subject=user.id,
@@ -135,7 +140,7 @@ def sanitize_user_display_name(
 
 
 @router.post("/oauth", response_model=TokenResponse)
-def oauth_sign_in(payload: OAuthLogin, db: Session = Depends(get_db)):
+def oauth_sign_in(payload: OAuthLogin, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     """Sign in or register using an OAuth provider (GitHub or Google)."""
     email_clean = payload.email.strip().lower()
     if not email_clean:
@@ -160,6 +165,7 @@ def oauth_sign_in(payload: OAuthLogin, db: Session = Depends(get_db)):
     if not avatar and provider_lower == "github" and gh_handle:
         avatar = f"https://github.com/{gh_handle}.png"
 
+    is_new_user = False
     try:
         user = None
         if provider_lower == "github" and gh_handle:
@@ -170,6 +176,7 @@ def oauth_sign_in(payload: OAuthLogin, db: Session = Depends(get_db)):
             user = db.query(User).filter(func.lower(User.github_username) == gh_handle.lower()).first()
 
         if not user:
+            is_new_user = True
             user = User(
                 email=email_clean,
                 name=clean_name,
@@ -208,6 +215,12 @@ def oauth_sign_in(payload: OAuthLogin, db: Session = Depends(get_db)):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Database error during OAuth sign-in: {exc}",
         )
+
+    if is_new_user:
+        dispatch_welcome_email(user.email, user.name, background_tasks=background_tasks)
+    else:
+        provider_title = f"{payload.provider.capitalize()} OAuth"
+        dispatch_login_email(user.email, user.name, provider=provider_title, background_tasks=background_tasks)
 
     access_jwt = create_access_token(
         subject=user.id,
@@ -292,7 +305,7 @@ def get_github_oauth_url(redirect_uri: Optional[str] = None):
 
 
 @router.post("/github/callback", response_model=TokenResponse)
-async def github_oauth_callback(payload: dict, db: Session = Depends(get_db)):
+async def github_oauth_callback(payload: dict, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     """Exchange GitHub temporary OAuth code for access token and fetch real user profile."""
     code = payload.get("code")
     if not code:
@@ -377,6 +390,7 @@ async def github_oauth_callback(payload: dict, db: Session = Depends(get_db)):
     gh_login = gh_user.get("login") or ""
     gh_id_str = str(gh_user.get("id")) if gh_user.get("id") else None
 
+    is_new_user = False
     try:
         from sqlalchemy import func
         user = None
@@ -396,6 +410,7 @@ async def github_oauth_callback(payload: dict, db: Session = Depends(get_db)):
         avatar = gh_user.get("avatar_url") or (f"https://github.com/{gh_login}.png" if gh_login else None)
 
         if not user:
+            is_new_user = True
             user = User(
                 email=clean_email,
                 name=clean_name,
@@ -433,6 +448,11 @@ async def github_oauth_callback(payload: dict, db: Session = Depends(get_db)):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Database error saving user: {db_err}",
         )
+
+    if is_new_user:
+        dispatch_welcome_email(user.email, user.name, background_tasks=background_tasks)
+    else:
+        dispatch_login_email(user.email, user.name, provider="GitHub OAuth", background_tasks=background_tasks)
 
     # 5. Generate signed JWT access credential
     access_jwt = create_access_token(

@@ -37,6 +37,7 @@ export default function PullRequestsPage() {
   const [loadingCommits, setLoadingCommits] = useState<Record<string, boolean>>({});
   const [feedback, setFeedback] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [searchScope, setSearchScope] = useState<"all" | "repo" | "pr">("all");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
 
   const handleRefreshCommits = async (pr: PullRequest) => {
@@ -262,18 +263,23 @@ export default function PullRequestsPage() {
 
         // 3. Search query
         if (!searchQuery) return true;
-        const q = searchQuery.toLowerCase();
-        return (
+        const q = searchQuery.toLowerCase().trim();
+        const cleanNum = q.replace(/^#/, "");
+        const matchRepo = pr.repository.toLowerCase().includes(q);
+        const matchPR =
           pr.title.toLowerCase().includes(q) ||
-          pr.repository.toLowerCase().includes(q) ||
-          String(pr.number).includes(q) ||
+          String(pr.number) === cleanNum ||
+          String(pr.number).includes(cleanNum) ||
           pr.branch.toLowerCase().includes(q) ||
           pr.baseBranch.toLowerCase().includes(q) ||
-          pr.author.toLowerCase().includes(q)
-        );
+          (pr.author || "").toLowerCase().includes(q);
+
+        if (searchScope === "repo") return matchRepo;
+        if (searchScope === "pr") return matchPR;
+        return matchRepo || matchPR;
       })
       .sort((a, b) => comparePullRequests(a, b, sortOrder));
-  }, [pullRequests, selectedRepoId, selectedState, searchQuery, repos, sortOrder]);
+  }, [pullRequests, selectedRepoId, selectedState, searchQuery, searchScope, repos, sortOrder]);
 
   // Aggregate stats across currently selected repository (or all repos)
   const repoPRs = useMemo(() => {
@@ -459,17 +465,48 @@ export default function PullRequestsPage() {
               <span>Order: {sortOrder === "desc" ? "Latest First (#N → #1)" : "Oldest First (#1 → #N)"}</span>
             </button>
 
-            {/* Search Box */}
-            <div className="relative w-full sm:w-72">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 dark:text-zinc-500" />
-              <input
-                type="text"
-                placeholder="Filter by title, repo, branch, PR#..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                suppressHydrationWarning
-                className="w-full rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 pl-9 pr-3 py-1.5 text-xs text-slate-900 dark:text-zinc-100 placeholder:text-slate-400 dark:placeholder:text-zinc-500 focus:border-blue-500 focus:outline-none transition-colors shadow-xs"
-              />
+            {/* Search Box with Scope Dropdown */}
+            <div className="flex items-center rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 w-full sm:w-80 shadow-xs focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-500/20">
+              <div className="relative border-r border-slate-200 dark:border-zinc-800 shrink-0">
+                <select
+                  value={searchScope}
+                  onChange={(e) => setSearchScope(e.target.value as "all" | "repo" | "pr")}
+                  suppressHydrationWarning
+                  aria-label="Filter search scope"
+                  className="appearance-none bg-transparent pl-2.5 pr-6 py-1.5 text-xs font-semibold text-slate-700 dark:text-zinc-300 hover:text-slate-900 dark:hover:text-white focus:outline-none cursor-pointer"
+                >
+                  <option value="all">All</option>
+                  <option value="pr">PR</option>
+                  <option value="repo">Repo</option>
+                </select>
+                <ChevronDown className="absolute right-1.5 top-1/2 -translate-y-1/2 h-3 w-3 text-slate-400 dark:text-zinc-500 pointer-events-none" />
+              </div>
+              <div className="relative flex-1 flex items-center min-w-0">
+                <Search className="absolute left-2.5 h-3.5 w-3.5 text-slate-400 dark:text-zinc-500 pointer-events-none" />
+                <input
+                  type="text"
+                  placeholder={
+                    searchScope === "repo"
+                      ? "Search by repo name..."
+                      : searchScope === "pr"
+                      ? "Search PR title, #number, branch..."
+                      : "Filter by title, repo, branch, #..."
+                  }
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  suppressHydrationWarning
+                  className="w-full bg-transparent pl-8 pr-7 py-1.5 text-xs text-slate-900 dark:text-zinc-100 placeholder:text-slate-400 dark:placeholder:text-zinc-500 focus:outline-none"
+                />
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery("")}
+                    className="absolute right-2 text-slate-400 hover:text-slate-600 dark:hover:text-zinc-200 p-0.5"
+                    title="Clear search"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </CardHeader>

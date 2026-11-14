@@ -47,6 +47,13 @@ class Settings(BaseModel):
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
 
+    # Dashboard URL
+    SECURA_DASHBOARD_URL: str = os.getenv("SECURA_DASHBOARD_URL", "https://secura-frontend.vercel.app")
+
+    # Resend Email Integration
+    RESEND_API_KEY: str = os.getenv("RESEND_API_KEY", "")
+    RESEND_FROM_EMAIL: str = os.getenv("RESEND_FROM_EMAIL", "Secura <hello@secura.ink>")
+
 
 settings = Settings()
 

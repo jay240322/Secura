@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { api } from "@/lib/api-client";
 import { ContextGraphSection } from "@/components/landing/context-graph";
+import BlurText from "./BlurText";
 import {
   Shield,
   ShieldAlert,
@@ -28,7 +29,7 @@ import {
   FileCode,
   AlertTriangle,
   Key,
-  Database,
+  Server,
   Cloud,
   CreditCard,
   Bot,
@@ -68,6 +69,10 @@ function LandingPageContent() {
       setSubscribed(true);
       setNewsletterEmail("");
     }
+  };
+
+  const handleAnimationComplete = () => {
+    console.log('Animation completed!');
   };
 
   useEffect(() => {
@@ -119,7 +124,7 @@ function LandingPageContent() {
     },
     {
       q: "What types of secrets and credentials does Secura detect?",
-      a: "Secura detects over 100+ categories of secrets including AWS Access Keys, Google Cloud Service Account JSONs, Stripe Secret Keys, OpenAI API Keys, GitHub Personal Access Tokens, Slack Webhooks, Database connection strings (PostgreSQL, MySQL, MongoDB), Private RSA/SSH keys, and high-entropy API tokens.",
+      a: "Secura detects over 100+ categories of secrets including AWS Access Keys, Google Cloud Service Account JSONs, Stripe Secret Keys, OpenAI API Keys, GitHub Personal Access Tokens, Slack Webhooks, Connection strings (PostgreSQL, MySQL, MongoDB), Private RSA/SSH keys, and high-entropy API tokens.",
     },
     {
       q: "Is Secura free for individual developers and open-source?",
@@ -149,14 +154,11 @@ function LandingPageContent() {
               <span className="text-base font-bold tracking-tight text-white">
                 Secura
               </span>
-              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-full bg-white/[0.06] border border-white/10 text-zinc-300 font-semibold backdrop-blur-xs">
-                v2.0
-              </span>
             </div>
           </Link>
 
           {/* Navigation Links */}
-          <nav className="hidden md:flex items-center gap-8 text-xs font-semibold text-zinc-400">
+          <nav className="hidden md:flex items-center gap-7 text-xs font-semibold text-zinc-400">
             <a href="#context" className="hover:text-white transition-colors">
               Context Engine
             </a>
@@ -166,9 +168,12 @@ function LandingPageContent() {
             <a href="#features" className="hover:text-white transition-colors">
               Features
             </a>
-            <a href="#comparison" className="hover:text-white transition-colors">
-              Why Secura
-            </a>
+            <Link href="/about" className="hover:text-white transition-colors">
+              About
+            </Link>
+            <Link href="/privacy" className="hover:text-white transition-colors">
+              Privacy
+            </Link>
             <a href="#faq" className="hover:text-white transition-colors">
               FAQ
             </a>
@@ -294,7 +299,7 @@ function LandingPageContent() {
                       <span>Open</span>
                     </span>
                     <h3 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white">
-                      feat(auth): integrate Stripe Live API & production database
+                      feat(auth): integrate Stripe Live API & production storage
                     </h3>
                     <span className="text-xs text-slate-400 font-mono">#148</span>
                   </div>
@@ -412,7 +417,7 @@ function LandingPageContent() {
               100+ High-Entropy Secret Signatures
             </h2>
             <p className="text-sm text-slate-600 dark:text-zinc-400 leading-relaxed">
-              Secura guards your repository against leaks across cloud infrastructure, payment gateways, AI APIs, version control, and private certificates.
+              Secura guards your repository against leaks across cloud infrastructure, payment gateways, machine learning APIs, version control, and private certificates.
             </p>
           </div>
 
@@ -455,7 +460,7 @@ function LandingPageContent() {
               <div className="h-10 w-10 rounded-xl bg-purple-500/10 text-purple-500 flex items-center justify-center mb-4">
                 <Bot className="h-5 w-5" />
               </div>
-              <h3 className="text-base font-bold text-slate-900 dark:text-white mb-2">AI & LLM Services</h3>
+              <h3 className="text-base font-bold text-slate-900 dark:text-white mb-2">Model & LLM Services</h3>
               <p className="text-xs text-slate-600 dark:text-zinc-400 mb-4 leading-relaxed">
                 OpenAI project API tokens, Anthropic Claude keys, HuggingFace user tokens, Cohere keys, and Replicate API tokens.
               </p>
@@ -470,9 +475,9 @@ function LandingPageContent() {
 
             <div className="p-6 rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white/80 dark:bg-[#141417e6] backdrop-blur-md shadow-lg hover:border-white/20 transition-all">
               <div className="h-10 w-10 rounded-xl bg-emerald-500/10 text-emerald-500 flex items-center justify-center mb-4">
-                <Database className="h-5 w-5" />
+                <Server className="h-5 w-5" />
               </div>
-              <h3 className="text-base font-bold text-slate-900 dark:text-white mb-2">Databases & Storage</h3>
+              <h3 className="text-base font-bold text-slate-900 dark:text-white mb-2">Data Stores & Storage</h3>
               <p className="text-xs text-slate-600 dark:text-zinc-400 mb-4 leading-relaxed">
                 PostgreSQL connection URIs with embedded passwords, MongoDB connection strings, Redis auth tokens, and MySQL credentials.
               </p>
@@ -628,7 +633,7 @@ function LandingPageContent() {
                 100+ Secret & Token Signatures
               </h3>
               <p className="text-xs text-slate-600 dark:text-zinc-400 leading-relaxed">
-                Comprehensive recognition for AWS, Google Cloud, Azure, Stripe, OpenAI, GitHub PATs, Slack webhooks, Private RSA/SSH keys, and database URIs.
+                Comprehensive recognition for AWS, Google Cloud, Azure, Stripe, OpenAI, GitHub PATs, Slack webhooks, Private RSA/SSH keys, and connection URIs.
               </p>
             </div>
 
@@ -676,8 +681,145 @@ function LandingPageContent() {
                 Zero Code Retention
               </h3>
               <p className="text-xs text-slate-600 dark:text-zinc-400 leading-relaxed">
-                Diffs are inspected ephemerally in-memory. Secura never persists your proprietary code, and never uses your codebase to train AI models.
+                Diffs are inspected ephemerally in-memory. Secura never persists your proprietary code, and never uses your codebase for model training.
               </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ─── 8.5 DEEP CODE INTELLIGENCE & ARCHITECTURE SHOWCASE (BlurText Animation) ─── */}
+      <section className="py-20 sm:py-28 border-t border-slate-200/80 dark:border-white/10 relative overflow-hidden bg-slate-50/50 dark:bg-[#141417ed]">
+        <div className="max-w-7xl mx-auto px-4 sm:px-8">
+          {/* BlurText Animation Showcase */}
+          <div className="text-center max-w-3xl mx-auto mb-16 flex flex-col items-center">
+            <span className="text-xs font-semibold uppercase tracking-wider text-blue-600 dark:text-blue-400 font-mono mb-3">
+              Next-Gen Static Analysis & Pipeline Telemetry
+            </span>
+
+            <BlurText
+              text="Isn't this so cool?!"
+              effect="blur"
+              animateBy="words"
+              direction="top"
+              staggerFrom="start"
+              trigger="view"
+              delay={200}
+              stepDuration={0.35}
+              blur={10}
+              distance={50}
+              onAnimationComplete={handleAnimationComplete}
+              className="text-2xl mb-8 font-bold text-blue-600 dark:text-blue-400 justify-center"
+              loop={false}
+              loopDelay={2}
+              focusOnHover={false}
+            />
+
+            <BlurText
+              text="Deep Code Intelligence & Continuous Threat Defense"
+              effect="blur"
+              animateBy="words"
+              direction="top"
+              staggerFrom="start"
+              trigger="view"
+              delay={300}
+              stepDuration={0.3}
+              blur={12}
+              distance={40}
+              className="text-3xl sm:text-5xl font-extrabold tracking-tight text-slate-900 dark:text-white justify-center leading-tight mb-4"
+              loop={false}
+              loopDelay={2}
+              focusOnHover={false}
+            />
+
+            <p className="text-sm text-slate-600 dark:text-zinc-400 leading-relaxed max-w-2xl">
+              Secura operates as an autonomous security co-pilot directly in your git workflow, combining deep AST structural parsing, Shannon entropy analytics, and instant GitHub check run enforcement.
+            </p>
+          </div>
+
+          {/* 3-Pillar Enterprise Architecture Details */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
+            <div className="rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white/90 dark:bg-[#18181b]/90 backdrop-blur-md p-6 shadow-sm hover:border-blue-500/30 transition-all">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="h-10 w-10 rounded-xl bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-800 text-blue-600 dark:text-blue-400 flex items-center justify-center font-bold">
+                  01
+                </div>
+                <h3 className="font-bold text-base text-slate-900 dark:text-white">In-Memory AST Parsing</h3>
+              </div>
+              <p className="text-xs text-slate-600 dark:text-zinc-400 leading-relaxed mb-4">
+                Unlike regex-only scanners that match blind strings, Secura decomposes code diffs into Abstract Syntax Trees. It distinguishes variables, comments, imports, and mock test fixtures with surgical precision.
+              </p>
+              <div className="flex flex-wrap gap-1.5 text-[11px] font-mono text-slate-600 dark:text-zinc-400">
+                <span className="px-2 py-0.5 rounded bg-slate-100 dark:bg-zinc-800">AST Analysis</span>
+                <span className="px-2 py-0.5 rounded bg-slate-100 dark:bg-zinc-800">&lt; 50ms Latency</span>
+                <span className="px-2 py-0.5 rounded bg-slate-100 dark:bg-zinc-800">12+ Languages</span>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white/90 dark:bg-[#18181b]/90 backdrop-blur-md p-6 shadow-sm hover:border-emerald-500/30 transition-all">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="h-10 w-10 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-bold">
+                  02
+                </div>
+                <h3 className="font-bold text-base text-slate-900 dark:text-white">Shannon Entropy Filter</h3>
+              </div>
+              <p className="text-xs text-slate-600 dark:text-zinc-400 leading-relaxed mb-4">
+                High-entropy keys and hashed secrets generate mathematical signatures. Secura calculates character distribution variance to separate random cryptokeys from standard test mocks (`dummy_mock_token_123`).
+              </p>
+              <div className="flex flex-wrap gap-1.5 text-[11px] font-mono text-slate-600 dark:text-zinc-400">
+                <span className="px-2 py-0.5 rounded bg-slate-100 dark:bg-zinc-800">Entropy Scorer</span>
+                <span className="px-2 py-0.5 rounded bg-slate-100 dark:bg-zinc-800">99.4% Less Noise</span>
+                <span className="px-2 py-0.5 rounded bg-slate-100 dark:bg-zinc-800">Zero Spurious Alerts</span>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white/90 dark:bg-[#18181b]/90 backdrop-blur-md p-6 shadow-sm hover:border-purple-500/30 transition-all">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="h-10 w-10 rounded-xl bg-purple-50 dark:bg-purple-950/60 border border-purple-200 dark:border-purple-800 text-purple-600 dark:text-purple-400 flex items-center justify-center font-bold">
+                  03
+                </div>
+                <h3 className="font-bold text-base text-slate-900 dark:text-white">Automated PR Merge Guard</h3>
+              </div>
+              <p className="text-xs text-slate-600 dark:text-zinc-400 leading-relaxed mb-4">
+                Secura registers native GitHub Check Runs that block pull requests in real time when critical leaks are detected. Once rotated or resolved, check status automatically transitions to passing with zero manual unlocks.
+              </p>
+              <div className="flex flex-wrap gap-1.5 text-[11px] font-mono text-slate-600 dark:text-zinc-400">
+                <span className="px-2 py-0.5 rounded bg-slate-100 dark:bg-zinc-800">GitHub Checks</span>
+                <span className="px-2 py-0.5 rounded bg-slate-100 dark:bg-zinc-800">Merge Lock</span>
+                <span className="px-2 py-0.5 rounded bg-slate-100 dark:bg-zinc-800">Auto-Remediation</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Standards & Security Governance Bar */}
+          <div className="rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white/80 dark:bg-[#18181b]/80 backdrop-blur-md p-6 sm:p-8 shadow-sm">
+            <div className="flex flex-col lg:flex-row items-center justify-between gap-6">
+              <div className="space-y-1.5 text-center lg:text-left">
+                <h4 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wider font-mono">
+                  Industry Security Standards & Threat Models
+                </h4>
+                <p className="text-xs text-slate-500 dark:text-zinc-400">
+                  Built to satisfy rigorous DevSecOps compliance requirements right out of the box.
+                </p>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 w-full lg:w-auto text-center font-mono text-xs">
+                <div className="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900/60">
+                  <p className="font-bold text-slate-900 dark:text-white">OWASP A02</p>
+                  <p className="text-[10px] text-slate-400 dark:text-zinc-500">Cryptographic Failures</p>
+                </div>
+                <div className="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900/60">
+                  <p className="font-bold text-slate-900 dark:text-white">CWE-798</p>
+                  <p className="text-[10px] text-slate-400 dark:text-zinc-500">Hard-coded Secrets</p>
+                </div>
+                <div className="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900/60">
+                  <p className="font-bold text-slate-900 dark:text-white">SOC 2 Ready</p>
+                  <p className="text-[10px] text-slate-400 dark:text-zinc-500">Zero Disk Retention</p>
+                </div>
+                <div className="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900/60">
+                  <p className="font-bold text-slate-900 dark:text-white">TLS 1.3</p>
+                  <p className="text-[10px] text-slate-400 dark:text-zinc-500">Encrypted In-Transit</p>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -767,7 +909,7 @@ function LandingPageContent() {
       <footer className="border-t border-slate-200/80 dark:border-white/10 pt-16 pb-6 bg-white dark:bg-[#141417ed] backdrop-blur-md overflow-hidden">
         <div className="max-w-7xl mx-auto px-4 sm:px-8">
           {/* Top Section: Brand & Newsletter (Left) + Multi-Column Directory (Right) */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-12 pb-14 border-b border-slate-100 dark:border-white/10">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-12 pb-10">
             {/* Left: Brand Identity, Tagline & Newsletter */}
             <div className="lg:col-span-5 space-y-6">
               {/* Brand Lockup */}
@@ -950,21 +1092,26 @@ function LandingPageContent() {
                 </ul>
               </div>
 
-              {/* Column 4: Company & Trust */}
+              {/* Column 4: Platform & Trust */}
               <div className="space-y-3.5">
                 <h4 className="font-mono text-xs font-semibold uppercase tracking-wider text-slate-900 dark:text-zinc-200">
-                  Company
+                  Platform
                 </h4>
                 <ul className="space-y-2.5 text-xs text-slate-500 dark:text-zinc-400 font-medium">
                   <li>
-                    <a href="#features" className="hover:text-slate-900 dark:hover:text-white transition-colors">
+                    <Link href="/about" className="hover:text-slate-900 dark:hover:text-white transition-colors">
                       About Secura
-                    </a>
+                    </Link>
                   </li>
                   <li>
-                    <a href="#features" className="hover:text-slate-900 dark:hover:text-white transition-colors">
-                      Zero Retention
-                    </a>
+                    <Link href="/privacy" className="hover:text-slate-900 dark:hover:text-white transition-colors">
+                      Privacy Policy
+                    </Link>
+                  </li>
+                  <li>
+                    <Link href="/terms" className="hover:text-slate-900 dark:hover:text-white transition-colors">
+                      Terms of Use
+                    </Link>
                   </li>
                   <li>
                     <a
@@ -978,7 +1125,7 @@ function LandingPageContent() {
                   </li>
                   <li>
                     <a
-                      href="mailto:pateljay0j@gmail.com"
+                      href="mailto:hello@secura.ink"
                       className="hover:text-slate-900 dark:hover:text-white transition-colors"
                     >
                       Contact
@@ -990,16 +1137,16 @@ function LandingPageContent() {
           </div>
         </div>
 
-        {/* ─── MASSIVE OUTLINED SECURA WORDMARK (Fade Effect + 20% Bottom Cut) ─── */}
-        <div className="w-full overflow-hidden select-none pointer-events-none flex justify-center items-end leading-none my-2 sm:my-4">
+        {/* ─── MASSIVE OUTLINED SECURA WORDMARK (Single Line Guaranteed, No Extra Dividing Lines) ─── */}
+        <div className="w-full overflow-hidden select-none pointer-events-none flex justify-center items-end leading-none my-2 sm:my-3">
           <span
-            className="text-[16vw] sm:text-[18.5vw] font-black tracking-tighter leading-[0.78] block uppercase select-none font-sans text-transparent translate-y-[20%]"
+            className="text-[13vw] sm:text-[15.5vw] font-black tracking-tighter leading-none block uppercase select-none font-sans text-transparent whitespace-nowrap translate-y-[15%]"
             style={{
-              WebkitTextStroke: "2.5px #00285B",
+              WebkitTextStroke: "2px #00285B",
               WebkitMaskImage:
-                "linear-gradient(to bottom, rgba(0, 0, 0, 1) 15%, rgba(0, 0, 0, 0.35) 65%, transparent 100%)",
+                "linear-gradient(to bottom, rgba(0, 0, 0, 1) 20%, rgba(0, 0, 0, 0.3) 70%, transparent 100%)",
               maskImage:
-                "linear-gradient(to bottom, rgba(0, 0, 0, 1) 15%, rgba(0, 0, 0, 0.35) 65%, transparent 100%)",
+                "linear-gradient(to bottom, rgba(0, 0, 0, 1) 20%, rgba(0, 0, 0, 0.3) 70%, transparent 100%)",
             }}
           >
             SECURA
@@ -1011,13 +1158,17 @@ function LandingPageContent() {
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
             <span>© 2026 Secura Inc. Zero Code Retention Guaranteed.</span>
             <span className="hidden sm:inline text-slate-300 dark:text-zinc-700">·</span>
-            <a href="#privacy" className="hover:text-slate-600 dark:hover:text-zinc-400 transition-colors">
+            <Link href="/privacy" className="hover:text-slate-600 dark:hover:text-zinc-400 transition-colors">
               Privacy Policy
-            </a>
+            </Link>
             <span className="text-slate-300 dark:text-zinc-700">·</span>
-            <a href="#terms" className="hover:text-slate-600 dark:hover:text-zinc-400 transition-colors">
+            <Link href="/terms" className="hover:text-slate-600 dark:hover:text-zinc-400 transition-colors">
               Terms of Use
-            </a>
+            </Link>
+            <span className="text-slate-300 dark:text-zinc-700">·</span>
+            <Link href="/about" className="hover:text-slate-600 dark:hover:text-zinc-400 transition-colors">
+              About Secura
+            </Link>
           </div>
           <div className="flex items-center gap-6">
             <span>Zero Code Retention</span>

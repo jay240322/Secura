@@ -11,9 +11,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Secura — AI Security & Secret Gate",
+  title: "Secura — Code Security & Secret Gate",
   description:
-    "AI-powered code security platform for detecting exposed secrets and automated PR merge gates.",
+    "Autonomous code security platform for detecting exposed secrets and automated PR merge gates.",
   icons: {
     icon: "/logo.png",
     shortcut: "/logo.png",

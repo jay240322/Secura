@@ -510,8 +510,17 @@ function RepositoriesContent() {
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search repositories by name or owner..."
             suppressHydrationWarning
-            className="w-full rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 pl-9 pr-3 py-2 text-xs text-slate-900 dark:text-zinc-100 placeholder:text-slate-400 dark:placeholder:text-zinc-500 focus:border-[#281C59] focus:outline-none shadow-xs"
+            className="w-full rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 pl-9 pr-8 py-2 text-xs text-slate-900 dark:text-zinc-100 placeholder:text-slate-400 dark:placeholder:text-zinc-500 focus:border-[#281C59] focus:outline-none shadow-xs"
           />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery("")}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-zinc-200 p-0.5"
+              title="Clear search"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          )}
         </div>
 
         {/* Filter Tabs */}
@@ -860,7 +869,7 @@ function RepositoriesContent() {
         {loading ? (
           <div className="flex flex-col items-center justify-center py-20 text-slate-500 dark:text-zinc-400 gap-3">
             <Loader />
-            <p className="text-xs font-medium text-slate-600 dark:text-zinc-400">Loading monitored repositories from database...</p>
+            <p className="text-xs font-medium text-slate-600 dark:text-zinc-400">Loading monitored repositories...</p>
           </div>
         ) : filteredRepos.length === 0 ? (
           <div className="rounded-xl border border-slate-200/80 dark:border-zinc-800/80 bg-white/90 dark:bg-zinc-950/90 p-12 text-center shadow-xs my-auto">
