@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, Suspense } from "react";
+import { useEffect, useState, useRef, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { api } from "@/lib/api-client";
@@ -10,6 +10,7 @@ import { LandingFooter } from "@/components/landing/landing-footer";
 import BlurText from "./BlurText";
 import BlurContainer from "./BlurContainer";
 import ScrollReveal from "./ScrollReveal";
+import VariableProximity from "./VariableProximity";
 import {
   Shield,
   ShieldAlert,
@@ -46,6 +47,7 @@ function LandingPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [openFaq, setOpenFaq] = useState<number | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
 
   const handleAnimationComplete = () => {
     console.log('Animation completed!');
@@ -123,9 +125,26 @@ function LandingPageContent() {
           {/* Main Headline */}
           <h1 className="text-4xl sm:text-6xl lg:text-7xl font-extrabold tracking-tight text-slate-900 dark:text-white leading-[1.1] mb-6">
             Cut Code Review Time.{" "}
-            <span className="block text-[#00285B] dark:text-[#00285B] mt-1">
-              Stop Secret Leaks Before Merge.
-            </span>
+            <div
+              ref={containerRef}
+              style={{ position: "relative" }}
+              className="mt-2 block"
+            >
+              <VariableProximity
+                label="Stop Secret Leaks Before Merge."
+                className="variable-proximity-demo text-[#B6FF5C] font-extrabold tracking-tight select-none cursor-pointer"
+                style={{ color: "#B6FF5C" }}
+                fromFontVariationSettings="'wght' 400, 'opsz' 9"
+                toFontVariationSettings="'wght' 1000, 'opsz' 40"
+                containerRef={containerRef}
+                radius={100}
+                falloff="linear"
+                smoothing={0.2}
+                scale={1}
+                lift={0}
+                idleWave={false}
+              />
+            </div>
           </h1>
 
           {/* Subheading */}
