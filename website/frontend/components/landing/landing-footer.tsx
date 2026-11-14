@@ -261,15 +261,18 @@ export function LandingFooter() {
       </div>
 
       {/* ─── MASSIVE OUTLINED SECURA WORDMARK (Single Line Guaranteed, No Extra Dividing Lines) ─── */}
-      <div className="w-full overflow-hidden select-none pointer-events-none flex justify-center items-end leading-none my-2 sm:my-3">
+      <div className="w-full overflow-hidden select-none pointer-events-none flex justify-center items-center leading-none my-2 sm:my-3">
         <span
-          className="text-[13vw] sm:text-[15.5vw] font-black tracking-tighter leading-none block uppercase select-none font-sans text-transparent whitespace-nowrap translate-y-[15%]"
+          className="text-[11.5vw] sm:text-[13.5vw] font-extrabold tracking-tighter leading-none block uppercase select-none font-sans text-transparent whitespace-nowrap"
           style={{
             WebkitTextStroke: "2px #00285B",
             WebkitMaskImage:
               "linear-gradient(to bottom, rgba(0, 0, 0, 1) 20%, rgba(0, 0, 0, 0.3) 70%, transparent 100%)",
             maskImage:
               "linear-gradient(to bottom, rgba(0, 0, 0, 1) 20%, rgba(0, 0, 0, 0.3) 70%, transparent 100%)",
+            whiteSpace: "nowrap",
+            display: "inline-block",
+            lineHeight: 1,
           }}
         >
           SECURA

@@ -177,7 +177,7 @@ function LandingPageContent() {
 
         <div className="max-w-5xl mx-auto px-4 sm:px-8 text-center relative z-10">
           {/* Main Headline */}
-          <h1 className="text-4xl sm:text-6xl lg:text-7xl font-extrabold tracking-tight text-slate-900 dark:text-white leading-[1.1] mb-6">
+          <h1 className="text-4xl sm:text-6xl lg:text-7xl font-bold tracking-tight text-slate-900 dark:text-white leading-[1.15] mb-6">
             Cut Code Review Time.{" "}
             <div
               ref={containerRef}
@@ -189,13 +189,13 @@ function LandingPageContent() {
                 className="variable-proximity-demo text-[#B6FF5C] tracking-tight select-none cursor-pointer"
                 style={{ color: "#B6FF5C" }}
                 fromFontVariationSettings="'wght' 400, 'opsz' 9"
-                toFontVariationSettings="'wght' 1000, 'opsz' 40"
+                toFontVariationSettings="'wght' 700, 'opsz' 20"
                 containerRef={containerRef}
-                radius={180}
+                radius={160}
                 falloff="linear"
                 smoothing={0.2}
-                scale={1.12}
-                lift={3}
+                scale={1.03}
+                lift={1}
                 idleWave={false}
               />
             </div>
@@ -219,7 +219,7 @@ function LandingPageContent() {
 
             <a
               href="#demo"
-              className="w-full sm:w-auto flex items-center justify-center gap-2 rounded-xl border border-slate-200 dark:border-white/10 bg-white/80 dark:bg-[#141417e6] backdrop-blur-md px-5 py-3.5 text-sm font-semibold text-slate-700 dark:text-zinc-300 hover:bg-white dark:hover:bg-white/10 hover:text-[#00285B] dark:hover:text-white transition-all"
+              className="w-full sm:w-auto flex items-center justify-center gap-2 rounded-xl border border-slate-200 dark:border-white/10 bg-white/80 dark:bg-[#0c0d10] backdrop-blur-md px-5 py-3.5 text-sm font-semibold text-slate-700 dark:text-zinc-300 hover:bg-white dark:hover:bg-white/10 hover:text-[#00285B] dark:hover:text-white transition-all"
             >
               <Terminal className="h-4 w-4 text-[#00285B] dark:text-zinc-400" />
               <span>See Live PR Review</span>
@@ -246,11 +246,11 @@ function LandingPageContent() {
         {/* ─── 3. INTERACTIVE PR REVIEW MOCK ────────────── */}
         <div id="demo" className="max-w-5xl mx-auto px-4 sm:px-8 mt-14 sm:mt-18">
           <BlurContainer delay={200} distance={45} blur={10} className="rounded-2xl">
-            <div className="rounded-2xl border border-slate-200/90 dark:border-white/10 bg-[#EDE9E6] dark:bg-[#141417ed] p-3 sm:p-5 backdrop-blur-md">
+            <div className="rounded-2xl border border-slate-200/90 dark:border-white/10 bg-[#EDE9E6] dark:bg-[#0c0d10] p-3 sm:p-5 backdrop-blur-md shadow-2xl">
               {/* GitHub Pull Request Mock Frame (Child Container) */}
-              <div className="rounded-xl border border-slate-200 dark:border-white/10 bg-white/80 dark:bg-[#141417e6] backdrop-blur-md overflow-hidden">
+              <div className="rounded-xl border border-slate-200 dark:border-white/10 bg-white/80 dark:bg-[#08090c] backdrop-blur-md overflow-hidden">
                 {/* Window Title Bar */}
-                <div className="flex items-center justify-between border-b border-slate-100 dark:border-white/5 px-4 py-3 bg-slate-50/70 dark:bg-white/[0.03] backdrop-blur-sm">
+                <div className="flex items-center justify-between border-b border-slate-100 dark:border-white/5 px-4 py-3 bg-slate-50/70 dark:bg-[#0c0d10] backdrop-blur-sm">
                   <div className="flex items-center gap-2">
                     <span className="h-3 w-3 rounded-full bg-rose-400" />
                     <span className="h-3 w-3 rounded-full bg-amber-400" />
@@ -269,7 +269,7 @@ function LandingPageContent() {
                 </div>
 
                 {/* PR Header Info */}
-                <div className="p-4 sm:p-5 border-b border-slate-100 dark:border-white/5">
+                <div className="p-4 sm:p-5 border-b border-slate-100 dark:border-white/5 bg-slate-50/40 dark:bg-[#0a0b0e]">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 dark:bg-emerald-950/40 px-2.5 py-0.5 text-xs font-semibold text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/60">
@@ -288,7 +288,7 @@ function LandingPageContent() {
                 </div>
 
                 {/* Secura Bot Review Comment Box */}
-                <div className="p-4 sm:p-6 space-y-4">
+                <div className="p-4 sm:p-6 space-y-4 bg-white/60 dark:bg-[#08090c]">
                   <div className="flex items-start gap-3">
                     <img
                       src="/logo.png"
@@ -313,7 +313,7 @@ function LandingPageContent() {
                       </div>
 
                       {/* Diff Preview with Caught Secret (Child Container) */}
-                      <div className="rounded-lg border border-slate-200 dark:border-white/10 bg-slate-900/80 dark:bg-[#141417e6] backdrop-blur-md text-slate-100 font-mono text-xs overflow-x-auto p-3.5 space-y-1">
+                      <div className="rounded-lg border border-slate-200 dark:border-white/10 bg-slate-900/80 dark:bg-[#0c0d10] backdrop-blur-md text-slate-100 font-mono text-xs overflow-x-auto p-3.5 space-y-1">
                         <div className="text-[11px] text-slate-400 pb-1 border-b border-slate-800 dark:border-white/10">
                           @@ src/config/stripe.ts:14,7 @@
                         </div>
@@ -339,7 +339,7 @@ function LandingPageContent() {
                         <p className="text-[11px] leading-relaxed text-slate-600 dark:text-zinc-400">
                           A live production Stripe secret key was detected. Exposed secret keys grant full access to your Stripe account, customer charges, and bank transfers.
                         </p>
-                        <div className="rounded-lg bg-white/80 dark:bg-[#141417e6] backdrop-blur-md p-2.5 border border-slate-200 dark:border-white/10 text-[11px] font-mono text-slate-800 dark:text-zinc-200 space-y-1">
+                        <div className="rounded-lg bg-white/80 dark:bg-[#0a0b0e] backdrop-blur-md p-2.5 border border-slate-200 dark:border-white/10 text-[11px] font-mono text-slate-800 dark:text-zinc-200 space-y-1">
                           <div>1. Revoke and rotate this secret key immediately in your Stripe Dashboard.</div>
                           <div>2. Add <code className="text-[#00285B] dark:text-blue-300 font-bold">STRIPE_SECRET_KEY</code> to your GitHub Repository Secrets.</div>
                           <div>3. Re-push commit to clear the Secura Security Gate.</div>
@@ -369,8 +369,8 @@ function LandingPageContent() {
               { val: "0%", label: "Code Retained" },
             ].map((m, i) => (
               <BlurContainer key={i} delay={90 * (i + 1)} distance={30} blur={8} className="rounded-2xl h-full">
-                <div className="p-4 rounded-2xl bg-[#EDE9E6]/40 dark:bg-[#141417e6] backdrop-blur-md border border-slate-200/80 dark:border-white/10 h-full flex flex-col justify-center">
-                  <p className="text-3xl sm:text-4xl font-extrabold text-[#00285B] dark:text-white">{m.val}</p>
+                <div className="p-4 rounded-2xl bg-[#EDE9E6]/40 dark:bg-[#0c0d10] backdrop-blur-md border border-slate-200/80 dark:border-white/10 h-full flex flex-col justify-center">
+                  <p className="text-3xl sm:text-4xl font-bold text-[#00285B] dark:text-white">{m.val}</p>
                   <p className="text-xs text-slate-500 dark:text-zinc-400 mt-1 font-medium">{m.label}</p>
                 </div>
               </BlurContainer>
@@ -401,7 +401,7 @@ function LandingPageContent() {
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             <BlurContainer delay={100} distance={35} className="rounded-2xl h-full">
-              <div className="p-6 rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white/80 dark:bg-[#141417e6] backdrop-blur-md hover:border-white/20 transition-all h-full">
+              <div className="p-6 rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white/80 dark:bg-[#0c0d10] backdrop-blur-md hover:border-white/20 transition-all h-full">
                 <div className="h-10 w-10 rounded-xl bg-amber-500/10 text-amber-500 flex items-center justify-center mb-4">
                   <CreditCard className="h-5 w-5" />
                 </div>
@@ -420,7 +420,7 @@ function LandingPageContent() {
             </BlurContainer>
 
             <BlurContainer delay={150} distance={35} className="rounded-2xl h-full">
-              <div className="p-6 rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white/80 dark:bg-[#141417e6] backdrop-blur-md hover:border-white/20 transition-all h-full">
+              <div className="p-6 rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white/80 dark:bg-[#0c0d10] backdrop-blur-md hover:border-white/20 transition-all h-full">
                 <div className="h-10 w-10 rounded-xl bg-sky-500/10 text-sky-500 flex items-center justify-center mb-4">
                   <Cloud className="h-5 w-5" />
                 </div>
@@ -439,7 +439,7 @@ function LandingPageContent() {
             </BlurContainer>
 
             <BlurContainer delay={200} distance={35} className="rounded-2xl h-full">
-              <div className="p-6 rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white/80 dark:bg-[#141417e6] backdrop-blur-md hover:border-white/20 transition-all h-full">
+              <div className="p-6 rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white/80 dark:bg-[#0c0d10] backdrop-blur-md hover:border-white/20 transition-all h-full">
                 <div className="h-10 w-10 rounded-xl bg-purple-500/10 text-purple-500 flex items-center justify-center mb-4">
                   <Bot className="h-5 w-5" />
                 </div>
@@ -458,7 +458,7 @@ function LandingPageContent() {
             </BlurContainer>
 
             <BlurContainer delay={250} distance={35} className="rounded-2xl h-full">
-              <div className="p-6 rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white/80 dark:bg-[#141417e6] backdrop-blur-md hover:border-white/20 transition-all h-full">
+              <div className="p-6 rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white/80 dark:bg-[#0c0d10] backdrop-blur-md hover:border-white/20 transition-all h-full">
                 <div className="h-10 w-10 rounded-xl bg-emerald-500/10 text-emerald-500 flex items-center justify-center mb-4">
                   <Server className="h-5 w-5" />
                 </div>
@@ -477,7 +477,7 @@ function LandingPageContent() {
             </BlurContainer>
 
             <BlurContainer delay={300} distance={35} className="rounded-2xl h-full">
-              <div className="p-6 rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white/80 dark:bg-[#141417e6] backdrop-blur-md hover:border-white/20 transition-all h-full">
+              <div className="p-6 rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white/80 dark:bg-[#0c0d10] backdrop-blur-md hover:border-white/20 transition-all h-full">
                 <div className="h-10 w-10 rounded-xl bg-blue-500/10 text-blue-500 flex items-center justify-center mb-4">
                   <Key className="h-5 w-5" />
                 </div>
@@ -496,7 +496,7 @@ function LandingPageContent() {
             </BlurContainer>
 
             <BlurContainer delay={350} distance={35} className="rounded-2xl h-full">
-              <div className="p-6 rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white/80 dark:bg-[#141417e6] backdrop-blur-md hover:border-white/20 transition-all h-full">
+              <div className="p-6 rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white/80 dark:bg-[#0c0d10] backdrop-blur-md hover:border-white/20 transition-all h-full">
                 <div className="h-10 w-10 rounded-xl bg-rose-500/10 text-rose-500 flex items-center justify-center mb-4">
                   <Binary className="h-5 w-5" />
                 </div>
@@ -533,7 +533,7 @@ function LandingPageContent() {
           </div>
 
           <BlurContainer delay={150} distance={40} className="rounded-2xl">
-            <div className="rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white/80 dark:bg-[#141417e6] backdrop-blur-md overflow-hidden">
+            <div className="rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white/80 dark:bg-[#0c0d10] backdrop-blur-md overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs">
                   <thead>
@@ -606,7 +606,7 @@ function LandingPageContent() {
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             <BlurContainer delay={100} distance={35} className="rounded-2xl h-full">
-              <div className="p-6 rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white/80 dark:bg-[#141417e6] backdrop-blur-md hover:border-white/20 transition-all h-full">
+              <div className="p-6 rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white/80 dark:bg-[#0c0d10] backdrop-blur-md hover:border-white/20 transition-all h-full">
                 <div className="h-10 w-10 rounded-xl bg-[#EDE9E6] text-[#00285B] dark:bg-white/[0.06] dark:border dark:border-white/10 dark:text-white flex items-center justify-center mb-4">
                   <ShieldAlert className="h-5 w-5" />
                 </div>
@@ -620,7 +620,7 @@ function LandingPageContent() {
             </BlurContainer>
 
             <BlurContainer delay={150} distance={35} className="rounded-2xl h-full">
-              <div className="p-6 rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white/80 dark:bg-[#141417e6] backdrop-blur-md hover:border-white/20 transition-all h-full">
+              <div className="p-6 rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white/80 dark:bg-[#0c0d10] backdrop-blur-md hover:border-white/20 transition-all h-full">
                 <div className="h-10 w-10 rounded-xl bg-[#EDE9E6] text-[#00285B] dark:bg-white/[0.06] dark:border dark:border-white/10 dark:text-white flex items-center justify-center mb-4">
                   <Lock className="h-5 w-5" />
                 </div>
@@ -634,7 +634,7 @@ function LandingPageContent() {
             </BlurContainer>
 
             <BlurContainer delay={200} distance={35} className="rounded-2xl h-full">
-              <div className="p-6 rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white/80 dark:bg-[#141417e6] backdrop-blur-md hover:border-white/20 transition-all h-full">
+              <div className="p-6 rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white/80 dark:bg-[#0c0d10] backdrop-blur-md hover:border-white/20 transition-all h-full">
                 <div className="h-10 w-10 rounded-xl bg-[#EDE9E6] text-[#00285B] dark:bg-white/[0.06] dark:border dark:border-white/10 dark:text-white flex items-center justify-center mb-4">
                   <EyeOff className="h-5 w-5" />
                 </div>
@@ -648,7 +648,7 @@ function LandingPageContent() {
             </BlurContainer>
 
             <BlurContainer delay={250} distance={35} className="rounded-2xl h-full">
-              <div className="p-6 rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white/80 dark:bg-[#141417e6] backdrop-blur-md hover:border-white/20 transition-all h-full">
+              <div className="p-6 rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white/80 dark:bg-[#0c0d10] backdrop-blur-md hover:border-white/20 transition-all h-full">
                 <div className="h-10 w-10 rounded-xl bg-[#EDE9E6] text-[#00285B] dark:bg-white/[0.06] dark:border dark:border-white/10 dark:text-white flex items-center justify-center mb-4">
                   <Zap className="h-5 w-5" />
                 </div>
@@ -662,7 +662,7 @@ function LandingPageContent() {
             </BlurContainer>
 
             <BlurContainer delay={300} distance={35} className="rounded-2xl h-full">
-              <div className="p-6 rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white/80 dark:bg-[#141417e6] backdrop-blur-md hover:border-white/20 transition-all h-full">
+              <div className="p-6 rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white/80 dark:bg-[#0c0d10] backdrop-blur-md hover:border-white/20 transition-all h-full">
                 <div className="h-10 w-10 rounded-xl bg-[#EDE9E6] text-[#00285B] dark:bg-white/[0.06] dark:border dark:border-white/10 dark:text-white flex items-center justify-center mb-4">
                   <Cpu className="h-5 w-5" />
                 </div>
@@ -676,7 +676,7 @@ function LandingPageContent() {
             </BlurContainer>
 
             <BlurContainer delay={350} distance={35} className="rounded-2xl h-full">
-              <div className="p-6 rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white/80 dark:bg-[#141417e6] backdrop-blur-md hover:border-white/20 transition-all h-full">
+              <div className="p-6 rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white/80 dark:bg-[#0c0d10] backdrop-blur-md hover:border-white/20 transition-all h-full">
                 <div className="h-10 w-10 rounded-xl bg-[#EDE9E6] text-[#00285B] dark:bg-white/[0.06] dark:border dark:border-white/10 dark:text-white flex items-center justify-center mb-4">
                   <ShieldCheck className="h-5 w-5" />
                 </div>
@@ -713,7 +713,7 @@ function LandingPageContent() {
           {/* 3-Pillar Enterprise Architecture Details */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
             <BlurContainer delay={100} distance={35} className="rounded-2xl h-full">
-              <div className="rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white/90 dark:bg-[#18181b]/90 backdrop-blur-md p-6 hover:border-blue-500/30 transition-all h-full">
+              <div className="rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white/90 dark:bg-[#0c0d10] backdrop-blur-md p-6 hover:border-blue-500/30 transition-all h-full">
                 <div className="flex items-center gap-3 mb-4">
                   <div className="h-10 w-10 rounded-xl bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-800 text-blue-600 dark:text-blue-400 flex items-center justify-center">
                     <Code2 className="h-5 w-5" />
@@ -732,7 +732,7 @@ function LandingPageContent() {
             </BlurContainer>
 
             <BlurContainer delay={200} distance={35} className="rounded-2xl h-full">
-              <div className="rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white/90 dark:bg-[#18181b]/90 backdrop-blur-md p-6 hover:border-emerald-500/30 transition-all h-full">
+              <div className="rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white/90 dark:bg-[#0c0d10] backdrop-blur-md p-6 hover:border-emerald-500/30 transition-all h-full">
                 <div className="flex items-center gap-3 mb-4">
                   <div className="h-10 w-10 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
                     <Zap className="h-5 w-5" />
@@ -751,7 +751,7 @@ function LandingPageContent() {
             </BlurContainer>
 
             <BlurContainer delay={300} distance={35} className="rounded-2xl h-full">
-              <div className="rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white/90 dark:bg-[#18181b]/90 backdrop-blur-md p-6 hover:border-purple-500/30 transition-all h-full">
+              <div className="rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white/90 dark:bg-[#0c0d10] backdrop-blur-md p-6 hover:border-purple-500/30 transition-all h-full">
                 <div className="flex items-center gap-3 mb-4">
                   <div className="h-10 w-10 rounded-xl bg-purple-50 dark:bg-purple-950/60 border border-purple-200 dark:border-purple-800 text-purple-600 dark:text-purple-400 flex items-center justify-center">
                     <ShieldCheck className="h-5 w-5" />
@@ -772,7 +772,7 @@ function LandingPageContent() {
 
           {/* Standards & Security Governance Bar */}
           <BlurContainer delay={200} distance={30} className="rounded-2xl">
-            <div className="rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white/80 dark:bg-[#18181b]/80 backdrop-blur-md p-6 sm:p-8">
+            <div className="rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white/80 dark:bg-[#0c0d10] backdrop-blur-md p-6 sm:p-8">
               <div className="flex flex-col lg:flex-row items-center justify-between gap-6">
                 <div className="space-y-1.5 text-center lg:text-left">
                   <h4 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wider font-mono">
@@ -824,7 +824,7 @@ function LandingPageContent() {
           <div className="space-y-3">
             {FAQS.map((faq, idx) => (
               <BlurContainer key={idx} delay={40 * (idx + 1)} distance={20} blur={6} className="rounded-2xl">
-                <div className="rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white/80 dark:bg-[#141417e6] backdrop-blur-md overflow-hidden">
+                <div className="rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white/80 dark:bg-[#0c0d10] backdrop-blur-md overflow-hidden">
                   <button
                     type="button"
                     suppressHydrationWarning

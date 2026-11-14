@@ -17,6 +17,7 @@ from app.core.config import settings
 logger = logging.getLogger("secura.email")
 
 RESEND_API_URL = "https://api.resend.com/emails"
+LOGO_ICON_URL = "https://secura-frontend.vercel.app/logo.png"
 
 
 def _clean_from_address(raw_from: Optional[str]) -> str:
@@ -114,11 +115,11 @@ def _wrap_email_layout(title: str, banner_html: str, body_html: str) -> str:
 
 def _generate_welcome_html(user_name: str, dashboard_url: str) -> str:
     """Generate HTML template for welcome email upon registration."""
-    banner = """
+    banner = f"""
     <tr>
       <td style="background: linear-gradient(135deg, #090D12 0%, #1e1b4b 60%, #312e81 100%); padding: 40px 32px; text-align: center; border-bottom: 1px solid rgba(255,255,255,0.08);">
-        <div style="display: inline-block; background: rgba(182, 255, 92, 0.12); border: 1px solid rgba(182, 255, 92, 0.35); border-radius: 14px; padding: 12px; margin-bottom: 14px;">
-          <span style="font-size: 32px; line-height: 1;">🛡️</span>
+        <div style="display: inline-block; margin-bottom: 14px;">
+          <img src="{LOGO_ICON_URL}" alt="Secura" width="56" height="56" style="width: 56px; height: 56px; border-radius: 14px; display: block; margin: 0 auto; box-shadow: 0 4px 16px rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.15);" />
         </div>
         <h1 style="color: #ffffff; margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -0.5px;">Welcome to Secura!</h1>
         <p style="color: #B6FF5C; margin: 8px 0 0; font-size: 14px; font-weight: 600;">Autonomous Secret Scanning & Merge Gate Protection</p>
@@ -162,11 +163,11 @@ def _generate_welcome_html(user_name: str, dashboard_url: str) -> str:
 
 def _generate_login_html(user_name: str, provider: str, timestamp_str: str, dashboard_url: str) -> str:
     """Generate HTML template for login notification email with welcoming and playful message."""
-    banner = """
+    banner = f"""
     <tr>
       <td style="background: linear-gradient(135deg, #090D12 0%, #1e1b4b 60%, #312e81 100%); padding: 36px 32px; border-bottom: 1px solid rgba(255,255,255,0.08); text-align: center;">
-        <div style="display: inline-block; background: rgba(182, 255, 92, 0.12); border: 1px solid rgba(182, 255, 92, 0.35); border-radius: 14px; padding: 12px; margin-bottom: 12px;">
-          <span style="font-size: 30px; line-height: 1;">🛡️</span>
+        <div style="display: inline-block; margin-bottom: 12px;">
+          <img src="{LOGO_ICON_URL}" alt="Secura" width="52" height="52" style="width: 52px; height: 52px; border-radius: 14px; display: block; margin: 0 auto; box-shadow: 0 4px 16px rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.15);" />
         </div>
         <h1 style="color: #ffffff; margin: 0; font-size: 22px; font-weight: 800; letter-spacing: -0.4px;">You missed me too much, I know! 😉</h1>
         <p style="color: #B6FF5C; margin: 6px 0 0; font-size: 14px; font-weight: 600;">Welcome back to Secura</p>

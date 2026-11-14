@@ -525,7 +525,7 @@ export function ContextGraphSection() {
           </div>
 
           {/* ─── MAIN SHOWCASE CONTAINER (Matching CodeRabbit Video Frame) ────── */}
-          <div className="rounded-2xl border border-white/10 bg-[#141417ed] backdrop-blur-md overflow-hidden shadow-2xl relative">
+          <div className="rounded-2xl border border-white/10 bg-[#0c0d10] backdrop-blur-md overflow-hidden shadow-2xl relative">
             <div className="flex flex-col lg:flex-row min-h-[530px]">
               {/* ─── LEFT COLUMN: Steps Navigation + Bottom Title & Description ─── */}
               <div className="w-full lg:w-64 xl:w-72 p-6 sm:p-8 flex flex-col justify-between shrink-0 select-none border-b lg:border-b-0 border-slate-200 dark:border-white/10">
@@ -817,7 +817,7 @@ export function ContextGraphSection() {
                   style={{ animation: "cardSlideUp 0.35s ease-out forwards" }}
                 >
                   {/* 1. Code Diff Box (Clean real code, no verbose clutter) */}
-                  <div className="rounded-xl border border-slate-200/80 dark:border-white/10 bg-white/80 dark:bg-[#141417e6] backdrop-blur-md shadow-lg overflow-hidden text-xs">
+                  <div className="rounded-xl border border-slate-200/80 dark:border-white/10 bg-white/80 dark:bg-[#08090c] backdrop-blur-md shadow-lg overflow-hidden text-xs">
                     {/* Clean Code Gutter & Lines */}
                     <div className="p-3.5 font-mono text-[11px] leading-relaxed overflow-x-auto text-slate-800 dark:text-zinc-300">
                       <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-100 dark:border-white/10 text-[10px] text-slate-400 dark:text-zinc-500">
@@ -910,7 +910,7 @@ export function ContextGraphSection() {
                   </div>
 
                   {/* 2. Secura Bot Review Card (Clean & concise, logo icon) ─── */}
-                  <div className="rounded-xl border border-slate-200/80 dark:border-white/10 bg-white/80 dark:bg-[#141417e6] backdrop-blur-md p-3.5 shadow-lg space-y-2 text-xs">
+                  <div className="rounded-xl border border-slate-200/80 dark:border-white/10 bg-white/80 dark:bg-[#08090c] backdrop-blur-md p-3.5 shadow-lg space-y-2 text-xs">
                     {/* Author Header with Secura Image Logo */}
                     <div className="flex items-center gap-2">
                       <img
