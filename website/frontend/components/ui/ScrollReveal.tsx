@@ -136,7 +136,13 @@ export default function ScrollReveal({
       ref={containerRef}
       className={`scroll-reveal-container my-4 text-center ${containerClassName}`}
     >
-      <div className={`inline-flex flex-col items-center justify-center gap-2 ${className}`}>
+      <div
+        className={`${
+          splitBy === "words"
+            ? "inline leading-relaxed text-center"
+            : "inline-flex flex-col items-center justify-center gap-2"
+        } ${className}`}
+      >
         {segments.map((segment, idx) => {
           const total = segments.length;
           // Calculate individual segment progress based on stagger
@@ -162,7 +168,7 @@ export default function ScrollReveal({
                 transition: `opacity ${duration}s ease, transform ${duration}s cubic-bezier(0.2, 0.65, 0.3, 0.9), filter ${duration}s ease, color 0.3s ease`,
                 willChange: "transform, opacity, filter",
               }}
-              className="inline-block leading-relaxed"
+              className={`inline-block leading-relaxed ${splitBy === "words" ? "mr-[0.28em]" : ""}`}
             >
               {segment}
             </span>
