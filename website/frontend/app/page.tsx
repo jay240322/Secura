@@ -663,32 +663,23 @@ function LandingPageContent() {
               focusOnHover={false}
             />
 
-            <p className="text-sm text-slate-600 dark:text-zinc-400 leading-relaxed max-w-2xl mb-10">
+            <ScrollReveal
+              highlightColor=""
+              mode="scrub"
+              splitBy="words"
+              effect="fade"
+              stagger={0.08}
+              duration={0.8}
+              smoothing={0}
+              baseOpacity={0.15}
+              baseRotation={0}
+              baseOffset={8}
+              enableBlur
+              blurStrength={4}
+              className="text-sm text-slate-600 dark:text-zinc-400 leading-relaxed max-w-2xl font-sans"
+            >
               Secura operates as an autonomous security co-pilot directly in your git workflow, combining deep AST structural parsing, Shannon entropy analytics, and instant GitHub check run enforcement.
-            </p>
-
-            {/* ScrollReveal Interactive Scrub Quote Showcase */}
-            <div className="w-full p-8 sm:p-12 rounded-3xl border border-slate-200/80 dark:border-white/10 bg-white/60 dark:bg-zinc-950/70 backdrop-blur-md max-w-3xl mx-auto text-center">
-              <ScrollReveal
-                highlightColor=""
-                mode="scrub"
-                splitBy="lines"
-                effect="fade"
-                stagger={0.44}
-                duration={0.8}
-                smoothing={0}
-                baseOpacity={0.1}
-                baseRotation={0}
-                baseOffset={9}
-                enableBlur
-                blurStrength={6}
-                className="text-lg sm:text-2xl font-medium tracking-tight text-slate-800 dark:text-zinc-100 leading-relaxed font-sans"
-              >
-                When does a man die? When he is hit by a bullet? No! When he suffers a disease?
-                No! When he ate a soup made out of a poisonous mushroom?
-                No! A man dies when he is forgotten!
-              </ScrollReveal>
-            </div>
+            </ScrollReveal>
           </div>
 
           {/* 3-Pillar Enterprise Architecture Details */}
@@ -696,8 +687,8 @@ function LandingPageContent() {
             <BlurContainer delay={100} distance={35} className="rounded-2xl h-full">
               <div className="rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white/90 dark:bg-[#18181b]/90 backdrop-blur-md p-6 hover:border-blue-500/30 transition-all h-full">
                 <div className="flex items-center gap-3 mb-4">
-                  <div className="h-10 w-10 rounded-xl bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-800 text-blue-600 dark:text-blue-400 flex items-center justify-center font-bold">
-                    01
+                  <div className="h-10 w-10 rounded-xl bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-800 text-blue-600 dark:text-blue-400 flex items-center justify-center">
+                    <Code2 className="h-5 w-5" />
                   </div>
                   <h3 className="font-bold text-base text-slate-900 dark:text-white">In-Memory AST Parsing</h3>
                 </div>
@@ -715,8 +706,8 @@ function LandingPageContent() {
             <BlurContainer delay={200} distance={35} className="rounded-2xl h-full">
               <div className="rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white/90 dark:bg-[#18181b]/90 backdrop-blur-md p-6 hover:border-emerald-500/30 transition-all h-full">
                 <div className="flex items-center gap-3 mb-4">
-                  <div className="h-10 w-10 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-bold">
-                    02
+                  <div className="h-10 w-10 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+                    <Zap className="h-5 w-5" />
                   </div>
                   <h3 className="font-bold text-base text-slate-900 dark:text-white">Shannon Entropy Filter</h3>
                 </div>
@@ -734,8 +725,8 @@ function LandingPageContent() {
             <BlurContainer delay={300} distance={35} className="rounded-2xl h-full">
               <div className="rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white/90 dark:bg-[#18181b]/90 backdrop-blur-md p-6 hover:border-purple-500/30 transition-all h-full">
                 <div className="flex items-center gap-3 mb-4">
-                  <div className="h-10 w-10 rounded-xl bg-purple-50 dark:bg-purple-950/60 border border-purple-200 dark:border-purple-800 text-purple-600 dark:text-purple-400 flex items-center justify-center font-bold">
-                    03
+                  <div className="h-10 w-10 rounded-xl bg-purple-50 dark:bg-purple-950/60 border border-purple-200 dark:border-purple-800 text-purple-600 dark:text-purple-400 flex items-center justify-center">
+                    <ShieldCheck className="h-5 w-5" />
                   </div>
                   <h3 className="font-bold text-base text-slate-900 dark:text-white">Automated PR Merge Guard</h3>
                 </div>
