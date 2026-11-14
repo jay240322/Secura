@@ -415,9 +415,8 @@ function RepositoryDetailContent() {
 
             <div className="px-1 py-0.5 flex items-center justify-between text-[11px] text-slate-500 dark:text-zinc-500 font-mono">
               <span>Security Gate</span>
-              <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-medium">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                Active
+              <span className="text-emerald-600 dark:text-emerald-400 font-medium">
+                Protected
               </span>
             </div>
           </div>

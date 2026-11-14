@@ -11,7 +11,6 @@ export interface BlurContainerProps {
   blur?: number;
   distance?: number;
   direction?: "top" | "bottom";
-  blueEffect?: boolean;
   onAnimationComplete?: () => void;
 }
 
@@ -19,12 +18,11 @@ export default function BlurContainer({
   children,
   className = "",
   trigger = "view",
-  delay = 150,
-  stepDuration = 0.5,
-  blur = 10,
-  distance = 40,
+  delay = 100,
+  stepDuration = 0.45,
+  blur = 6,
+  distance = 25,
   direction = "top",
-  blueEffect = true,
   onAnimationComplete,
 }: BlurContainerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -45,7 +43,7 @@ export default function BlurContainer({
           }
         });
       },
-      { threshold: 0.1, rootMargin: "0px 0px -40px 0px" }
+      { threshold: 0.08, rootMargin: "0px 0px -20px 0px" }
     );
 
     observer.observe(el);
@@ -70,29 +68,15 @@ export default function BlurContainer({
         opacity: inView ? 1 : 0,
         transform: inView ? "translateY(0)" : `translateY(${offset}px)`,
         filter: inView ? "blur(0px)" : `blur(${blur}px)`,
-        transition: `opacity ${stepDuration}s cubic-bezier(0.2, 0.65, 0.3, 0.9), transform ${stepDuration}s cubic-bezier(0.2, 0.65, 0.3, 0.9), filter ${stepDuration}s cubic-bezier(0.2, 0.65, 0.3, 0.9), box-shadow 0.6s ease, border-color 0.6s ease`,
+        transition: `opacity ${stepDuration}s ease, transform ${stepDuration}s cubic-bezier(0.2, 0.65, 0.3, 0.9), filter ${stepDuration}s ease`,
         transitionDelay: `${delay}ms`,
         willChange: "transform, opacity, filter",
       }}
-      className={`relative transition-all duration-500 ${
-        blueEffect && inView
-          ? "border-blue-500/40 shadow-[0_0_35px_-8px_rgba(59,130,246,0.32)] hover:border-blue-500/70 hover:shadow-[0_0_45px_-4px_rgba(59,130,246,0.5)]"
-          : blueEffect
-          ? "border-blue-500/20 shadow-[0_0_15px_rgba(59,130,246,0.1)]"
-          : ""
-      } ${className}`}
+      className={`relative transition-all duration-300 ${className}`}
     >
-      {blueEffect && (
-        <div
-          className={`pointer-events-none absolute -inset-px rounded-[inherit] bg-gradient-to-b from-blue-500/10 via-transparent to-blue-600/5 transition-opacity duration-700 ${
-            inView ? "opacity-100" : "opacity-0"
-          }`}
-        />
-      )}
       {children}
     </div>
   );
 }
 
 export { BlurContainer };
-

@@ -576,12 +576,8 @@ export default function SettingsPage() {
           <CardContent className="space-y-4 pt-5">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-50/60 dark:bg-zinc-900/40">
               <div className="space-y-1">
-                <p className="text-xs font-semibold text-slate-900 dark:text-zinc-100 flex items-center gap-2">
-                  <span>Current Active Session</span>
-                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 text-[10px] font-medium text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/60">
-                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
-                    <span>Active Now</span>
-                  </span>
+                <p className="text-xs font-semibold text-slate-900 dark:text-zinc-100">
+                  Current Session
                 </p>
                 <p suppressHydrationWarning className="text-[11px] text-slate-500 dark:text-zinc-400">
                   Signed in as <span className="font-semibold text-slate-700 dark:text-zinc-200">{name || "Developer"}</span> via {isGithubConnected ? "GitHub OAuth" : isGoogleConnected ? "Google OAuth" : "Secura ID"}.
@@ -648,7 +644,7 @@ export default function SettingsPage() {
                   </p>
                 </div>
                 <Link
-                  href="/about"
+                  href="/settings/about"
                   className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3.5 py-2 text-xs font-semibold text-slate-700 dark:text-zinc-200 hover:bg-slate-100 dark:hover:bg-zinc-800 hover:text-[#00285B] dark:hover:text-blue-400 transition-colors w-fit"
                 >
                   <span>About Secura</span>
@@ -672,7 +668,7 @@ export default function SettingsPage() {
                   </p>
                 </div>
                 <Link
-                  href="/privacy"
+                  href="/settings/privacy"
                   className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3.5 py-2 text-xs font-semibold text-slate-700 dark:text-zinc-200 hover:bg-slate-100 dark:hover:bg-zinc-800 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors w-fit"
                 >
                   <span>Privacy Policy</span>

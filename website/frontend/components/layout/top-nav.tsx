@@ -18,6 +18,8 @@ const PAGE_TITLES: Record<string, string> = {
   "/findings": "Findings",
   "/insights": "Security Insights",
   "/settings": "Settings",
+  "/settings/about": "About Secura",
+  "/settings/privacy": "Privacy Policy",
 };
 
 function getTitle(pathname: string): string {
