@@ -132,16 +132,16 @@ function LandingPageContent() {
             >
               <VariableProximity
                 label="Stop Secret Leaks Before Merge."
-                className="variable-proximity-demo text-[#B6FF5C] font-extrabold tracking-tight select-none cursor-pointer"
+                className="variable-proximity-demo text-[#B6FF5C] tracking-tight select-none cursor-pointer"
                 style={{ color: "#B6FF5C" }}
                 fromFontVariationSettings="'wght' 400, 'opsz' 9"
                 toFontVariationSettings="'wght' 1000, 'opsz' 40"
                 containerRef={containerRef}
-                radius={100}
+                radius={180}
                 falloff="linear"
                 smoothing={0.2}
-                scale={1}
-                lift={0}
+                scale={1.12}
+                lift={3}
                 idleWave={false}
               />
             </div>
@@ -682,23 +682,9 @@ function LandingPageContent() {
               focusOnHover={false}
             />
 
-            <ScrollReveal
-              highlightColor=""
-              mode="scrub"
-              splitBy="words"
-              effect="fade"
-              stagger={0.08}
-              duration={0.8}
-              smoothing={0}
-              baseOpacity={0.15}
-              baseRotation={0}
-              baseOffset={8}
-              enableBlur
-              blurStrength={4}
-              className="text-sm text-slate-600 dark:text-zinc-400 leading-relaxed max-w-2xl font-sans"
-            >
+            <p className="text-sm text-slate-600 dark:text-zinc-400 leading-relaxed max-w-2xl mb-10">
               Secura operates as an autonomous security co-pilot directly in your git workflow, combining deep AST structural parsing, Shannon entropy analytics, and instant GitHub check run enforcement.
-            </ScrollReveal>
+            </p>
           </div>
 
           {/* 3-Pillar Enterprise Architecture Details */}

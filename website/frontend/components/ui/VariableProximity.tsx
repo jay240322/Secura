@@ -67,11 +67,11 @@ export default function VariableProximity({
   fromFontVariationSettings = "'wght' 400, 'opsz' 9",
   toFontVariationSettings = "'wght' 1000, 'opsz' 40",
   containerRef,
-  radius = 100,
+  radius = 180,
   falloff = "linear",
   smoothing = 0.2,
-  scale = 1,
-  lift = 0,
+  scale = 1.12,
+  lift = 3,
   idleWave = false,
   fontSize,
   style = {},
@@ -93,12 +93,13 @@ export default function VariableProximity({
     let mouseY = -9999;
 
     const resetLetters = () => {
+      const baseWght = parsedFrom["wght"] ?? 400;
       letterRefs.current.forEach((el) => {
         if (!el) return;
         el.style.fontVariationSettings = fromFontVariationSettings;
-        if (scale !== 1 || lift !== 0) {
-          el.style.transform = "none";
-        }
+        el.style.fontWeight = `${baseWght}`;
+        el.style.transform = "none";
+        el.style.textShadow = "none";
       });
     };
 
@@ -107,10 +108,10 @@ export default function VariableProximity({
       if (container) {
         const cRect = container.getBoundingClientRect();
         if (
-          mouseX < cRect.left - radius ||
-          mouseX > cRect.right + radius ||
-          mouseY < cRect.top - radius ||
-          mouseY > cRect.bottom + radius
+          mouseX < cRect.left - radius - 50 ||
+          mouseX > cRect.right + radius + 50 ||
+          mouseY < cRect.top - radius - 50 ||
+          mouseY > cRect.bottom + radius + 50
         ) {
           resetLetters();
           return;
@@ -133,14 +134,24 @@ export default function VariableProximity({
         }
         el.style.fontVariationSettings = formatFontVariationSettings(currentAxes);
 
-        const transforms: string[] = [];
-        if (lift && lift !== 0) {
-          transforms.push(`translateY(${-lift * intensity}px)`);
-        }
-        if (scale && scale !== 1) {
-          transforms.push(`scale(${1 + (scale - 1) * intensity})`);
-        }
-        el.style.transform = transforms.length > 0 ? transforms.join(" ") : "none";
+        const currentWght = currentAxes["wght"] ?? (400 + (1000 - 400) * intensity);
+        el.style.fontWeight = `${Math.round(currentWght)}`;
+
+        const effLift = lift > 0 ? lift : 3;
+        const effScale = scale > 1 ? scale : 1.12;
+        const translateY = -effLift * intensity;
+        const scaleVal = 1 + (effScale - 1) * intensity;
+
+        el.style.transform =
+          intensity > 0.01
+            ? `translateY(${translateY}px) scale(${scaleVal})`
+            : "none";
+        el.style.textShadow =
+          intensity > 0.05
+            ? `0 0 ${Math.round(12 * intensity)}px rgba(182, 255, 92, ${
+                0.5 * intensity
+              })`
+            : "none";
       });
     };
 
@@ -228,3 +239,4 @@ export default function VariableProximity({
 }
 
 export { VariableProximity };
+
