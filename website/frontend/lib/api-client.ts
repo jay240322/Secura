@@ -1215,12 +1215,27 @@ class ApiClient {
   // ─── Authentication & User Session ─────────────────────────────────────────
   getToken(): string | null {
     if (typeof window === "undefined") return null;
-    return localStorage.getItem("secura_auth_token");
+    const local = localStorage.getItem("secura_auth_token");
+    if (local) return local;
+    try {
+      const match = document.cookie.match(/(?:^|;\s*)secura_auth_token=([^;]+)/);
+      if (match) {
+        const val = decodeURIComponent(match[1]);
+        if (val) {
+          localStorage.setItem("secura_auth_token", val);
+          return val;
+        }
+      }
+    } catch {}
+    return null;
   }
 
   setToken(val: string): void {
     if (typeof window === "undefined") return;
     localStorage.setItem("secura_auth_token", val);
+    try {
+      document.cookie = `secura_auth_token=${encodeURIComponent(val)}; path=/; max-age=604800; SameSite=Lax`;
+    } catch {}
   }
 
   getStoredUser(): User | null {
@@ -1258,6 +1273,9 @@ class ApiClient {
     localStorage.removeItem("secura_auth_token");
     localStorage.removeItem("secura_auth_user");
     localStorage.removeItem("secura_cached_repos");
+    try {
+      document.cookie = "secura_auth_token=; path=/; max-age=0; SameSite=Lax";
+    } catch {}
     repoCache.clear();
     this.dataCache.clear();
     this.inflight.clear();
