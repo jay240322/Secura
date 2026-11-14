@@ -544,9 +544,7 @@ export function ContextGraphSection() {
                         <div className="flex items-center justify-between">
                           <span>{step.name}</span>
                           {isActive && (
-                            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-[#FF5500]/15 text-[#FF5500] border border-[#FF5500]/30 font-bold">
-                              ACTIVE
-                            </span>
+                            <span className="h-1.5 w-1.5 rounded-full bg-[#00285B] dark:bg-white" />
                           )}
                         </div>
                       </button>
