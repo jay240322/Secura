@@ -197,6 +197,26 @@ async def send_resend_email_async(to_email: str, subject: str, html_content: str
         return False
 
 
+def _enqueue_email(
+    to_email: str,
+    subject: str,
+    html: str,
+    background_tasks: Optional[BackgroundTasks] = None,
+):
+    if background_tasks is not None:
+        background_tasks.add_task(send_resend_email_async, to_email, subject, html)
+    else:
+        import asyncio
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                loop.create_task(send_resend_email_async(to_email, subject, html))
+            else:
+                asyncio.run(send_resend_email_async(to_email, subject, html))
+        except Exception:
+            pass
+
+
 def dispatch_welcome_email(
     to_email: str,
     user_name: Optional[str] = None,
@@ -211,19 +231,7 @@ def dispatch_welcome_email(
         dashboard_url = settings.SECURA_DASHBOARD_URL.rstrip("/") + "/dashboard"
         html = _generate_welcome_html(name, dashboard_url)
         subject = "Welcome to Secura — Next-Gen Repository Security"
-
-        if background_tasks is not None:
-            background_tasks.add_task(send_resend_email_async, to_email, subject, html)
-        else:
-            import asyncio
-            try:
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    loop.create_task(send_resend_email_async(to_email, subject, html))
-                else:
-                    asyncio.run(send_resend_email_async(to_email, subject, html))
-            except Exception:
-                pass
+        _enqueue_email(to_email, subject, html, background_tasks)
     except Exception as e:
         logger.warning("Failed to dispatch welcome email to %s: %s", to_email, e)
 
@@ -244,18 +252,6 @@ def dispatch_login_email(
         timestamp_str = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
         html = _generate_login_html(name, provider, timestamp_str, dashboard_url)
         subject = f"Security Notice: New Secura sign-in ({provider.upper()})"
-
-        if background_tasks is not None:
-            background_tasks.add_task(send_resend_email_async, to_email, subject, html)
-        else:
-            import asyncio
-            try:
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    loop.create_task(send_resend_email_async(to_email, subject, html))
-                else:
-                    asyncio.run(send_resend_email_async(to_email, subject, html))
-            except Exception:
-                pass
+        _enqueue_email(to_email, subject, html, background_tasks)
     except Exception as e:
         logger.warning("Failed to dispatch login email to %s: %s", to_email, e)

@@ -3,7 +3,12 @@
 import { useEffect, useState, useMemo, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { api } from "@/lib/api-client";
-import { comparePullRequests, enrichPRWithRefreshedCommits } from "@/lib/pull-request-utils";
+import {
+  comparePullRequests,
+  enrichPRWithRefreshedCommits,
+  mergeIncomingPullRequests,
+  updatePullRequestWithCommits,
+} from "@/lib/pull-request-utils";
 import type { PullRequest, Repository } from "@/types";
 import {
   ExternalLink,
@@ -48,16 +53,7 @@ export default function PullRequestsPage() {
       if (commits && commits.length > 0) {
         const { enrichedCommits, resolvedFindings, hasResolved } = enrichPRWithRefreshedCommits(pr, commits);
         setPullRequests((prev) =>
-          prev.map((item) =>
-            item.id === pr.id
-              ? {
-                  ...item,
-                  commits: enrichedCommits,
-                  historicalFindings: resolvedFindings,
-                  hasResolvedViolations: hasResolved,
-                }
-              : item
-          )
+          updatePullRequestWithCommits(prev, pr.id, enrichedCommits, resolvedFindings, hasResolved)
         );
       }
     } catch (e) {
@@ -174,21 +170,7 @@ export default function PullRequestsPage() {
         .getPullRequests(repoId)
         .then((res) => {
           if (mounted && res.isLive && res.pullRequests) {
-            setPullRequests((prev) => {
-              const prevMap = new Map(prev.map((item) => [item.id, item]));
-              return res.pullRequests.map((incoming) => {
-                const existing = prevMap.get(incoming.id);
-                if (existing && existing.commits && existing.commits.length > (incoming.commits?.length || 0)) {
-                  return {
-                    ...incoming,
-                    commits: existing.commits,
-                    historicalFindings: existing.historicalFindings || incoming.historicalFindings,
-                    hasResolvedViolations: existing.hasResolvedViolations ?? incoming.hasResolvedViolations,
-                  };
-                }
-                return incoming;
-              });
-            });
+            setPullRequests((prev) => mergeIncomingPullRequests(prev, res.pullRequests));
           }
         })
         .catch(() => { });
@@ -227,18 +209,17 @@ export default function PullRequestsPage() {
     setScanningMap((prev) => ({ ...prev, [pr.id]: true }));
     setFeedback(null);
     try {
-      const res = await api.scanPullRequest(pr.repositoryId, pr.number, pr.branch, pr.baseBranch);
-      if (res.success) {
-        setFeedback(`Scan started for ${pr.repository} PR #${pr.number}! Results will update live.`);
-        setTimeout(() => setFeedback(null), 4000);
-        // Instant refresh
-        setTimeout(() => void loadData(), 2000);
-      } else {
-        setFeedback(res.message || "Failed to trigger scan.");
-      }
+      const outcome = await api.scanPullRequest(pr.repositoryId, pr.number, pr.branch, pr.baseBranch);
+      setFeedback(
+        outcome.success
+          ? `Security gate scan triggered for ${pr.repository} PR #${pr.number}.`
+          : outcome.message || "Unable to queue scan."
+      );
+      if (outcome.success) setTimeout(() => void loadData(), 2500);
     } catch {
-      setFeedback("Error launching scan.");
+      setFeedback("An error occurred while dispatching the PR scan request.");
     } finally {
+      setTimeout(() => setFeedback(null), 4500);
       setScanningMap((prev) => ({ ...prev, [pr.id]: false }));
     }
   };
