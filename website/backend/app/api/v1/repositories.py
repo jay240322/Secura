@@ -142,17 +142,9 @@ def enrich_repositories_batch(repos: List[Repository], db: Session) -> List[Repo
             for sc in latest_scans:
                 latest_scans_by_repo[sc.repository_id] = sc
         except Exception:
-            scans = (
-                db.query(Scan)
-                .options(defer(Scan.pr_commits_json))
-                .filter(Scan.repository_id.in_(repo_ids))
-                .order_by(Scan.created_at.desc())
-                .all()
-            )
-            for sc in scans:
-                if sc.repository_id not in latest_scans_by_repo:
-                    latest_scans_by_repo[sc.repository_id] = sc
-    else:
+            pass
+
+    if not latest_scans_by_repo:
         scans = (
             db.query(Scan)
             .options(defer(Scan.pr_commits_json))

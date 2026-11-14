@@ -60,6 +60,9 @@ async function getLiveFirebase() {
     const liveAuth = authModule.getAuth(liveApp);
 
     const liveGoogle = new authModule.GoogleAuthProvider();
+    liveGoogle.addScope("email");
+    liveGoogle.addScope("profile");
+    liveGoogle.addScope("openid");
     liveGoogle.setCustomParameters({ prompt: "select_account" });
 
     const liveGithub = new authModule.GithubAuthProvider();
@@ -208,14 +211,26 @@ export async function signInWithPopup(
       };
     }
 
-    // Google Provider flow: extract real Google Profile Name & Picture
-    let googleName = result.user.displayName;
+    // Google Provider flow: extract real Google Profile Email, Name & Picture
     const addProfile = additionalInfo?.profile as any;
+    let googleEmail =
+      result.user.email ||
+      result.user.providerData?.find((p: any) => p?.email)?.email ||
+      result.user.providerData?.[0]?.email ||
+      addProfile?.email ||
+      (result as any)?._tokenResponse?.email ||
+      (result.user as any)?.reloadUserInfo?.email;
+
+    if (!googleEmail && result.user.uid) {
+      googleEmail = `google-${result.user.uid.slice(0, 10)}@secura.security`;
+    }
+
+    let googleName = result.user.displayName;
     if (!googleName && addProfile?.name) {
       googleName = addProfile.name;
     }
-    if (!googleName && result.user.email) {
-      const emailPrefix = result.user.email.split("@")[0];
+    if (!googleName && googleEmail && googleEmail.includes("@")) {
+      const emailPrefix = googleEmail.split("@")[0];
       googleName = emailPrefix.charAt(0).toUpperCase() + emailPrefix.slice(1);
     }
 
@@ -227,7 +242,7 @@ export async function signInWithPopup(
     return {
       user: {
         uid: result.user.uid,
-        email: result.user.email,
+        email: googleEmail || null,
         displayName: googleName || "Google User",
         photoURL: googlePhoto,
       },

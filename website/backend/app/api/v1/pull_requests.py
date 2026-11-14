@@ -484,26 +484,20 @@ def fast_sync_repository_prs(
         if not owner or not repo_name:
             return 0
 
-        if not inst_id and getattr(repo, "installation_id", None):
-            from app.models.installation import GitHubInstallation
-            inst = db.query(GitHubInstallation).filter(GitHubInstallation.id == repo.installation_id).first()
-            if inst:
-                inst_id = inst.github_installation_id
-
         if not inst_id:
             from app.models.installation import GitHubInstallation
-            inst = (
+            match_inst = (
                 db.query(GitHubInstallation)
                 .filter(
                     or_(
+                        GitHubInstallation.id == repo.installation_id,
                         func.lower(GitHubInstallation.account_name) == owner.lower(),
                         GitHubInstallation.user_id == repo.user_id,
                     )
                 )
                 .first()
             )
-            if inst:
-                inst_id = inst.github_installation_id
+            inst_id = match_inst.github_installation_id if match_inst else None
 
         user_access = user_token
         if not user_access and repo.user_id:
@@ -931,19 +925,7 @@ def build_annotated_pr_data(
                 )
                 .all()
             )
-        for sc in matching_scans:
-            sc_sha = (sc.commit_sha or "").lower()
-            if sc_sha:
-                sc_info = serialize_pr_scan_info(sc)
-                for k in (sc_sha, sc_sha[:7]):
-                    if k not in scans_by_sha:
-                        scans_by_sha[k] = sc_info
-                    else:
-                        existing = scans_by_sha[k]
-                        if (sc_info["total_findings"] > existing["total_findings"]) or (
-                            sc_info["scan_result"] == "failed" and existing["scan_result"] != "failed"
-                        ):
-                            scans_by_sha[k] = sc_info
+        scans_by_sha.update(_index_scans_by_sha(matching_scans))
 
     annotated_commits, all_historical_findings, has_resolved = enrich_and_resolve_pr_commits(
         raw_commits=raw_commits,
@@ -999,6 +981,45 @@ def _background_sync_repo_prs(repo_id: str, user_token: Optional[str] = None):
         bg_db.close()
 
 
+def _resolve_user_repo_scope(
+    db: Session,
+    current_user: User,
+    repository_id: Optional[str] = None,
+) -> Tuple[Optional[Repository], Any]:
+    """Resolve target repository and build user repository authorization condition."""
+    user_ids, gh_handle = get_user_scope_ids(db, current_user)
+    from app.models.installation import GitHubInstallation
+
+    if not gh_handle:
+        user_inst = (
+            db.query(GitHubInstallation)
+            .filter(GitHubInstallation.user_id.in_(user_ids))
+            .first()
+        )
+        if user_inst and user_inst.account_name:
+            gh_handle = user_inst.account_name.lower()
+
+    installation_ids = [
+        inst_id[0]
+        for inst_id in db.query(GitHubInstallation.id)
+        .filter(
+            or_(
+                GitHubInstallation.user_id.in_(user_ids),
+                (func.lower(GitHubInstallation.account_name) == gh_handle) if gh_handle else False,
+            )
+        )
+        .all()
+    ]
+
+    target_repo = _resolve_target_repository(db, repository_id, user_ids=user_ids, gh_handle=gh_handle)
+    user_repo_cond = or_(
+        Repository.user_id.in_(user_ids),
+        (func.lower(Repository.owner) == gh_handle) if gh_handle else False,
+        Repository.installation_id.in_(installation_ids) if installation_ids else False,
+    )
+    return target_repo, user_repo_cond
+
+
 @router.get("", response_model=List[Dict[str, Any]])
 def list_pull_requests(
     repository_id: Optional[str] = None,
@@ -1010,9 +1031,7 @@ def list_pull_requests(
     List pull request security scans and Check Run statuses.
     Strictly non-blocking DB query for instant responses (GitHub sync is handled via /sync and webhooks).
     """
-    user_ids, gh_handle = get_user_scope_ids(db, current_user)
-
-    target_repo = _resolve_target_repository(db, repository_id, user_ids=user_ids, gh_handle=gh_handle)
+    target_repo, user_repo_cond = _resolve_user_repo_scope(db, current_user, repository_id)
 
     query = (
         db.query(Scan)
@@ -1025,12 +1044,7 @@ def list_pull_requests(
     if target_repo:
         query = query.filter(Scan.repository_id == target_repo.id)
     else:
-        query = query.filter(
-            or_(
-                Repository.user_id.in_(user_ids),
-                (func.lower(Repository.owner) == gh_handle) if gh_handle else False,
-            )
-        )
+        query = query.filter(user_repo_cond)
 
     if state and state.lower() != "all":
         target_state = state.lower()
@@ -1042,6 +1056,18 @@ def list_pull_requests(
             query = query.filter(and_(or_(func.lower(Scan.pr_state) == "open", Scan.pr_state.is_(None)), Scan.pr_merged_at.is_(None), Scan.pr_closed_at.is_(None)))
 
     scans = query.order_by(Scan.created_at.desc()).limit(300).all()
+
+    # If no scans are found in DB, auto-sync from GitHub so user sees all PRs immediately
+    if not scans:
+        try:
+            repos_to_sync = [target_repo] if target_repo else db.query(Repository).filter(user_repo_cond).all()
+            if repos_to_sync:
+                user_access = _extract_user_github_token(current_user)
+                for r in repos_to_sync:
+                    fast_sync_repository_prs(db, r, user_token=user_access)
+                scans = query.order_by(Scan.created_at.desc()).limit(300).all()
+        except Exception as sync_err:
+            logger.warning("Auto-sync PRs on list_pull_requests failed: %s", sync_err)
 
     # Pre-index all scans by sha prefix to eliminate per-PR N+1 database queries
     repo_scans_cache: Dict[Tuple[str, int, str], Scan] = {}
@@ -1097,22 +1123,8 @@ def sync_pull_requests(
     Rapidly synchronize Pull Requests (open, merged, and closed) across monitored
     repositories, enqueuing security scans in the background.
     """
-    user_ids, gh_handle = get_user_scope_ids(db, current_user)
-
-    target_repo = _resolve_target_repository(db, repository_id, user_ids=user_ids, gh_handle=gh_handle)
-    if target_repo:
-        repos = [target_repo]
-    else:
-        repos = (
-            db.query(Repository)
-            .filter(
-                or_(
-                    Repository.user_id.in_(user_ids),
-                    (func.lower(Repository.owner) == gh_handle) if gh_handle else False,
-                ),
-            )
-            .all()
-        )
+    target_repo, user_repo_cond = _resolve_user_repo_scope(db, current_user, repository_id)
+    repos = [target_repo] if target_repo else db.query(Repository).filter(user_repo_cond).all()
 
     synced_prs_count = 0
     user_access = _extract_user_github_token(current_user)
@@ -1299,19 +1311,11 @@ def get_pr_commits(
             .limit(200)
             .all()
         )
-        for sc in repo_scans:
-            sc_sha = (sc.commit_sha or "").lower()
-            if sc_sha and (sc_sha[:7] in pr_shas or sc_sha in pr_shas):
-                sc_info = serialize_pr_scan_info(sc)
-                for k in (sc_sha, sc_sha[:7]):
-                    if k not in scans_by_sha:
-                        scans_by_sha[k] = sc_info
-                    else:
-                        existing = scans_by_sha[k]
-                        if (sc_info["total_findings"] > existing["total_findings"]) or (
-                            sc_info["scan_result"] == "failed" and existing["scan_result"] != "failed"
-                        ):
-                            scans_by_sha[k] = sc_info
+        matching_repo_scans = [
+            sc for sc in repo_scans
+            if (sc.commit_sha or "").lower() in pr_shas or (sc.commit_sha or "").lower()[:7] in pr_shas
+        ]
+        scans_by_sha.update(_index_scans_by_sha(matching_repo_scans))
 
     head_scan_res = scan.scan_result if scan else "passed"
     head_sha_val = scan.commit_sha if scan else "HEAD"

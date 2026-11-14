@@ -7,7 +7,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { SeverityBadge } from "@/components/ui/severity-badge";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { api } from "@/lib/api-client";
-import { comparePullRequests, enrichPRWithRefreshedCommits } from "@/lib/pull-request-utils";
+import {
+  comparePullRequests,
+  enrichPRWithRefreshedCommits,
+  mergeIncomingPullRequests,
+  updatePullRequestWithCommits,
+} from "@/lib/pull-request-utils";
 import { cn } from "@/lib/utils";
 import type { Repository, PullRequest, Finding } from "@/types";
 import { PullRequestRow } from "@/components/pull-requests/pull-request-row";
@@ -130,21 +135,7 @@ function RepositoryDetailContent() {
           if (!mounted || !overview) return;
           if (overview.repository) setRepo(overview.repository);
           if (overview.pullRequests) {
-            setPullRequests((prev) => {
-              const prevMap = new Map(prev.map((item) => [item.id, item]));
-              return overview.pullRequests.map((incoming) => {
-                const existing = prevMap.get(incoming.id);
-                if (existing && existing.commits && existing.commits.length > (incoming.commits?.length || 0)) {
-                  return {
-                    ...incoming,
-                    commits: existing.commits,
-                    historicalFindings: existing.historicalFindings || incoming.historicalFindings,
-                    hasResolvedViolations: existing.hasResolvedViolations ?? incoming.hasResolvedViolations,
-                  };
-                }
-                return incoming;
-              });
-            });
+            setPullRequests((prev) => mergeIncomingPullRequests(prev, overview.pullRequests));
           }
           if (overview.findings) setFindings(overview.findings);
         }).catch(() => {});
@@ -166,16 +157,7 @@ function RepositoryDetailContent() {
         const { enrichedCommits, resolvedFindings, hasResolved } = enrichPRWithRefreshedCommits(pr, commits);
 
         setPullRequests((prev) =>
-          prev.map((item) =>
-            item.id === prId
-              ? {
-                  ...item,
-                  commits: enrichedCommits,
-                  historicalFindings: resolvedFindings,
-                  hasResolvedViolations: hasResolved,
-                }
-              : item
-          )
+          updatePullRequestWithCommits(prev, prId, enrichedCommits, resolvedFindings, hasResolved)
         );
       }
     } catch (e) {

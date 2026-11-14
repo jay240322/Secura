@@ -343,51 +343,67 @@ def get_repository_pull_requests(
     owner: str,
     repo: str,
     state: str = "all",
-    per_page: int = 50,
+    per_page: int = 100,
     user_token: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """
     Fetch all pull requests (open, merged, closed) for a repository.
     Tries GitHub App installation token first, with automatic fallback to public API.
+    Paginates automatically to return complete PR histories.
     """
     headers = _get_github_auth_headers(installation_id, owner, repo, user_token=user_token)
-
     url = f"{GITHUB_API_URL}/repos/{owner}/{repo}/pulls"
-    try:
-        response = _GH_SESSION.get(
-            url,
-            headers=headers,
-            params={"state": state, "per_page": min(per_page, 100), "sort": "updated", "direction": "desc"},
-            timeout=6,
-        )
-        if response.ok:
-            return response.json()
-        if response.status_code in (401, 403) and "Authorization" in headers:
-            logger.info("GitHub pulls API returned %s with token for %s/%s; attempting unauthenticated fallback", response.status_code, owner, repo)
-            fallback_headers = {
-                "Accept": "application/vnd.github+json",
-                "X-GitHub-Api-Version": "2022-11-28",
-                "User-Agent": "Secura-Security-Scanner",
-            }
-            fallback_resp = _GH_SESSION.get(
+    all_prs: List[Dict[str, Any]] = []
+
+    for page in range(1, 4):  # Fetch up to 300 PRs
+        try:
+            response = _GH_SESSION.get(
                 url,
-                headers=fallback_headers,
-                params={"state": state, "per_page": min(per_page, 100), "sort": "updated", "direction": "desc"},
-                timeout=6,
+                headers=headers,
+                params={"state": state, "per_page": min(per_page, 100), "page": page, "sort": "created", "direction": "desc"},
+                timeout=8,
             )
-            if fallback_resp.ok:
-                return fallback_resp.json()
-        logger.warning(
-            "GitHub pulls API responded with status %s for %s/%s: %s",
-            response.status_code,
-            owner,
-            repo,
-            response.text[:200],
-        )
-        return []
-    except Exception as exc:
-        logger.error("Failed to list PRs for %s/%s: %s", owner, repo, exc)
-        return []
+            if response.ok:
+                page_data = response.json()
+                if not isinstance(page_data, list) or not page_data:
+                    break
+                all_prs.extend(page_data)
+                if len(page_data) < 100:
+                    break
+                continue
+
+            if response.status_code in (401, 403) and "Authorization" in headers and page == 1:
+                logger.info("GitHub pulls API returned %s with token for %s/%s; attempting unauthenticated fallback", response.status_code, owner, repo)
+                fallback_headers = {
+                    "Accept": "application/vnd.github+json",
+                    "X-GitHub-Api-Version": "2022-11-28",
+                    "User-Agent": "Secura-Security-Scanner",
+                }
+                fallback_resp = _GH_SESSION.get(
+                    url,
+                    headers=fallback_headers,
+                    params={"state": state, "per_page": min(per_page, 100), "page": 1, "sort": "created", "direction": "desc"},
+                    timeout=8,
+                )
+                if fallback_resp.ok:
+                    fb_data = fallback_resp.json()
+                    if isinstance(fb_data, list):
+                        all_prs.extend(fb_data)
+                break
+
+            logger.warning(
+                "GitHub pulls API responded with status %s for %s/%s: %s",
+                response.status_code,
+                owner,
+                repo,
+                response.text[:200],
+            )
+            break
+        except Exception as exc:
+            logger.error("Failed to list PRs for %s/%s (page %s): %s", owner, repo, page, exc)
+            break
+
+    return all_prs
 
 
 def get_open_pull_requests(

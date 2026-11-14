@@ -91,3 +91,44 @@ export function enrichPRWithRefreshedCommits(
     hasResolved,
   };
 }
+
+/**
+ * Merge newly fetched pull requests while preserving cached commits and historical findings.
+ */
+export function mergeIncomingPullRequests(prev: PullRequest[], incoming: PullRequest[]): PullRequest[] {
+  const prevMap = new Map(prev.map((item) => [item.id, item]));
+  return incoming.map((item) => {
+    const existing = prevMap.get(item.id);
+    if (existing?.commits && existing.commits.length > (item.commits?.length || 0)) {
+      return {
+        ...item,
+        commits: existing.commits,
+        historicalFindings: existing.historicalFindings || item.historicalFindings,
+        hasResolvedViolations: existing.hasResolvedViolations ?? item.hasResolvedViolations,
+      };
+    }
+    return item;
+  });
+}
+
+/**
+ * Immutably update a single pull request with refreshed commit metadata.
+ */
+export function updatePullRequestWithCommits(
+  list: PullRequest[],
+  prId: string,
+  enrichedCommits: PRCommit[],
+  resolvedFindings: PRFinding[],
+  hasResolved: boolean
+): PullRequest[] {
+  return list.map((item) =>
+    item.id === prId
+      ? {
+          ...item,
+          commits: enrichedCommits,
+          historicalFindings: resolvedFindings,
+          hasResolvedViolations: hasResolved,
+        }
+      : item
+  );
+}
