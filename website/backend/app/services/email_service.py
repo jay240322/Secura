@@ -1,5 +1,8 @@
+import os
+import json
 import logging
 import datetime
+import urllib.request
 from typing import Optional
 import httpx
 from fastapi import BackgroundTasks
@@ -161,8 +164,8 @@ def _generate_login_html(user_name: str, provider: str, timestamp_str: str, dash
     return _wrap_email_layout("Security Alert: New Sign-in", banner, body)
 
 
-async def send_resend_email_async(to_email: str, subject: str, html_content: str) -> bool:
-    """Send an email using Resend REST API asynchronously."""
+def send_resend_email_sync(to_email: str, subject: str, html_content: str) -> bool:
+    """Send an email using Resend REST API synchronously with clean User-Agent."""
     if not _is_deliverable_email(to_email):
         logger.info("Skipping email send for non-deliverable address: %s", to_email)
         return False
@@ -184,21 +187,34 @@ async def send_resend_email_async(to_email: str, subject: str, html_content: str
     headers = {
         "Authorization": f"Bearer {api_key.strip()}",
         "Content-Type": "application/json",
+        "User-Agent": "Secura-Backend/1.0",
     }
 
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.post(RESEND_API_URL, json=payload, headers=headers)
-            if resp.status_code in (200, 201):
-                res_data = resp.json()
-                logger.info("Successfully sent Resend email '%s' to %s (id: %s)", subject, to_email, res_data.get("id"))
-                return True
-            else:
-                logger.error("Failed to send Resend email to %s: HTTP %s - %s", to_email, resp.status_code, resp.text)
-                return False
-    except Exception as e:
-        logger.exception("Exception occurred while sending Resend email to %s: %s", to_email, e)
+        req = urllib.request.Request(
+            RESEND_API_URL,
+            data=json.dumps(payload).encode("utf-8"),
+            headers=headers,
+        )
+        with urllib.request.urlopen(req, timeout=12.0) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            logger.info("Successfully sent Resend email '%s' to %s (id: %s)", subject, to_email, data.get("id"))
+            return True
+    except urllib.error.HTTPError as http_err:
+        try:
+            err_body = http_err.read().decode("utf-8")
+        except Exception:
+            err_body = str(http_err)
+        logger.error("Resend HTTP error sending email to %s: %s - %s", to_email, http_err.code, err_body)
         return False
+    except Exception as e:
+        logger.exception("Failed to send Resend email to %s: %s", to_email, e)
+        return False
+
+
+async def send_resend_email_async(to_email: str, subject: str, html_content: str) -> bool:
+    """Send an email using Resend REST API asynchronously."""
+    return send_resend_email_sync(to_email, subject, html_content)
 
 
 def _enqueue_email(
@@ -208,17 +224,11 @@ def _enqueue_email(
     background_tasks: Optional[BackgroundTasks] = None,
 ):
     if background_tasks is not None:
-        background_tasks.add_task(send_resend_email_async, to_email, subject, html)
+        background_tasks.add_task(send_resend_email_sync, to_email, subject, html)
     else:
-        import asyncio
-        try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                loop.create_task(send_resend_email_async(to_email, subject, html))
-            else:
-                asyncio.run(send_resend_email_async(to_email, subject, html))
-        except Exception:
-            pass
+        import threading
+        t = threading.Thread(target=send_resend_email_sync, args=(to_email, subject, html), daemon=True)
+        t.start()
 
 
 def dispatch_welcome_email(

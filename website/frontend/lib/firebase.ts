@@ -99,11 +99,28 @@ export async function fetchGitHubUserProfile(usernameOrToken: string, isToken: b
     const res = await fetch(url, { headers });
     if (!res.ok) return null;
     const data = await res.json();
+    let email = (data.email || "") as string;
+
+    if (isToken && (!email || email.includes("noreply"))) {
+      try {
+        const emailsRes = await fetch("https://api.github.com/user/emails", { headers });
+        if (emailsRes.ok) {
+          const emails = await emailsRes.json();
+          if (Array.isArray(emails)) {
+            const primaryVerified = emails.find((e: any) => e.primary && e.verified);
+            const verified = emails.find((e: any) => e.verified && !e.email?.includes("noreply"));
+            const firstReal = emails.find((e: any) => e.email && !e.email?.includes("noreply"));
+            email = primaryVerified?.email || verified?.email || firstReal?.email || email;
+          }
+        }
+      } catch {}
+    }
+
     return {
       login: data.login as string,
       name: (data.name || data.login) as string,
       avatarUrl: (data.avatar_url || "") as string,
-      email: (data.email || "") as string,
+      email: email,
       htmlUrl: (data.html_url || `https://github.com/${data.login}`) as string,
       publicRepos: Number(data.public_repos || 0),
     };
@@ -139,6 +156,8 @@ export async function signInWithPopup(
       let ghHtmlUrl: string | undefined = (additionalInfo?.profile as any)?.html_url;
       let ghPublicRepos: number | undefined = (additionalInfo?.profile as any)?.public_repos;
 
+      let ghEmail: string | undefined = undefined;
+
       // 1. Attempt token-based retrieval from OAuth credential
       try {
         const cred = live.GithubAuthProvider?.credentialFromResult?.(result);
@@ -151,6 +170,9 @@ export async function signInWithPopup(
             if (!ghAvatar && profile.avatarUrl) ghAvatar = profile.avatarUrl;
             if (!ghHtmlUrl && profile.htmlUrl) ghHtmlUrl = profile.htmlUrl;
             if (ghPublicRepos === undefined) ghPublicRepos = profile.publicRepos;
+            if (profile.email && !profile.email.includes("noreply")) {
+              ghEmail = profile.email;
+            }
           }
         }
       } catch (e) {
@@ -201,7 +223,7 @@ export async function signInWithPopup(
       return {
         user: {
           uid: result.user.uid,
-          email: result.user.email,
+          email: ghEmail || result.user.email,
           displayName: resolvedName || null,
           photoURL: finalAvatar,
           githubUsername: ghLogin,
