@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { api } from "@/lib/api-client";
 import { comparePullRequests, enrichPRWithRefreshedCommits } from "@/lib/pull-request-utils";
@@ -39,6 +39,7 @@ export default function PullRequestsPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [searchScope, setSearchScope] = useState<"all" | "repo" | "pr">("all");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
+  const hasAutoSyncedRef = useRef(false);
 
   const handleRefreshCommits = async (pr: PullRequest) => {
     setLoadingCommits((prev) => ({ ...prev, [pr.id]: true }));
@@ -97,8 +98,23 @@ export default function PullRequestsPage() {
         api.getPullRequests(activeRepoId),
         api.getRepositories(),
       ]);
-      setPullRequests(prRes.pullRequests || []);
-      setRepos(repoRes.repositories || []);
+      const fetchedPRs = prRes.pullRequests || [];
+      const fetchedRepos = repoRes.repositories || [];
+      setPullRequests(fetchedPRs);
+      setRepos(fetchedRepos);
+
+      // If initial fetch returns 0 pull requests but monitored repositories exist, auto-sync from GitHub
+      if (fetchedPRs.length === 0 && fetchedRepos.length > 0 && !hasAutoSyncedRef.current) {
+        hasAutoSyncedRef.current = true;
+        setSyncLoading(true);
+        void api.syncPullRequests(activeRepoId).then((syncRes) => {
+          if (syncRes.success && syncRes.pullRequests && syncRes.pullRequests.length > 0) {
+            setPullRequests(syncRes.pullRequests);
+          }
+        }).finally(() => {
+          setSyncLoading(false);
+        });
+      }
     } catch (e) {
       console.error("Failed to fetch pull requests:", e);
     } finally {
@@ -248,7 +264,9 @@ export default function PullRequestsPage() {
           const matchesName =
             prRepo === targetName ||
             prRepo === targetFullName ||
-            targetFullName.endsWith(`/${prRepo}`);
+            targetFullName.endsWith(`/${prRepo}`) ||
+            (targetName && prRepo.endsWith(`/${targetName}`)) ||
+            (targetFullName && prRepo.split("/").pop() === targetFullName.split("/").pop());
 
           if (!matchesId && !matchesName) {
             return false;
@@ -300,7 +318,9 @@ export default function PullRequestsPage() {
         (pr.repositoryId && pr.repositoryId === targetId) ||
         prRepo === targetName ||
         prRepo === targetFullName ||
-        targetFullName.endsWith(`/${prRepo}`)
+        targetFullName.endsWith(`/${prRepo}`) ||
+        (targetName && prRepo.endsWith(`/${targetName}`)) ||
+        (targetFullName && prRepo.split("/").pop() === targetFullName.split("/").pop())
       );
     });
   }, [pullRequests, selectedRepoId, repos]);

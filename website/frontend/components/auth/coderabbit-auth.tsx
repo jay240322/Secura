@@ -133,17 +133,16 @@ export function CodeRabbitAuth({ initialMode = "login" }: CodeRabbitAuthProps) {
       const result = await signInWithPopup(auth, activeProvider);
       const firebaseUser = result.user;
 
-      if (!firebaseUser.email && !firebaseUser.githubUsername) {
-        throw new Error(`Could not retrieve profile from ${provider}.`);
-      }
-
       const isGithub = provider === "github";
       const ghUsername = firebaseUser.githubUsername;
 
       let userEmail =
-        firebaseUser.email || (isGithub && ghUsername ? `${ghUsername}@users.noreply.github.com` : "");
+        firebaseUser.email ||
+        (isGithub && ghUsername ? `${ghUsername}@users.noreply.github.com` : "") ||
+        (firebaseUser.uid ? `${provider}-${firebaseUser.uid.slice(0, 10)}@secura.security` : "");
+
       if (!userEmail) {
-        userEmail = `user-${Date.now()}@secura.security`;
+        throw new Error(`Could not retrieve profile from ${provider}.`);
       }
 
       let userName = firebaseUser.displayName;

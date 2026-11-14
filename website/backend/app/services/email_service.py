@@ -197,33 +197,65 @@ async def send_resend_email_async(to_email: str, subject: str, html_content: str
         return False
 
 
-def dispatch_welcome_email(background_tasks: BackgroundTasks, to_email: str, user_name: Optional[str] = None):
+def dispatch_welcome_email(
+    to_email: str,
+    user_name: Optional[str] = None,
+    background_tasks: Optional[BackgroundTasks] = None,
+):
     """Queue welcome email on background task worker."""
-    if not _is_deliverable_email(to_email):
-        return
+    try:
+        if not _is_deliverable_email(to_email):
+            return
 
-    name = user_name or to_email.split("@")[0]
-    dashboard_url = settings.SECURA_DASHBOARD_URL.rstrip("/") + "/dashboard"
-    html = _generate_welcome_html(name, dashboard_url)
-    subject = "Welcome to Secura — Next-Gen Repository Security"
+        name = user_name or to_email.split("@")[0]
+        dashboard_url = settings.SECURA_DASHBOARD_URL.rstrip("/") + "/dashboard"
+        html = _generate_welcome_html(name, dashboard_url)
+        subject = "Welcome to Secura — Next-Gen Repository Security"
 
-    background_tasks.add_task(send_resend_email_async, to_email, subject, html)
+        if background_tasks is not None:
+            background_tasks.add_task(send_resend_email_async, to_email, subject, html)
+        else:
+            import asyncio
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    loop.create_task(send_resend_email_async(to_email, subject, html))
+                else:
+                    asyncio.run(send_resend_email_async(to_email, subject, html))
+            except Exception:
+                pass
+    except Exception as e:
+        logger.warning("Failed to dispatch welcome email to %s: %s", to_email, e)
 
 
 def dispatch_login_email(
-    background_tasks: BackgroundTasks,
     to_email: str,
     user_name: Optional[str] = None,
     provider: str = "credentials",
+    background_tasks: Optional[BackgroundTasks] = None,
 ):
     """Queue login notification email on background task worker."""
-    if not _is_deliverable_email(to_email):
-        return
+    try:
+        if not _is_deliverable_email(to_email):
+            return
 
-    name = user_name or to_email.split("@")[0]
-    dashboard_url = settings.SECURA_DASHBOARD_URL.rstrip("/") + "/dashboard"
-    timestamp_str = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-    html = _generate_login_html(name, provider, timestamp_str, dashboard_url)
-    subject = f"Security Notice: New Secura sign-in ({provider.upper()})"
+        name = user_name or to_email.split("@")[0]
+        dashboard_url = settings.SECURA_DASHBOARD_URL.rstrip("/") + "/dashboard"
+        timestamp_str = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        html = _generate_login_html(name, provider, timestamp_str, dashboard_url)
+        subject = f"Security Notice: New Secura sign-in ({provider.upper()})"
 
-    background_tasks.add_task(send_resend_email_async, to_email, subject, html)
+        if background_tasks is not None:
+            background_tasks.add_task(send_resend_email_async, to_email, subject, html)
+        else:
+            import asyncio
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    loop.create_task(send_resend_email_async(to_email, subject, html))
+                else:
+                    asyncio.run(send_resend_email_async(to_email, subject, html))
+            except Exception:
+                pass
+    except Exception as e:
+        logger.warning("Failed to dispatch login email to %s: %s", to_email, e)

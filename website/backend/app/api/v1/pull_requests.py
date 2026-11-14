@@ -1011,8 +1011,36 @@ def list_pull_requests(
     Strictly non-blocking DB query for instant responses (GitHub sync is handled via /sync and webhooks).
     """
     user_ids, gh_handle = get_user_scope_ids(db, current_user)
+    from app.models.installation import GitHubInstallation
+
+    if not gh_handle:
+        user_inst = (
+            db.query(GitHubInstallation)
+            .filter(GitHubInstallation.user_id.in_(user_ids))
+            .first()
+        )
+        if user_inst and user_inst.account_name:
+            gh_handle = user_inst.account_name.lower()
+
+    installation_ids = [
+        inst_id[0]
+        for inst_id in db.query(GitHubInstallation.id)
+        .filter(
+            or_(
+                GitHubInstallation.user_id.in_(user_ids),
+                (func.lower(GitHubInstallation.account_name) == gh_handle) if gh_handle else False,
+            )
+        )
+        .all()
+    ]
 
     target_repo = _resolve_target_repository(db, repository_id, user_ids=user_ids, gh_handle=gh_handle)
+
+    user_repo_cond = or_(
+        Repository.user_id.in_(user_ids),
+        (func.lower(Repository.owner) == gh_handle) if gh_handle else False,
+        Repository.installation_id.in_(installation_ids) if installation_ids else False,
+    )
 
     query = (
         db.query(Scan)
@@ -1025,12 +1053,7 @@ def list_pull_requests(
     if target_repo:
         query = query.filter(Scan.repository_id == target_repo.id)
     else:
-        query = query.filter(
-            or_(
-                Repository.user_id.in_(user_ids),
-                (func.lower(Repository.owner) == gh_handle) if gh_handle else False,
-            )
-        )
+        query = query.filter(user_repo_cond)
 
     if state and state.lower() != "all":
         target_state = state.lower()
@@ -1042,6 +1065,18 @@ def list_pull_requests(
             query = query.filter(and_(or_(func.lower(Scan.pr_state) == "open", Scan.pr_state.is_(None)), Scan.pr_merged_at.is_(None), Scan.pr_closed_at.is_(None)))
 
     scans = query.order_by(Scan.created_at.desc()).limit(300).all()
+
+    # If no scans are found in DB, auto-sync from GitHub so user sees all PRs immediately
+    if not scans:
+        try:
+            repos_to_sync = [target_repo] if target_repo else db.query(Repository).filter(user_repo_cond).all()
+            if repos_to_sync:
+                user_access = _extract_user_github_token(current_user)
+                for r in repos_to_sync:
+                    fast_sync_repository_prs(db, r, user_token=user_access)
+                scans = query.order_by(Scan.created_at.desc()).limit(300).all()
+        except Exception as sync_err:
+            logger.warning("Auto-sync PRs on list_pull_requests failed: %s", sync_err)
 
     # Pre-index all scans by sha prefix to eliminate per-PR N+1 database queries
     repo_scans_cache: Dict[Tuple[str, int, str], Scan] = {}
@@ -1098,21 +1133,39 @@ def sync_pull_requests(
     repositories, enqueuing security scans in the background.
     """
     user_ids, gh_handle = get_user_scope_ids(db, current_user)
+    from app.models.installation import GitHubInstallation
+
+    if not gh_handle:
+        user_inst = (
+            db.query(GitHubInstallation)
+            .filter(GitHubInstallation.user_id.in_(user_ids))
+            .first()
+        )
+        if user_inst and user_inst.account_name:
+            gh_handle = user_inst.account_name.lower()
+
+    installation_ids = [
+        inst_id[0]
+        for inst_id in db.query(GitHubInstallation.id)
+        .filter(
+            or_(
+                GitHubInstallation.user_id.in_(user_ids),
+                (func.lower(GitHubInstallation.account_name) == gh_handle) if gh_handle else False,
+            )
+        )
+        .all()
+    ]
 
     target_repo = _resolve_target_repository(db, repository_id, user_ids=user_ids, gh_handle=gh_handle)
     if target_repo:
         repos = [target_repo]
     else:
-        repos = (
-            db.query(Repository)
-            .filter(
-                or_(
-                    Repository.user_id.in_(user_ids),
-                    (func.lower(Repository.owner) == gh_handle) if gh_handle else False,
-                ),
-            )
-            .all()
+        user_repo_cond = or_(
+            Repository.user_id.in_(user_ids),
+            (func.lower(Repository.owner) == gh_handle) if gh_handle else False,
+            Repository.installation_id.in_(installation_ids) if installation_ids else False,
         )
+        repos = db.query(Repository).filter(user_repo_cond).all()
 
     synced_prs_count = 0
     user_access = _extract_user_github_token(current_user)
