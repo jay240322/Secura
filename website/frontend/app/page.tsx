@@ -3,14 +3,21 @@
 import { useEffect, useState, useRef, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
+import Lenis from "lenis";
+import gsap from "gsap";
+import { ScrollTrigger } from "gsap/ScrollTrigger";
+import "lenis/dist/lenis.css";
 import { api } from "@/lib/api-client";
 import { ContextGraphSection } from "@/components/landing/context-graph";
 import { LandingNavbar } from "@/components/landing/landing-navbar";
 import { LandingFooter } from "@/components/landing/landing-footer";
-import BlurText from "./BlurText";
 import BlurContainer from "./BlurContainer";
 import ScrollReveal from "./ScrollReveal";
 import VariableProximity from "./VariableProximity";
+
+if (typeof window !== "undefined") {
+  gsap.registerPlugin(ScrollTrigger);
+}
 import {
   Shield,
   ShieldAlert,
@@ -52,6 +59,38 @@ function LandingPageContent() {
   const handleAnimationComplete = () => {
     console.log('Animation completed!');
   };
+
+  // Initialize GSAP-integrated butter-smooth scrolling across the landing page
+  useEffect(() => {
+    let lenis: Lenis | null = null;
+    let tickerCallback: ((time: number) => void) | null = null;
+
+    try {
+      lenis = new Lenis({
+        duration: 1.15,
+        easing: (t) => Math.min(1, 1.001 - Math.pow(2, -10 * t)),
+        smoothWheel: true,
+        touchMultiplier: 1.8,
+      });
+
+      lenis.on("scroll", ScrollTrigger.update);
+
+      tickerCallback = (time: number) => {
+        lenis?.raf(time * 1000);
+      };
+
+      gsap.ticker.add(tickerCallback);
+      gsap.ticker.lagSmoothing(0);
+    } catch (err) {
+      console.warn("Smooth scroll initialization error:", err);
+    }
+
+    return () => {
+      if (tickerCallback) gsap.ticker.remove(tickerCallback);
+      if (lenis) lenis.destroy();
+      ScrollTrigger.getAll().forEach((t) => t.kill());
+    };
+  }, []);
 
   useEffect(() => {
     document.documentElement.classList.add("dark");
@@ -638,49 +677,18 @@ function LandingPageContent() {
         </div>
       </section>
 
-      {/* ─── 8.5 DEEP CODE INTELLIGENCE & ARCHITECTURE SHOWCASE (BlurText Animation) ─── */}
+      {/* ─── 8.5 DEEP CODE INTELLIGENCE & ARCHITECTURE SHOWCASE ─── */}
       <section className="py-20 sm:py-28 border-t border-slate-200/80 dark:border-white/10 relative overflow-hidden bg-slate-50/50 dark:bg-[#141417ed]">
         <div className="max-w-7xl mx-auto px-4 sm:px-8">
-          {/* BlurText & ScrollReveal Animation Showcase */}
+          {/* Architecture Showcase Headline */}
           <div className="text-center max-w-3xl mx-auto mb-16 flex flex-col items-center">
             <span className="text-xs font-semibold uppercase tracking-wider text-blue-600 dark:text-blue-400 font-mono mb-3">
               Next-Gen Static Analysis & Pipeline Telemetry
             </span>
 
-            <BlurText
-              text="Isn't this so cool?!"
-              effect="blur"
-              animateBy="words"
-              direction="top"
-              staggerFrom="start"
-              trigger="view"
-              delay={200}
-              stepDuration={0.35}
-              blur={10}
-              distance={50}
-              onAnimationComplete={handleAnimationComplete}
-              className="text-2xl mb-8 font-bold text-blue-600 dark:text-blue-400 justify-center"
-              loop={false}
-              loopDelay={2}
-              focusOnHover={false}
-            />
-
-            <BlurText
-              text="Deep Code Intelligence & Continuous Threat Defense"
-              effect="blur"
-              animateBy="words"
-              direction="top"
-              staggerFrom="start"
-              trigger="view"
-              delay={300}
-              stepDuration={0.3}
-              blur={12}
-              distance={40}
-              className="text-3xl sm:text-5xl font-extrabold tracking-tight text-slate-900 dark:text-white justify-center leading-tight mb-4"
-              loop={false}
-              loopDelay={2}
-              focusOnHover={false}
-            />
+            <h2 className="text-3xl sm:text-5xl font-extrabold tracking-tight text-slate-900 dark:text-white justify-center leading-tight mb-4">
+              Deep Code Intelligence & Continuous Threat Defense
+            </h2>
 
             <p className="text-sm text-slate-600 dark:text-zinc-400 leading-relaxed max-w-2xl mb-10">
               Secura operates as an autonomous security co-pilot directly in your git workflow, combining deep AST structural parsing, Shannon entropy analytics, and instant GitHub check run enforcement.

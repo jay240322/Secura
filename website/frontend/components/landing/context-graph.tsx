@@ -1,6 +1,8 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
+import gsap from "gsap";
+import { ScrollTrigger } from "gsap/ScrollTrigger";
 import {
   ShieldAlert,
   GitPullRequest,
@@ -8,6 +10,10 @@ import {
   ChevronDown,
   FileCode,
 } from "lucide-react";
+
+if (typeof window !== "undefined") {
+  gsap.registerPlugin(ScrollTrigger);
+}
 
 interface StepConfig {
   id: string;
@@ -281,29 +287,29 @@ export function ContextGraphSection() {
     setAnimKey((prev) => prev + 1);
   }, [activeStepIdx]);
 
-  // Scroll tracking to drive the 4 stages and target rotation (no per-pixel React re-renders)
+  // GSAP ScrollTrigger smooth tracking across the 4 stages (butter-smooth easing, no lag)
   useEffect(() => {
-    const handleScroll = () => {
-      if (!trackRef.current) return;
-      const rect = trackRef.current.getBoundingClientRect();
-      const windowH = window.innerHeight;
-      const totalScrollable = rect.height - windowH;
-      if (totalScrollable <= 0) return;
+    if (!trackRef.current) return;
 
-      const scrolled = -rect.top;
-      const progress = Math.min(Math.max(scrolled / totalScrollable, 0), 1);
+    const trigger = ScrollTrigger.create({
+      trigger: trackRef.current,
+      start: "top top",
+      end: "bottom bottom",
+      scrub: 0.5,
+      onUpdate: (self) => {
+        const progress = Math.min(Math.max(self.progress, 0), 1);
+        const step = Math.min(
+          Math.floor(progress * STEPS_DATA.length),
+          STEPS_DATA.length - 1
+        );
+        setActiveStepIdx((prev) => (prev === step ? prev : step));
+        targetScrollRotRef.current = progress * Math.PI * 1.6;
+      },
+    });
 
-      // Determine active step from scroll progress (0..0.25 => 0, 0.25..0.50 => 1, etc.)
-      const step = Math.min(Math.floor(progress * STEPS_DATA.length), STEPS_DATA.length - 1);
-      setActiveStepIdx((prev) => (prev === step ? prev : step));
-
-      // Gentle total scroll rotation across the entire section (~0.8 full turn)
-      targetScrollRotRef.current = progress * Math.PI * 1.6;
+    return () => {
+      trigger.kill();
     };
-
-    window.addEventListener("scroll", handleScroll, { passive: true });
-    handleScroll();
-    return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
   // 60FPS Continuous 3D Constellation Sphere Engine with velocity-capped smooth scroll glide
@@ -339,15 +345,6 @@ export function ContextGraphSection() {
       // Combine slow velocity-capped scroll rotation + calm continuous idle rotation
       const rotY = scrollRotRef.current + idleTime * 0.18;
       const rotX = 0.22 + Math.sin(idleTime * 0.35) * 0.05;
-
-      // Keep outer green dotted arcs gliding in smooth sync with the capped rotation
-      const dashOffset = (-rotY * 26).toFixed(2);
-      if (upperArcRef.current) {
-        upperArcRef.current.setAttribute("stroke-dashoffset", dashOffset);
-      }
-      if (bottomArcRef.current) {
-        bottomArcRef.current.setAttribute("stroke-dashoffset", dashOffset);
-      }
 
       const cosY = Math.cos(rotY);
       const sinY = Math.sin(rotY);
@@ -443,30 +440,37 @@ export function ContextGraphSection() {
 
         if (isSpecialFinding && node.isFront) {
           const pulse = Math.sin(idleTime * 2.4 + node.nIdx) * 0.3 + 0.7;
-          if (currentStep === 0) {
-            ctx.fillStyle = `rgba(255, 170, 0, ${node.alpha * pulse})`;
-            ctx.shadowBlur = 8;
-            ctx.shadowColor = "#FF5500";
-          } else if (currentStep === 1) {
-            ctx.fillStyle = `rgba(192, 132, 252, ${node.alpha * pulse})`;
-            ctx.shadowBlur = 8;
-            ctx.shadowColor = "#A855F7";
+          let glowRgb = "255, 85, 0";
+          let coreRgb = "255, 170, 0";
+          if (currentStep === 1) {
+            glowRgb = "168, 85, 247";
+            coreRgb = "192, 132, 252";
           } else if (currentStep === 2) {
-            ctx.fillStyle = `rgba(52, 211, 153, ${node.alpha * pulse})`;
-            ctx.shadowBlur = 8;
-            ctx.shadowColor = "#10B981";
-          } else {
-            ctx.fillStyle = `rgba(251, 113, 133, ${node.alpha * pulse})`;
-            ctx.shadowBlur = 10;
-            ctx.shadowColor = "#F43F5E";
+            glowRgb = "16, 185, 129";
+            coreRgb = "52, 211, 153";
+          } else if (currentStep === 3) {
+            glowRgb = "244, 63, 94";
+            coreRgb = "251, 113, 133";
           }
+
+          // Ultra-smooth vector halo glow (zero shadowBlur lag for locked 60/120fps)
+          ctx.beginPath();
+          ctx.arc(node.px, node.py, r * 2.5, 0, Math.PI * 2);
+          ctx.fillStyle = `rgba(${glowRgb}, ${(node.alpha * pulse * 0.28).toFixed(3)})`;
           ctx.fill();
-          ctx.shadowBlur = 0;
+
+          // Bright crisp core
+          ctx.beginPath();
+          ctx.arc(node.px, node.py, r, 0, Math.PI * 2);
+          ctx.fillStyle = `rgba(${coreRgb}, ${(node.alpha * pulse).toFixed(3)})`;
+          ctx.fill();
         } else {
+          ctx.beginPath();
+          ctx.arc(node.px, node.py, r, 0, Math.PI * 2);
           if (node.isFront) {
-            ctx.fillStyle = `rgba(255, 255, 255, ${node.alpha * 0.88})`;
+            ctx.fillStyle = `rgba(255, 255, 255, ${(node.alpha * 0.88).toFixed(3)})`;
           } else {
-            ctx.fillStyle = `rgba(148, 163, 184, ${node.alpha * 0.38})`;
+            ctx.fillStyle = `rgba(148, 163, 184, ${(node.alpha * 0.38).toFixed(3)})`;
           }
           ctx.fill();
         }
@@ -652,7 +656,7 @@ export function ContextGraphSection() {
                       strokeWidth="2.2"
                       strokeLinecap="round"
                       strokeDasharray="2 7"
-                      strokeDashoffset={0}
+                      className="animate-dotted-arc"
                       mask="url(#mask-upper-green-arc)"
                       style={{
                         opacity: activeStepIdx >= 1 ? 0.92 : 0,
@@ -669,7 +673,7 @@ export function ContextGraphSection() {
                       strokeWidth="2.2"
                       strokeLinecap="round"
                       strokeDasharray="2 7"
-                      strokeDashoffset={0}
+                      className="animate-dotted-arc"
                       mask="url(#mask-bottom-green-arc)"
                       style={{
                         opacity: activeStepIdx >= 2 ? 0.92 : 0,
@@ -950,6 +954,16 @@ export function ContextGraphSection() {
           </div>
         </div>
       </div>
+
+      <style>{`
+        @keyframes dottedGlideAnim {
+          from { stroke-dashoffset: 0; }
+          to { stroke-dashoffset: -180; }
+        }
+        .animate-dotted-arc {
+          animation: dottedGlideAnim 16s linear infinite;
+        }
+      `}</style>
     </section>
   );
 }
