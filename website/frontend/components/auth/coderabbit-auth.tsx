@@ -72,14 +72,14 @@ export function CodeRabbitAuth({ initialMode = "login" }: CodeRabbitAuthProps) {
 
   // Dynamic "Last used on this computer" logic
   const [mounted, setMounted] = useState(false);
-  const [lastUsedProvider, setLastUsedProvider] = useState<"github" | "google">("github");
+  const [lastUsedProvider, setLastUsedProvider] = useState<"github" | "google" | "local" | null>(null);
 
   useEffect(() => {
     setMounted(true);
     try {
       const saved = localStorage.getItem("secura_last_auth_provider");
-      if (saved === "google" || saved === "github") {
-        setLastUsedProvider(saved);
+      if (saved === "google" || saved === "github" || saved === "local") {
+        setLastUsedProvider(saved as "github" | "google" | "local");
       } else {
         setLastUsedProvider("github");
       }
@@ -101,11 +101,9 @@ export function CodeRabbitAuth({ initialMode = "login" }: CodeRabbitAuthProps) {
   }, [initialMode]);
 
   const handlePostAuthSuccess = (providerUsed: "github" | "google" | "local") => {
-    if (providerUsed === "github" || providerUsed === "google") {
-      try {
-        localStorage.setItem("secura_last_auth_provider", providerUsed);
-      } catch {}
-    }
+    try {
+      localStorage.setItem("secura_last_auth_provider", providerUsed);
+    } catch {}
 
     const pendingInstId =
       typeof window !== "undefined"
@@ -388,15 +386,25 @@ export function CodeRabbitAuth({ initialMode = "login" }: CodeRabbitAuthProps) {
                 <div className="border-t w-full border-slate-200 dark:border-zinc-800" />
               </div>
 
-              {/* Single Sign-On Button */}
-              <button
-                type="button"
-                onClick={() => setShowSSO(true)}
-                className="w-full h-11 px-4 rounded-lg border text-xs font-semibold flex items-center justify-center gap-2 cursor-pointer shadow-xs border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900/50 hover:bg-slate-100 dark:hover:bg-zinc-800/80 text-slate-700 dark:text-zinc-200 transition-colors"
-              >
-                <Key className="h-3.5 w-3.5 text-slate-400 dark:text-zinc-400" />
-                <span>Single Sign-On</span>
-              </button>
+              {/* Single Sign-On / Work Email Button with Last used badge */}
+              <div className="relative">
+                {mounted && lastUsedProvider === "local" && (
+                  <span
+                    className="absolute -top-2.5 right-6 px-1.5 py-0.5 text-[10px] font-sans font-medium bg-white dark:bg-[#111113] border border-slate-300 dark:border-zinc-700 text-slate-600 dark:text-zinc-300 rounded leading-none select-none z-10 shadow-xs"
+                    title="Last used on this computer"
+                  >
+                    Last used
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setShowSSO(true)}
+                  className="w-full h-11 px-4 rounded-lg border text-xs font-semibold flex items-center justify-center gap-2 cursor-pointer shadow-xs border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900/50 hover:bg-slate-100 dark:hover:bg-zinc-800/80 text-slate-700 dark:text-zinc-200 transition-colors"
+                >
+                  <Key className="h-3.5 w-3.5 text-slate-400 dark:text-zinc-400" />
+                  <span>Work Email & Single Sign-On</span>
+                </button>
+              </div>
             </div>
           ) : (
             /* ── Work Email Form (Clean White & Dark Theme) ── */
@@ -510,7 +518,7 @@ export function CodeRabbitAuth({ initialMode = "login" }: CodeRabbitAuthProps) {
               </span>
             ) : (
               <span>
-                Already have a Secura account?{" "}
+                Already registered?{" "}
                 <Link
                   href="/login"
                   onClick={(e) => {
@@ -531,13 +539,13 @@ export function CodeRabbitAuth({ initialMode = "login" }: CodeRabbitAuthProps) {
         {/* Legal Disclaimer at Bottom (Matching Reference with Orange links) */}
         <div className="pt-8 text-center text-[11px] leading-relaxed max-w-sm mx-auto text-slate-400 dark:text-zinc-500">
           By continuing, you agree to the{" "}
-          <a href="#" className="hover:underline font-medium text-[#f97316] dark:text-[#f97316]">
+          <Link href="/terms" className="hover:underline font-medium text-[#f97316] dark:text-[#f97316]">
             Terms of Use
-          </a>{" "}
+          </Link>{" "}
           and{" "}
-          <a href="#" className="hover:underline font-medium text-[#f97316] dark:text-[#f97316]">
+          <Link href="/privacy" className="hover:underline font-medium text-[#f97316] dark:text-[#f97316]">
             Privacy Policy
-          </a>
+          </Link>
           .
         </div>
       </div>

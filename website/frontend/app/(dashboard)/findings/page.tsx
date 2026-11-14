@@ -343,7 +343,7 @@ function FindingsContent() {
           {loading ? (
             <div className="flex flex-col items-center justify-center py-20 text-slate-500 dark:text-zinc-400 gap-3">
               <Loader />
-              <p className="text-xs font-medium text-slate-600 dark:text-zinc-400">Loading security findings from database...</p>
+              <p className="text-xs font-medium text-slate-600 dark:text-zinc-400">Loading security findings...</p>
             </div>
           ) : filtered.length === 0 ? (
             <div className="flex flex-col items-center py-12 text-slate-500 dark:text-zinc-400">

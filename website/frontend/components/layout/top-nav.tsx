@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Search, Sun, Moon } from "lucide-react";
+import { Sun, Moon } from "lucide-react";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { api } from "@/lib/api-client";
 import { User as UserType } from "@/types";
 import { useTheme } from "@/components/theme-provider";
+import { GlobalSearchBar } from "./global-search-bar";
 
 const PAGE_TITLES: Record<string, string> = {
   "/dashboard": "Overview",
@@ -187,14 +188,8 @@ export function TopNav() {
         <h1 className="text-sm font-semibold tracking-tight text-[#281C59] dark:text-white">{title}</h1>
       </div>
 
-      {/* Quick Search */}
-      <div className="hidden sm:flex items-center gap-2 rounded-xl border border-slate-200 dark:border-zinc-800 bg-[#EDE9E6]/60 dark:bg-zinc-900/60 px-3 py-1.5 text-xs text-slate-600 dark:text-zinc-400 w-56 mr-3 hover:border-slate-300 dark:hover:border-zinc-700 transition-colors cursor-pointer">
-        <Search className="h-3.5 w-3.5 text-slate-400 dark:text-zinc-500" />
-        <span className="text-slate-400 dark:text-zinc-500">Quick search…</span>
-        <kbd className="ml-auto rounded-md bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 px-1.5 py-0.5 text-[10px] font-mono text-slate-500 dark:text-zinc-400 shadow-2xs">
-          ⌘K
-        </kbd>
-      </div>
+      {/* Global Search Bar with Scope Dropdown (Repo vs PR) */}
+      <GlobalSearchBar />
 
       {/* Theme Toggle Button (Light vs Pure Darkness) */}
       <button

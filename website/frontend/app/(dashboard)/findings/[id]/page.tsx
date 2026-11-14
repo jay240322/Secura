@@ -388,14 +388,14 @@ client = boto3.client("s3")
 
 # Option 2: Environment variable
 access_key = os.environ["AWS_ACCESS_KEY_ID"]`,
-    "Database Connection String": `# ✓ Load from environment variable
+    "Storage Connection String": `# ✓ Load from environment variable
 import os
 
-DATABASE_URL = os.environ["DATABASE_URL"]
+STORAGE_URL = os.environ["STORAGE_URL"]
 
 # Or use a secrets manager
 from your_secrets_manager import get_secret
-DATABASE_URL = get_secret("prod/database/url")`,
+STORAGE_URL = get_secret("prod/secrets/url")`,
     "GitHub Personal Access Token": `# ✓ Use GitHub Actions secrets
 # In workflow YAML:
 #   env:
