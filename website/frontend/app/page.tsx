@@ -54,6 +54,7 @@ function LandingPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [openFaq, setOpenFaq] = useState<number | null>(null);
+  const [isRedirecting, setIsRedirecting] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
   const handleAnimationComplete = () => {
@@ -97,26 +98,32 @@ function LandingPageContent() {
     const token = api.getToken();
     const user = api.getStoredUser();
 
+    // If user already has an active account session, redirect immediately to dashboard
+    if (token) {
+      setIsRedirecting(true);
+      const installationId = searchParams.get("installation_id");
+      if (installationId) {
+        void api.syncRepositories().then(() => {
+          router.replace(
+            `/repositories?installed=true&installation_id=${installationId}`
+          );
+        });
+      } else {
+        router.replace("/dashboard");
+      }
+      return;
+    }
+
     const installationId = searchParams.get("installation_id");
     const setupAction = searchParams.get("setup_action");
 
     if (installationId || setupAction) {
-      if (token && user) {
-        void api.syncRepositories().then(() => {
-          router.push(
-            `/repositories?installed=true${
-              installationId ? `&installation_id=${installationId}` : ""
-            }`
-          );
-        });
-      } else {
-        if (installationId) {
-          try {
-            sessionStorage.setItem("secura_pending_installation_id", installationId);
-          } catch {}
-        }
-        router.push("/login?app_installed=true");
+      if (installationId) {
+        try {
+          sessionStorage.setItem("secura_pending_installation_id", installationId);
+        } catch {}
       }
+      router.push("/login?app_installed=true");
     }
   }, [router, searchParams]);
 
@@ -146,6 +153,14 @@ function LandingPageContent() {
       a: "Yes! Secura provides a generous free tier for developers, open-source projects, and small engineering teams with unlimited PR scans across public and private GitHub repositories.",
     },
   ];
+
+  if (isRedirecting) {
+    return (
+      <div className="min-h-screen bg-[#141417ed] flex items-center justify-center">
+        <div className="h-6 w-6 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
 
   return (
     <div
