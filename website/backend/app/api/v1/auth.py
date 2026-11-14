@@ -84,7 +84,9 @@ def login(payload: UserLogin, background_tasks: BackgroundTasks, db: Session = D
             detail="Account is inactive.",
         )
 
-    dispatch_login_email(user.email, user.name, provider="Email/Password", background_tasks=background_tasks)
+    from app.services.email_service import _is_deliverable_email
+    target_email = email_clean if _is_deliverable_email(email_clean) else (user.email or "")
+    dispatch_login_email(target_email, user.name, provider="Email/Password", background_tasks=background_tasks)
 
     access_jwt = create_access_token(
         subject=user.id,
@@ -171,7 +173,7 @@ def oauth_sign_in(payload: OAuthLogin, background_tasks: BackgroundTasks, db: Se
         if provider_lower == "github" and gh_handle:
             user = db.query(User).filter(func.lower(User.github_username) == gh_handle.lower()).first()
         if not user:
-            user = db.query(User).filter(User.email == email_clean).first()
+            user = db.query(User).filter(func.lower(User.email) == email_clean).first()
         if not user and gh_handle:
             user = db.query(User).filter(func.lower(User.github_username) == gh_handle.lower()).first()
 
@@ -191,7 +193,8 @@ def oauth_sign_in(payload: OAuthLogin, background_tasks: BackgroundTasks, db: Se
         else:
             user.name = clean_name
             user.provider = provider_lower
-            if "@users.noreply.github.com" in (user.email or "") and "@users.noreply.github.com" not in email_clean:
+            from app.services.email_service import _is_deliverable_email
+            if _is_deliverable_email(email_clean) and (not user.email or not _is_deliverable_email(user.email) or user.email != email_clean):
                 user.email = email_clean
             if avatar:
                 user.avatar_url = avatar
@@ -216,11 +219,13 @@ def oauth_sign_in(payload: OAuthLogin, background_tasks: BackgroundTasks, db: Se
             detail=f"Database error during OAuth sign-in: {exc}",
         )
 
+    from app.services.email_service import _is_deliverable_email
+    deliverable_target = email_clean if _is_deliverable_email(email_clean) else (user.email or "")
     if is_new_user:
-        dispatch_welcome_email(user.email, user.name, background_tasks=background_tasks)
+        dispatch_welcome_email(deliverable_target, user.name, background_tasks=background_tasks)
     else:
         provider_title = f"{payload.provider.capitalize()} OAuth"
-        dispatch_login_email(user.email, user.name, provider=provider_title, background_tasks=background_tasks)
+        dispatch_login_email(deliverable_target, user.name, provider=provider_title, background_tasks=background_tasks)
 
     access_jwt = create_access_token(
         subject=user.id,
@@ -449,10 +454,12 @@ async def github_oauth_callback(payload: dict, background_tasks: BackgroundTasks
             detail=f"Database error saving user: {db_err}",
         )
 
+    from app.services.email_service import _is_deliverable_email
+    target_email = clean_email if _is_deliverable_email(clean_email) else (user.email or "")
     if is_new_user:
-        dispatch_welcome_email(user.email, user.name, background_tasks=background_tasks)
+        dispatch_welcome_email(target_email, user.name, background_tasks=background_tasks)
     else:
-        dispatch_login_email(user.email, user.name, provider="GitHub OAuth", background_tasks=background_tasks)
+        dispatch_login_email(target_email, user.name, provider="GitHub OAuth", background_tasks=background_tasks)
 
     # 5. Generate signed JWT access credential
     access_jwt = create_access_token(

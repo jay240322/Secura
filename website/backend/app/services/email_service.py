@@ -20,6 +20,10 @@ def _is_deliverable_email(email: str) -> bool:
         return False
     if "noreply" in email_lower and "github" in email_lower:
         return False
+    if "@secura.security" in email_lower:
+        return False
+    if "example.com" in email_lower or "test.com" in email_lower:
+        return False
     return True
 
 
@@ -163,7 +167,7 @@ async def send_resend_email_async(to_email: str, subject: str, html_content: str
         logger.info("Skipping email send for non-deliverable address: %s", to_email)
         return False
 
-    api_key = settings.RESEND_API_KEY
+    api_key = settings.RESEND_API_KEY or os.getenv("RESEND_API_KEY", "")
     if not api_key:
         logger.warning("RESEND_API_KEY is not configured; skipping email to %s", to_email)
         return False

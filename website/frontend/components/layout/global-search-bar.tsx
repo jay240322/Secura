@@ -13,6 +13,8 @@ import {
   ShieldCheck,
   ExternalLink,
   Loader2,
+  Check,
+  Layers,
 } from "lucide-react";
 import { api } from "@/lib/api-client";
 import type { Repository, PullRequest } from "@/types";
@@ -24,6 +26,7 @@ export function GlobalSearchBar() {
   const [scope, setScope] = useState<SearchScope>("all");
   const [query, setQuery] = useState("");
   const [isOpen, setIsOpen] = useState(false);
+  const [scopeMenuOpen, setScopeMenuOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [repos, setRepos] = useState<Repository[]>([]);
   const [pullRequests, setPullRequests] = useState<PullRequest[]>([]);
@@ -62,6 +65,7 @@ export function GlobalSearchBar() {
         void loadSearchData();
       } else if (e.key === "Escape") {
         setIsOpen(false);
+        setScopeMenuOpen(false);
         inputRef.current?.blur();
       }
     };
@@ -74,6 +78,7 @@ export function GlobalSearchBar() {
     const handleClickOutside = (e: MouseEvent) => {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
         setIsOpen(false);
+        setScopeMenuOpen(false);
       }
     };
     document.addEventListener("mousedown", handleClickOutside);
@@ -176,25 +181,109 @@ export function GlobalSearchBar() {
             : "border-slate-200 dark:border-zinc-800 hover:border-slate-300 dark:hover:border-zinc-700"
         }`}
       >
-        {/* Scope Dropdown */}
+        {/* Custom Scope Dropdown */}
         <div className="relative shrink-0 border-r border-slate-200/80 dark:border-zinc-800">
-          <select
-            value={scope}
-            onChange={(e) => {
-              setScope(e.target.value as SearchScope);
-              inputRef.current?.focus();
-              setIsOpen(true);
-              void loadSearchData();
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setScopeMenuOpen(!scopeMenuOpen);
             }}
-            suppressHydrationWarning
-            aria-label="Filter search type"
-            className="appearance-none bg-transparent pl-2.5 pr-6 py-1.5 text-xs font-semibold text-slate-700 dark:text-zinc-300 hover:text-slate-900 dark:hover:text-white focus:outline-none cursor-pointer"
+            aria-haspopup="listbox"
+            aria-expanded={scopeMenuOpen}
+            className="flex items-center gap-1.5 pl-3 pr-2.5 py-1.5 text-xs font-semibold text-slate-700 dark:text-zinc-200 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200/50 dark:hover:bg-zinc-800/60 rounded-l-xl transition-all cursor-pointer"
           >
-            <option value="all">All</option>
-            <option value="repos">Repos</option>
-            <option value="prs">PRs</option>
-          </select>
-          <ChevronDown className="absolute right-1.5 top-1/2 -translate-y-1/2 h-3 w-3 text-slate-400 dark:text-zinc-500 pointer-events-none" />
+            {scope === "all" ? (
+              <Layers className="h-3.5 w-3.5 text-blue-500 shrink-0" />
+            ) : scope === "repos" ? (
+              <FolderGit2 className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
+            ) : (
+              <GitPullRequest className="h-3.5 w-3.5 text-purple-500 shrink-0" />
+            )}
+            <span className="font-semibold text-xs">
+              {scope === "all" ? "All" : scope === "repos" ? "Repos" : "PRs"}
+            </span>
+            <ChevronDown
+              className={`h-3 w-3 text-slate-400 dark:text-zinc-500 transition-transform duration-200 ${
+                scopeMenuOpen ? "rotate-180 text-blue-500" : ""
+              }`}
+            />
+          </button>
+
+          {/* Scope Popover Menu */}
+          {scopeMenuOpen && (
+            <div
+              role="listbox"
+              className="absolute left-0 top-full mt-1.5 w-52 rounded-xl border border-slate-200/90 dark:border-zinc-800 bg-white dark:bg-[#18181b] shadow-2xl backdrop-blur-md z-50 p-1.5 space-y-1 animate-in fade-in zoom-in-95 duration-150"
+            >
+              {[
+                {
+                  id: "all" as SearchScope,
+                  label: "All Resources",
+                  desc: "Search repos & pull requests",
+                  icon: Layers,
+                  color: "text-blue-500",
+                  bg: "bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400",
+                },
+                {
+                  id: "repos" as SearchScope,
+                  label: "Repositories",
+                  desc: "Filter by repository name",
+                  icon: FolderGit2,
+                  color: "text-emerald-500",
+                  bg: "bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400",
+                },
+                {
+                  id: "prs" as SearchScope,
+                  label: "Pull Requests",
+                  desc: "Filter by PR # or branch",
+                  icon: GitPullRequest,
+                  color: "text-purple-500",
+                  bg: "bg-purple-50 dark:bg-purple-950/40 text-purple-600 dark:text-purple-400",
+                },
+              ].map((item) => {
+                const isSelected = scope === item.id;
+                const IconComponent = item.icon;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    role="option"
+                    aria-selected={isSelected}
+                    onClick={() => {
+                      setScope(item.id);
+                      setScopeMenuOpen(false);
+                      inputRef.current?.focus();
+                      setIsOpen(true);
+                      void loadSearchData();
+                    }}
+                    className={`w-full flex items-center justify-between gap-2.5 px-2.5 py-2 rounded-lg text-left transition-colors cursor-pointer ${
+                      isSelected
+                        ? "bg-slate-100 dark:bg-zinc-800/90 text-slate-900 dark:text-white"
+                        : "hover:bg-slate-50 dark:hover:bg-zinc-800/50 text-slate-700 dark:text-zinc-300"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md ${item.bg}`}>
+                        <IconComponent className="h-3.5 w-3.5" />
+                      </span>
+                      <div className="min-w-0">
+                        <p className="text-xs font-semibold leading-none truncate">
+                          {item.label}
+                        </p>
+                        <p className="text-[10px] text-slate-400 dark:text-zinc-500 mt-1 truncate">
+                          {item.desc}
+                        </p>
+                      </div>
+                    </div>
+                    {isSelected && (
+                      <Check className={`h-3.5 w-3.5 shrink-0 ${item.color}`} />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         {/* Input */}

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { createPortal } from "react-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { api } from "@/lib/api-client";
@@ -12,6 +13,8 @@ import {
   Check,
   CheckCircle2,
   ExternalLink,
+  FileText,
+  Info,
   Loader2,
   LogOut,
   Moon,
@@ -616,6 +619,67 @@ export default function SettingsPage() {
                 </button>
               </div>
             )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* ─── 7. Platform Information & Legal Policies ─────────────────────────── */}
+      <div className="w-full">
+        <SectionTitle>
+          <Info className="h-4 w-4 text-[#00285B] dark:text-blue-400" />
+          <span>Platform Information & Legal Policies</span>
+        </SectionTitle>
+        <Card className="w-full">
+          <CardContent className="space-y-4 pt-5">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* About Secura Box */}
+              <div className="flex flex-col justify-between p-4 rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-50/60 dark:bg-zinc-900/40 space-y-3">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-100 dark:bg-blue-950/60 text-[#00285B] dark:text-blue-400">
+                      <Info className="h-4 w-4" />
+                    </span>
+                    <p className="text-xs font-semibold text-slate-900 dark:text-zinc-100">
+                      About Secura
+                    </p>
+                  </div>
+                  <p className="text-[11px] text-slate-500 dark:text-zinc-400 leading-relaxed pt-1">
+                    Discover how Secura protects codebases autonomously through AST parsing, Shannon entropy analytics, and zero code retention.
+                  </p>
+                </div>
+                <Link
+                  href="/about"
+                  className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3.5 py-2 text-xs font-semibold text-slate-700 dark:text-zinc-200 hover:bg-slate-100 dark:hover:bg-zinc-800 hover:text-[#00285B] dark:hover:text-blue-400 transition-colors w-fit"
+                >
+                  <span>About Secura</span>
+                  <ExternalLink className="h-3 w-3" />
+                </Link>
+              </div>
+
+              {/* Privacy Policy Box */}
+              <div className="flex flex-col justify-between p-4 rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-50/60 dark:bg-zinc-900/40 space-y-3">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400">
+                      <FileText className="h-4 w-4" />
+                    </span>
+                    <p className="text-xs font-semibold text-slate-900 dark:text-zinc-100">
+                      Privacy & Data Retention Policy
+                    </p>
+                  </div>
+                  <p className="text-[11px] text-slate-500 dark:text-zinc-400 leading-relaxed pt-1">
+                    Review our strict Zero Code Retention policies, in-memory diff processing, TLS encryption standards, and compliance certifications.
+                  </p>
+                </div>
+                <Link
+                  href="/privacy"
+                  className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3.5 py-2 text-xs font-semibold text-slate-700 dark:text-zinc-200 hover:bg-slate-100 dark:hover:bg-zinc-800 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors w-fit"
+                >
+                  <span>Privacy Policy</span>
+                  <ExternalLink className="h-3 w-3" />
+                </Link>
+              </div>
+            </div>
           </CardContent>
         </Card>
       </div>
