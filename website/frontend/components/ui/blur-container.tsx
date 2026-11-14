@@ -67,12 +67,11 @@ export default function BlurContainer({
       style={{
         opacity: inView ? 1 : 0,
         transform: inView ? "translateY(0)" : `translateY(${offset}px)`,
-        filter: inView ? "blur(0px)" : `blur(${blur}px)`,
-        transition: `opacity ${stepDuration}s ease, transform ${stepDuration}s cubic-bezier(0.2, 0.65, 0.3, 0.9), filter ${stepDuration}s ease`,
+        transition: `opacity ${stepDuration}s ease-out, transform ${stepDuration}s cubic-bezier(0.16, 1, 0.3, 1)`,
         transitionDelay: `${delay}ms`,
-        willChange: "transform, opacity, filter",
+        willChange: "transform, opacity",
       }}
-      className={`relative transition-all duration-300 ${className}`}
+      className={`relative ${className}`}
     >
       {children}
     </div>

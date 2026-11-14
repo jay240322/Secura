@@ -135,7 +135,6 @@ export default function BlurText({
         const itemDelayMs = delay + staggerIdx * (stepDuration * 1000 * 0.35);
 
         const isAnimated = inView;
-        const currentBlur = isAnimated ? (focusOnHover && !isHovered ? blur * 0.2 : 0) : blur;
         const currentTranslateY = isAnimated ? 0 : offsetDistance;
         const currentOpacity = isAnimated ? 1 : 0;
 
@@ -144,12 +143,11 @@ export default function BlurText({
             key={idx}
             style={{
               display: "inline-block",
-              filter: `blur(${currentBlur}px)`,
               transform: `translateY(${currentTranslateY}px)`,
               opacity: currentOpacity,
-              transition: `filter ${stepDuration}s cubic-bezier(0.2, 0.65, 0.3, 0.9), transform ${stepDuration}s cubic-bezier(0.2, 0.65, 0.3, 0.9), opacity ${stepDuration}s ease`,
+              transition: `transform ${stepDuration}s cubic-bezier(0.16, 1, 0.3, 1), opacity ${stepDuration}s ease`,
               transitionDelay: `${itemDelayMs}ms`,
-              willChange: "transform, filter, opacity",
+              willChange: "transform, opacity",
             }}
           >
             {item === " " ? "\u00A0" : item}
