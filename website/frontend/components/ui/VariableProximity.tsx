@@ -65,13 +65,13 @@ export default function VariableProximity({
   label,
   className = "",
   fromFontVariationSettings = "'wght' 400, 'opsz' 9",
-  toFontVariationSettings = "'wght' 1000, 'opsz' 40",
+  toFontVariationSettings = "'wght' 700, 'opsz' 20",
   containerRef,
-  radius = 180,
+  radius = 160,
   falloff = "linear",
   smoothing = 0.2,
-  scale = 1.12,
-  lift = 3,
+  scale = 1.03,
+  lift = 1,
   idleWave = false,
   fontSize,
   style = {},
@@ -137,8 +137,8 @@ export default function VariableProximity({
         const currentWght = currentAxes["wght"] ?? (400 + (1000 - 400) * intensity);
         el.style.fontWeight = `${Math.round(currentWght)}`;
 
-        const effLift = lift > 0 ? lift : 3;
-        const effScale = scale > 1 ? scale : 1.12;
+        const effLift = lift > 0 ? lift : 1;
+        const effScale = scale > 1 ? scale : 1.03;
         const translateY = -effLift * intensity;
         const scaleVal = 1 + (effScale - 1) * intensity;
 
@@ -146,12 +146,7 @@ export default function VariableProximity({
           intensity > 0.01
             ? `translateY(${translateY}px) scale(${scaleVal})`
             : "none";
-        el.style.textShadow =
-          intensity > 0.05
-            ? `0 0 ${Math.round(12 * intensity)}px rgba(182, 255, 92, ${
-                0.5 * intensity
-              })`
-            : "none";
+        el.style.textShadow = "none";
       });
     };
 
